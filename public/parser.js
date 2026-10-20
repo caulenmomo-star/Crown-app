@@ -36,7 +36,7 @@
   const PROMO = /(\d+\s?% off|\bsale\b|\bdeals?\b|\bcoupon|\bpromo|\bsave \$|\bsave up\b|\bfree shipping\b|\brewards?\b|\bpoints\b|\bnewsletter|\bwishlist|\bback in stock|\bprice drop|\bjust dropped|\bnew arrivals?|\bdon'?t miss|\blast chance|\babandon|\bleft in your cart|\bstill thinking|\bunsubscribe)/i;
   const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill', 'we canceled', 'we cancelled', 'canceled your', 'cancelled your'];
   const REFUNDED = ['refund issued', 'refund has been', 'your refund', 'refund processed', 'refund confirmation', 'return received', 'return has been processed', 'refunded'];
-  const DELIVERED = ['delivered', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived', 'items arrived', 'item arrived'];
+  const DELIVERED = ['delivered', 'arrived:', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived', 'items arrived', 'item arrived'];
   const READY = ['ready for pickup', 'ready for drive up', 'ready to pick up', 'is ready for pick', 'ready for curbside', 'ready for in-store pickup'];
   const OUT = ['out for delivery', 'arrive today', 'arrives today', 'arriving today', 'coming today', 'delivering today', 'will be delivered today'];
   const SHIPPED = ['shipped', 'has shipped', 'on its way', 'is on the way', 'are on the way', 'on their way', 'tracking number', 'has been dispatched', 'in transit', 'shipment', 'about to ship', 'ready to ship', 'getting ready to ship', 'preparing to ship', 'arrive tomorrow', 'arrives tomorrow', 'arriving tomorrow', 'arriving soon', 'arrives soon', 'headed your way', 'heading your way', 'on the move', 'label created', 'has been sent', 'have been sent', 'shipping update', 'package update', 'tracking info', 'tracking update'];
@@ -54,7 +54,7 @@
     if (/\b(not|never)\s+(been\s+)?(shipped|delivered)\b|delivery\s+(attempt|exception|delay)|\bdelayed\b|\brunning late\b/.test(s) && !has(s, CANCELLED)) return /order|#\s*\d/.test(s) ? 'shipped' : null;
     if (has(s, REFUNDED) && !/refund (?:policy|request)/.test(s)) return 'refunded';
     if (has(s, CANCELLED) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
-    if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*delivered\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
+    if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*(delivered|arrived)\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
     if (has(s, READY)) return 'ready';
     if (has(s, OUT)) return 'out';
     if (has(s, SHIPPED)) return 'shipped';

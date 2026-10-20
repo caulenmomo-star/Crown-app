@@ -35,7 +35,13 @@ function setStatus(o, status, date, source, note) {
 /* ---------- houses ---------- */
 function titleAddr(s) { return String(s || '').replace(/\b([a-z])([a-z]*)/gi, (m, a, b) => /^(ne|nw|se|sw|n|s|e|w|po)$/i.test(m) ? m.toUpperCase() : a.toUpperCase() + b.toLowerCase()); }
 function resolveHouse(o) {
-  const key = Parser.houseKey(o.addr1, o.zip);
+  // No address in the emails (Amazon, PlayStation, cancellations)? Use the linked profile's shipping address.
+  let src = o; o.houseVia = '';
+  if (!Parser.houseKey(o.addr1, o.zip) && o.profileId) {
+    const p = profileById(o.profileId);
+    if (p && Parser.houseKey(p.shipAddr1, p.shipZip)) { src = { addr1: p.shipAddr1, zip: p.shipZip, city: p.shipCity, state: p.shipState }; o.houseVia = 'profile'; }
+  }
+  const key = Parser.houseKey(src.addr1, src.zip);
   if (!key) { o.houseId = ''; return null; }
   let h = state.houses.find(h => (h.keys || []).includes(key));
   if (!h) {
@@ -43,11 +49,11 @@ function resolveHouse(o) {
     const street = key.split('|')[0];
     h = state.houses.find(h => (h.keys || []).some(k => k.split('|')[0] === street && (!k.split('|')[1] || !key.split('|')[1])));
   }
-  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(Parser.splitUnit(o.addr1).street), city: titleAddr(o.city), state: String(o.state || '').toUpperCase(), zip: Parser.zip5(o.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
+  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(Parser.splitUnit(src.addr1).street), city: titleAddr(src.city), state: String(src.state || '').toUpperCase(), zip: Parser.zip5(src.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
   else if (!h.keys.includes(key)) h.keys.push(key);
-  if (!h.zip && o.zip) h.zip = Parser.zip5(o.zip);
-  if (!h.city && o.city) h.city = titleAddr(o.city);
-  if (!h.state && o.state) h.state = String(o.state).toUpperCase();
+  if (!h.zip && src.zip) h.zip = Parser.zip5(src.zip);
+  if (!h.city && src.city) h.city = titleAddr(src.city);
+  if (!h.state && src.state) h.state = String(src.state).toUpperCase();
   o.houseId = h.id; return h;
 }
 // Regroup every order by street address only (apt / unit / line 2 ignored). Keeps nicknames and notes,
@@ -126,9 +132,9 @@ $('#cleanTabs').onclick = e => { const b = e.target.closest('[data-ct]'); if (b)
 $('#cleanBody').onclick = e => {
   const d = e.target.closest('button'); if (!d) return; const ds = d.dataset;
   const dup = suggestedDuplicates();
-  if (ds.merge != null) { snapshot('merge orders'); const [a, b] = dup[+ds.merge]; mergeOrderInto(a, b); resolveHouse(a); autoLink(a); }
+  if (ds.merge != null) { snapshot('merge orders'); const [a, b] = dup[+ds.merge]; mergeOrderInto(a, b); autoLink(a); resolveHouse(a); }
   else if (ds.notdup != null) { dup[+ds.notdup][1].orderNumber = dup[+ds.notdup][1].orderNumber || ''; dup[+ds.notdup][1].notDupOf = dup[+ds.notdup][0].id; }
-  else if (d.id === 'mergeAll') { snapshot('merge orders'); dup.forEach(([a, b]) => { mergeOrderInto(a, b); resolveHouse(a); autoLink(a); }); }
+  else if (d.id === 'mergeAll') { snapshot('merge orders'); dup.forEach(([a, b]) => { mergeOrderInto(a, b); autoLink(a); resolveHouse(a); }); }
   else if (ds.keep) { const o = state.orders.find(x => x.id === ds.keep); if (o) o.keepAnyway = true; }
   else if (ds.del) { snapshot('remove order'); state.orders = state.orders.filter(x => x.id !== ds.del); }
   else if (d.id === 'delJunk') { if (!confirm('Remove all of these?')) return; snapshot('remove non-orders'); state.orders = state.orders.filter(o => !isSuspicious(o)); }
@@ -169,37 +175,52 @@ function normEmail(e) {
 }
 const lc = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 // Score every profile against what the order emails told us; link only to a clear winner.
+// Each profile's matching details, worked out once and reused (fast even with thousands of orders × profiles).
+const PSIG = new WeakMap();
+function profSig(p) {
+  const stamp = [p.email, p.shipAddr1, p.shipAddr2, p.shipZip, p.shipFirst, p.shipLast, p.shipName, p.cardNumber, p.shipCity].join('\u0001');
+  let c = PSIG.get(p); if (c && c.stamp === stamp) return c;
+  const nm = String(p.shipName || '').trim().split(/\s+/);
+  c = { stamp, email: normEmail(p.email), house: Parser.houseKey(p.shipAddr1, p.shipZip), unit: Parser.unitKey(p.shipAddr1, p.shipAddr2, p.shipZip),
+    first: lc(p.shipFirst || nm[0]), last: lc(p.shipLast || nm.slice(1).join('')), card: String(p.cardNumber || '').replace(/\D/g, ''), zip: Parser.zip5(p.shipZip), city: lc(p.shipCity) };
+  PSIG.set(p, c); return c;
+}
 function linkScore(p, o, sig) {
-  let sc = 0; const how = [];
-  if (sig.email && normEmail(p.email) === sig.email) { sc += 4; how.push('email'); }
-  const pHouse = Parser.houseKey(p.shipAddr1, p.shipZip);
-  if (sig.house && pHouse === sig.house) {
-    sc += 3; how.push('address');
-    if (sig.unit && Parser.unitKey(p.shipAddr1, p.shipAddr2, p.shipZip) === sig.unit) sc += 2;
-  } else if (sig.house && pHouse) sc -= 3; // shipped somewhere else
-  const first = lc(p.shipFirst || String(p.shipName || '').split(' ')[0]), last = lc(p.shipLast || String(p.shipName || '').split(' ').slice(1).join(''));
-  if (sig.first && sig.last && first === sig.first && last === sig.last) { sc += 4; how.push('name'); }
+  const q = profSig(p); let sc = 0; const how = [];
+  if (sig.email && q.email === sig.email) { sc += 4; how.push('email'); }
+  if (sig.house && q.house === sig.house) { sc += 3; how.push('address'); if (sig.unit && q.unit === sig.unit) sc += 2; }
+  else if (sig.house && q.house) sc -= 3; // shipped somewhere else
+  if (sig.first && sig.last && q.first === sig.first && q.last === sig.last) { sc += 4; how.push('name'); }
   else {
-    if (sig.last && last) sc += last === sig.last ? 2 : -2;
-    if (sig.first && first) { if (first === sig.first) { sc += 2; how.push('name'); } else sc -= 2; }
+    if (sig.last && q.last) sc += q.last === sig.last ? 2 : -2;
+    if (sig.first && q.first) { if (q.first === sig.first) { sc += 2; how.push('name'); } else sc -= 2; }
   }
-  if (sig.last4 && String(p.cardNumber || '').replace(/\D/g, '').endsWith(sig.last4)) { sc += 4; how.push('card'); }
-  if (sig.zip && Parser.zip5(p.shipZip) === sig.zip) sc += 1;
-  if (sig.city && p.shipCity) sc += lc(p.shipCity) === sig.city ? 2 : -2;
+  if (sig.last4 && q.card.endsWith(sig.last4)) { sc += 4; how.push('card'); }
+  if (sig.zip && q.zip === sig.zip) sc += 1;
+  if (sig.city && q.city) sc += q.city === sig.city ? 2 : -2;
   return { sc, how };
 }
-function autoLink(o) {
+// Index profiles by the things orders are matched on, so each order is only scored against real candidates.
+function buildLinkIndex() {
+  const ix = { email: new Map(), house: new Map(), card: new Map(), last: new Map(), first: new Map() };
+  const put = (m, k, p) => { if (!k) return; let a = m.get(k); if (!a) m.set(k, a = []); a.push(p); };
+  for (const p of state.profiles) { const q = profSig(p); put(ix.email, q.email, p); put(ix.house, q.house, p); put(ix.card, q.card.slice(-4), p); put(ix.last, q.last, p); put(ix.first, q.first, p); }
+  return ix;
+}
+function autoLink(o, ix) {
   if (o.profileLink === 'manual' && profileById(o.profileId)) return;
+  ix = ix || buildLinkIndex();
   const parts = String(o.name || '').trim().split(/\s+/).filter(Boolean);
   const sig = {
     email: o.recipientEmail ? normEmail(o.recipientEmail) : '', house: Parser.houseKey(o.addr1, o.zip), unit: o.addr1 ? Parser.unitKey(o.addr1, o.addr2, o.zip) : '',
     first: lc(parts[0]), last: parts.length > 1 ? lc(parts[parts.length - 1]) : '', last4: o.last4 || '', zip: Parser.zip5(o.zip), city: lc(o.city),
   };
   // an email address shared by lots of profiles (one main inbox) says nothing on its own
-  if (sig.email && state.profiles.filter(p => normEmail(p.email) === sig.email).length > 3) sig.email = '';
+  if (sig.email && (ix.email.get(sig.email) || []).length > 3) sig.email = '';
+  const cands = new Set([].concat(ix.email.get(sig.email) || [], ix.house.get(sig.house) || [], ix.card.get(sig.last4) || [], ix.last.get(sig.last) || [], sig.last ? [] : (ix.first.get(sig.first) || [])));
   let best = null, second = 0;
-  for (const p of state.profiles) {
-    const r = linkScore(p, o, sig); if (!r.sc) continue;
+  for (const p of cands) {
+    const r = linkScore(p, o, sig); if (r.sc <= 0) continue;
     if (!best || r.sc > best.sc) { second = best ? best.sc : 0; best = { p, sc: r.sc, how: r.how }; } else if (r.sc > second) second = r.sc;
   }
   if (best && best.sc >= 4 && best.sc > second) {
@@ -207,7 +228,7 @@ function autoLink(o) {
   } else if (o.profileLink && o.profileLink !== 'manual') { o.profileId = ''; o.profileLink = ''; }
   else if (o.profileLink === 'manual' && !profileById(o.profileId)) { o.profileId = ''; o.profileLink = ''; }
 }
-function autoLinkAll() { state.orders.forEach(autoLink); if (typeof invalidateStats === 'function') invalidateStats(); }
+function autoLinkAll() { const ix = buildLinkIndex(); state.orders.forEach(o => { autoLink(o, ix); resolveHouse(o); }); if (typeof pruneHouses === 'function') pruneHouses(); if (typeof invalidateStats === 'function') invalidateStats(); }
 const LINK_LABEL = { email: 'matched by email', address: 'matched by address', card: 'matched by card', name: 'matched by name & town', manual: 'linked by you', bot: 'from bot checkout' };
 
 /* ---------- email ingestion ---------- */
@@ -224,6 +245,14 @@ function mergeItems(o, items, authoritative) {
     const k = itemKey(n.name); const have = o.items.find(i => itemKey(i.name) === k || (k.length >= 12 && (itemKey(i.name).startsWith(k.slice(0, 16)) || k.startsWith(itemKey(i.name).slice(0, 16)))));
     if (have) { if (!have.image && n.image) have.image = n.image; if (have.price == null && n.price != null) have.price = n.price; if (authoritative && n.qty) have.qty = n.qty; }
     else if (authoritative || o.items.every(i => i.price == null)) o.items.push(Object.assign({}, n));
+  }
+}
+// Some stores (Pokémon Center) send no pictures - borrow one from another order of the same product.
+function fillImages(o) {
+  const missing = (o.items || []).filter(i => !i.image); if (!missing.length) return;
+  for (const it of missing) {
+    const k = itemKey(it.name); if (k.length < 10) continue;
+    for (const x of state.orders) { if (x === o) continue; const hit = (x.items || []).find(i => i.image && itemKey(i.name) === k); if (hit) { it.image = hit.image; break; } }
   }
 }
 function applyEmail(r, accountLabel, opts) {
@@ -273,7 +302,7 @@ function applyEmail(r, accountLabel, opts) {
     if (!o.deliveredAt || o.deliveredAt === o.eta || when < o.deliveredAt || !o.deliveredFromEmail) { o.deliveredAt = when; o.deliveredFromEmail = true; }
   }
   for (const t of r.tracking || []) if (!o.tracking.some(x => x.number === t.number)) o.tracking.push({ number: t.number, carrier: t.carrier });
-  resolveHouse(o); autoLink(o);
+  fillImages(o); autoLink(o); resolveHouse(o);
   o.updatedAt = Date.now();
   return { order: o, created, changed: created || before !== o.status || beforeEta !== o.eta, from: before };
 }
@@ -395,7 +424,7 @@ PAGES.orders = {
     pg.querySelector('tbody').onclick = e => { const cb = e.target.dataset.ocb; if (cb) { e.target.checked ? oSelected.add(cb) : oSelected.delete(cb); rr(); return; } if (e.target.closest('a')) return; const tr = e.target.closest('tr'); if (tr) openOrder(tr.dataset.oid); };
     if ($('#oClear')) $('#oClear').onclick = () => { oSelected.clear(); rr(); };
     if ($('#oSetStatus')) $('#oSetStatus').onchange = e => { const s = e.target.value; if (!s) return; snapshot('set status'); state.orders.forEach(o => { if (oSelected.has(o.id) && o.status !== s) { setStatus(o, s, null, 'manual'); o.updatedAt = Date.now(); } }); save(); refresh(); toast(`Marked ${plural(oSelected.size, 'order')} ${STATUS[s].l.toLowerCase()}`, { undo: true }); };
-    if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } }); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
+    if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } resolveHouse(o); }); pruneHouses(); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
     if ($('#oDel')) $('#oDel').onclick = () => { const n = oSelected.size; if (!confirm(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
     $('#oAdd').onclick = () => openOrder(null);
     if ($('#oClean')) $('#oClean').onclick = openCleanup;
@@ -438,7 +467,7 @@ function renderOrderDlg() {
         <div class="k">${o.status === 'delivered' ? 'Delivered' : 'Arrives'}</div><div>${o.status === 'delivered' ? fmtDate(o.deliveredAt || o.eta, { weekday: true }) : o.eta ? fmtDate(o.eta, { weekday: true }) + ` <span class="faint">${relDay(o.eta)}</span>` : '—'}</div>
         <div class="k">Profile</div><div><select id="ovProf"><option value="">— Not linked —</option>${state.profiles.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })).map(x => `<option value="${x.id}" ${x.id === o.profileId ? 'selected' : ''}>${esc(x.name || 'Untitled')}</option>`).join('')}</select>
           <div class="small faint" style="margin-top:3px">${o.profileId ? esc(LINK_LABEL[o.profileLink] || '') : 'Pick the profile that checked this out.'}${o.profileLink === 'manual' ? ' · <button class="linkbtn" id="ovAuto">auto-match instead</button>' : ''}</div></div>
-        <div class="k">House</div><div>${h ? `<a href="#houses/${h.id}" data-closeorder>${esc(houseLabel(h))}</a>` : '<span class="faint">No address yet</span>'}</div>
+        <div class="k">House</div><div>${h ? `<a href="#houses/${h.id}" data-closeorder>${esc(houseLabel(h))}</a>${o.houseVia === 'profile' ? ' <span class="faint small">(from the linked profile)</span>' : ''}` : '<span class="faint">No address yet</span>'}</div>
         <div class="k">Ship to</div><div>${esc(o.name || '')}${o.name ? '<br>' : ''}${esc(orderAddr(o)) || '<span class="faint">—</span>'}</div>
         <div class="k">Sent to</div><div>${esc(o.recipientEmail || '—')}</div>
         <div class="k">Card</div><div>${o.last4 ? '•••• ' + esc(o.last4) : '—'}</div>
@@ -454,8 +483,8 @@ function renderOrderDlg() {
       <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${(STATUS[hh.status] || STATUS.placed).c}"><div><b>${esc((STATUS[hh.status] || {}).l || hh.status)}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
     </div></div>`;
     $('#ovStatus').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('change status'); setStatus(real, e.target.value, null, 'manual'); real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
-    $('#ovProf').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('link profile'); real.profileId = e.target.value; real.profileLink = e.target.value ? 'manual' : ''; if (!e.target.value) autoLink(real); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
-    if ($('#ovAuto')) $('#ovAuto').onclick = () => { const real = state.orders.find(x => x.id === o.id); real.profileLink = ''; real.profileId = ''; autoLink(real); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
+    $('#ovProf').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('link profile'); real.profileId = e.target.value; real.profileLink = e.target.value ? 'manual' : ''; if (!e.target.value) autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
+    if ($('#ovAuto')) $('#ovAuto').onclick = () => { const real = state.orders.find(x => x.id === o.id); real.profileLink = ''; real.profileId = ''; autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
     $('#ovNotes').onchange = e => { const real = state.orders.find(x => x.id === o.id); real.notes = e.target.value; curOrder.notes = real.notes; save(); };
     $$('#ordBody [data-live]').forEach(btn => btn.onclick = () => liveTrack(o.id, +btn.dataset.live, btn));
     $$('#ordBody [data-closeorder]').forEach(a => a.onclick = () => closeDlg('dlgOrder'));
@@ -517,7 +546,7 @@ $('#ordSave').onclick = () => {
   real.tracking = nums.map(n => real.tracking.find(t => t.number === n) || { number: n, carrier: Parser.detectCarrier(n) });
   const st = g('oeStatus'); if (st !== real.status || ordIsNew) setStatus(real, st, ordIsNew ? real.orderDate : null, 'manual');
   if (ordIsNew) state.orders.push(real);
-  resolveHouse(real); autoLink(real); pruneHouses(); invalidateStats();
+  autoLink(real); resolveHouse(real); pruneHouses(); invalidateStats();
   save(); refresh(); toast(ordIsNew ? 'Order added' : 'Order saved', { undo: true });
   ordIsNew = false; curOrder = JSON.parse(JSON.stringify(real)); ordTab = 'overview'; renderOrderDlg();
 };
@@ -581,7 +610,7 @@ $('#oimpGo').onclick = () => {
     const p = profileByName(v.profile); if (p) { o.profileId = p.id; o.profileLink = 'manual'; }
     o.updatedAt = Date.now();
     if (isNew) { state.orders.push(o); added++; } else updated++;
-    resolveHouse(o); autoLink(o);
+    autoLink(o); resolveHouse(o);
   }
   invalidateStats(); closeDlg('dlgOrderImport'); save(); refresh(); toast(`Imported ${plural(added, 'new order')}${updated ? `, updated ${updated}` : ''}`, { undo: true });
 };
@@ -635,7 +664,7 @@ $('#botGo').onclick = () => {
     if (r.store !== 'other' && o.store === 'other') o.store = r.store;
     if (r.email && !o.recipientEmail) o.recipientEmail = r.email.toLowerCase();
     if (r.profile) { o.profileId = r.profile.id; o.profileLink = 'manual'; if (!o.addr1 && r.profile.shipAddr1) { Object.assign(o, { name: shipName(r.profile), addr1: r.profile.shipAddr1, addr2: r.profile.shipAddr2, city: r.profile.shipCity, state: r.profile.shipState, zip: r.profile.shipZip }); } }
-    o.updatedAt = Date.now(); resolveHouse(o); autoLink(o);
+    o.updatedAt = Date.now(); autoLink(o); resolveHouse(o);
   }
   invalidateStats(); closeDlg('dlgBot'); save(); refresh(); toast(`Added ${plural(added, 'order')}${linked ? `, linked ${linked} existing` : ''}`, { undo: true });
 };

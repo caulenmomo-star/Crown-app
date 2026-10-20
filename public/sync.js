@@ -184,7 +184,7 @@ function onUnlocked() {
       const days = Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60);
       await syncAll(false, null, { days: Math.min(days, 180), fresh: true, reapply: true, full: true });
       if (!cryptoKey) return;
-      state.readerVer = READER_VER; regroupHouses(); autoLinkAll(); pruneHouses(); invalidateStats(); save(); refresh();
+      state.readerVer = READER_VER; regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); pruneHouses(); invalidateStats(); save(); refresh();
       toast('Re-read finished — orders updated');
     }, 3000);
     else if (!accs.length) state.readerVer = READER_VER;

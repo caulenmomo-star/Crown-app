@@ -2,6 +2,15 @@
 
 Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.4.1 — Second pass (2026-10-20)
+
+- Walmart “Shipped:”, “Arrived:” and “Canceled:” emails and Pokémon Center confirmations are now read correctly, all tested against your real emails.
+- Orders whose emails have no street address (Amazon, PlayStation, cancellations) go into the house of the profile they’re linked to.
+- Stores that send no pictures (Pokémon Center) borrow the picture from another order of the same product.
+- Profile matching is about 18× faster with big lists, and details that don’t match now count against a profile.
+- After an update, an old open Crown tab can no longer save over your data. It shows a Reload button instead.
+- Editing an order keeps its item pictures and doesn’t lock the total unless you changed it.
+
 ## v0.4.0 — Real-email reader (2026-10-20)
 
 - Rebuilt the email reader against real Target, Walmart, Best Buy, Amazon, Pokémon Center and PlayStation Direct emails.
