@@ -1,0 +1,506 @@
+/* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
+'use strict';
+const VERSION = '2.0.0';
+const $ = (s, el) => (el || document).querySelector(s);
+const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+const sum = (arr, f) => arr.reduce((a, x) => a + (Number(f ? f(x) : x) || 0), 0);
+const rint = (a, b) => { a = Math.ceil(a); b = Math.floor(b); if (b < a) [a, b] = [b, a]; return a + Math.floor(Math.random() * (b - a + 1)); };
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const plural = (n, w, p) => n + ' ' + (n === 1 ? w : (p || w + 's'));
+const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+
+/* ---------- money & dates ---------- */
+const USD = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const USD0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+const fmtMoney = (n, whole) => (n == null || n === '' || !Number.isFinite(Number(n))) ? '—' : (whole && Math.abs(n) >= 1000 ? USD0 : USD).format(Number(n));
+const pad2 = n => String(n).padStart(2, '0');
+const dayKey = d => { d = d instanceof Date ? d : new Date(d); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); };
+const parseDay = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; };
+const todayKey = () => dayKey(new Date());
+const toDate = v => { if (!v) return null; if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return parseDay(v); const d = new Date(v); return Number.isNaN(d.getTime()) ? null : d; };
+function fmtDate(v, opt) { const d = toDate(v); if (!d) return '—'; const sameYear = d.getFullYear() === new Date().getFullYear(); return d.toLocaleDateString('en-US', Object.assign({ month: 'short', day: 'numeric' }, sameYear && !(opt && opt.year) ? {} : { year: 'numeric' }, opt && opt.weekday ? { weekday: 'short' } : {})); }
+function fmtDT(v) { const d = toDate(v); if (!d) return '—'; return fmtDate(d) + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); }
+function relDay(v) {
+  const d = toDate(v); if (!d) return '';
+  const a = parseDay(dayKey(d)), b = parseDay(todayKey()); const diff = Math.round((a - b) / 864e5);
+  if (diff === 0) return 'today'; if (diff === 1) return 'tomorrow'; if (diff === -1) return 'yesterday';
+  return diff > 0 ? 'in ' + diff + ' days' : Math.abs(diff) + ' days ago';
+}
+function ago(ms) { if (!ms) return 'never'; const s = Math.round((Date.now() - ms) / 1000); if (s < 60) return 'just now'; if (s < 3600) return Math.round(s / 60) + 'm ago'; if (s < 86400) return Math.round(s / 3600) + 'h ago'; return Math.round(s / 86400) + 'd ago'; }
+
+/* ---------- statuses ---------- */
+const STATUSES = [
+  { k: 'placed', l: 'Placed', c: '#8b93a3', r: 1 },
+  { k: 'confirmed', l: 'Confirmed', c: '#7c8cff', r: 2 },
+  { k: 'shipped', l: 'Shipped', c: '#f5a524', r: 3 },
+  { k: 'ready', l: 'Ready for pickup', c: '#22c3c3', r: 3 },
+  { k: 'delivered', l: 'Delivered', c: '#3ecf8e', r: 4 },
+  { k: 'cancelled', l: 'Cancelled', c: '#ef5b5b', r: 5 },
+  { k: 'refunded', l: 'Refunded', c: '#b07cff', r: 5 },
+];
+const STATUS = Object.fromEntries(STATUSES.map(s => [s.k, s]));
+const statusBadge = k => { const s = STATUS[k] || STATUS.placed; return `<span class="badge"><i style="background:${s.c}"></i>${esc(s.l)}</span>`; };
+const storeBadge = k => { const s = Parser.storeInfo(k); return `<span class="badge"><i style="background:${s.color}"></i>${esc(s.label)}</span>`; };
+const isDead = o => o.status === 'cancelled' || o.status === 'refunded';
+const isActive = o => ['placed', 'confirmed', 'shipped', 'ready'].includes(o.status);
+const orderSpend = o => isDead(o) ? 0 : (Number(o.total) || sum(o.items || [], i => (Number(i.price) || 0) * (Number(i.qty) || 1)));
+
+/* ---------- state ---------- */
+const DEFAULT_SETTINGS = { autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', firstLookback: 60, trackedStores: [] };
+function blankState() {
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+}
+function migrate(s) {
+  s = s && typeof s === 'object' ? s : {};
+  const b = blankState();
+  for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
+  if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
+  s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
+  s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
+  s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
+  s.v = 2;
+  return s;
+}
+let state = blankState();
+let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
+let CLOUD = false, cloudInfo = {}, authKey = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
+
+/* ---------- server API ---------- */
+async function api(path, body, method) {
+  let res;
+  const headers = { 'X-Crown': '1' };
+  if (body) headers['Content-Type'] = 'application/json';
+  if (CLOUD && authKey) headers['X-Crown-Auth'] = authKey;
+  try {
+    res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Online — check your internet connection.' : 'Crown’s helper isn’t running. Open Crown with “Start Crown.command”.'); }
+  let j = null; try { j = await res.json(); } catch (_) { }
+  if (!res.ok || !j || j.ok === false) { const err = new Error((j && j.error) || ('Request failed (' + res.status + ')')); err.data = j || {}; throw err; }
+  return j;
+}
+
+/* ---------- crypto ---------- */
+const enc = new TextEncoder(), dec = new TextDecoder();
+function b64e(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
+function b64d(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+// One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Crown / Profile Manager
+// vaults), the last 32 are an access key that proves the password to Crown Online without revealing it.
+async function deriveKeys(pw, saltBytes) {
+  const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 250000, hash: 'SHA-256' }, base, 512));
+  const key = await crypto.subtle.importKey('raw', bits.slice(0, 32), { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+  return { key, auth: b64e(bits.slice(32)) };
+}
+async function deriveKey(pw, saltBytes) { return (await deriveKeys(pw, saltBytes)).key; }
+const canZip = typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+async function pipeBytes(bytes, stream) { return new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(stream)).arrayBuffer()); }
+async function encryptJSON(k, s, json) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  let pt = enc.encode(json), z = 0;
+  if (canZip) { pt = await pipeBytes(pt, new CompressionStream('gzip')); z = 1; }
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, k, pt);
+  return Object.assign({ app: 'crown', v: 2, salt: b64e(s), iv: b64e(iv), ct: b64e(ct), savedAt: Date.now() }, z ? { z: 1 } : {});
+}
+async function encryptState(k, s) { return encryptJSON(k, s, JSON.stringify(state)); }
+async function decryptWithKey(blob, k) {
+  let pt = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64d(blob.iv) }, k, b64d(blob.ct)));
+  if (blob.z) {
+    if (!canZip) throw new Error('This browser is too old to open this data. Update your browser.');
+    pt = await pipeBytes(pt, new DecompressionStream('gzip'));
+  }
+  return JSON.parse(dec.decode(pt));
+}
+async function decryptBlob(blob, pw) {
+  const s = b64d(blob.salt); const ks = await deriveKeys(pw, s);
+  const data = await decryptWithKey(blob, ks.key);
+  return { key: ks.key, auth: ks.auth, salt: s, data };
+}
+
+/* ---------- local + disk storage ---------- */
+const LS_KEY = 'crown.vault.v2';
+function readLocal() { if (CLOUD) return null; try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null; } catch (_) { return null; } }
+function writeLocal(blob) { if (CLOUD) return true; try { localStorage.setItem(LS_KEY, JSON.stringify(blob)); return true; } catch (_) { return false; } }
+const validBlob = b => !!(b && !b.erased && typeof b.salt === 'string' && typeof b.iv === 'string' && typeof b.ct === 'string');
+let saveTimer = null, saving = false, pendingSave = false, lastSaveOk = true;
+function save() { pendingSave = true; setSaveStat('busy', 'Saving…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, CLOUD ? 700 : 400); }
+async function saveNow(opts) {
+  clearTimeout(saveTimer);
+  if (!cryptoKey) return;
+  if (saving) { saveTimer = setTimeout(saveNow, 300); return; }
+  if (CLOUD && typeof syncing !== 'undefined' && syncing && !(opts && opts.force)) { pendingSave = true; return; } // saved when the email sync finishes
+  saving = true; pendingSave = false;
+  try {
+    if (CLOUD) await cloudSave(opts);
+    else {
+      const blob = await encryptState(cryptoKey, salt);
+      vaultBlob = blob;
+      const localOk = writeLocal(blob);
+      let diskOk = !SERVER;
+      if (SERVER) { try { await api('/api/vault', blob, 'PUT'); diskOk = true; } catch (e) { diskOk = false; } }
+      lastSaveOk = localOk && diskOk;
+      if (lastSaveOk) setSaveStat('ok', 'Saved ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Crown’s window open?');
+      else setSaveStat('warn', 'Saved to disk only (browser storage full)');
+    }
+  } catch (e) { lastSaveOk = false; pendingSave = true; setSaveStat('bad', 'Not saved: ' + e.message); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 15000); }
+  finally { saving = false; }
+}
+
+/* ---------- Crown Online: saving, pulling and merging between devices ---------- */
+async function cloudSave(opts) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const json = JSON.stringify(state);
+    const blob = await encryptJSON(cryptoKey, salt, json);
+    try {
+      const body = { vault: blob, baseRev: rev };
+      if (opts && opts.newAuthKey) body.newAuthKey = opts.newAuthKey;
+      const r = await api('/api/vault', body, 'PUT');
+      rev = r.rev; baseJSON = json; vaultBlob = blob; lastSaveOk = true;
+      if (opts && opts.newAuthKey) authKey = opts.newAuthKey;
+      setSaveStat('ok', 'Saved ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+      return;
+    } catch (e) {
+      if (e.data && e.data.auth) { lock('Your password was changed on another device. Unlock with the new password.'); throw e; }
+      if (!(e.data && e.data.conflict)) throw e;
+      await pullAndMerge(true); // someone else saved first: fold their changes in, then try again
+      if (!cryptoKey) return;
+    }
+  }
+  throw new Error('Too many changes at once from other devices — will retry.');
+}
+let pulling = false;
+async function pullAndMerge(fromSave) {
+  if (!CLOUD || !cryptoKey || pulling) return false;
+  pulling = true;
+  try {
+    const r = await api('/api/vault');
+    if (!r.vault) return false;
+    let remote;
+    try { remote = await decryptWithKey(r.vault, cryptoKey); }
+    catch (_) { lock('Your password was changed on another device. Unlock with the new password.'); return false; }
+    const localJSON = JSON.stringify(state);
+    const hasLocal = baseJSON !== null && localJSON !== baseJSON;
+    const merged = hasLocal ? mergeStates(JSON.parse(baseJSON), state, remote) : remote;
+    state = migrate(merged); dedupeAfterMerge();
+    rev = r.rev; baseJSON = JSON.stringify(remote);
+    if (JSON.stringify(state) !== baseJSON && !fromSave) save();
+    if (typeof invalidateStats === 'function') invalidateStats();
+    if (typeof softRefresh === 'function') softRefresh(); else refresh();
+    return true;
+  } finally { pulling = false; }
+}
+async function pollRemote() {
+  if (!CLOUD || !cryptoKey || saving || pendingSave || pulling || document.visibilityState === 'hidden') return;
+  if (typeof syncing !== 'undefined' && syncing) return;
+  try { const r = await api('/api/rev'); if (r.rev !== rev) await pullAndMerge(); }
+  catch (e) { if (e.data && e.data.auth) lock('Your password was changed on another device. Unlock with the new password.'); }
+}
+setInterval(pollRemote, 30000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollRemote(); });
+
+// Three-way merge: base = last version both sides agreed on. Records are matched by id;
+// whichever side changed a record wins (newest edit if both did); deletes on either side stick.
+function mergeStates(base, local, remote) {
+  const J = x => JSON.stringify(x);
+  const out = Object.assign({}, remote);
+  for (const k of ['categories', 'profiles', 'orders', 'houses', 'imapAccounts']) {
+    const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
+    const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
+    const list = [];
+    for (const x of r) {
+      const bx = bm.get(x.id), lx = lm.get(x.id);
+      if (!lx) { if (bx && J(x) === J(bx)) continue; list.push(x); continue; }
+      if (J(lx) === J(bx)) list.push(x);
+      else if (J(x) === J(bx)) list.push(lx);
+      else list.push((lx.updatedAt || 0) >= (x.updatedAt || 0) ? lx : x);
+    }
+    for (const x of l) if (!rm.has(x.id)) { const bx = bm.get(x.id); if (bx && J(x) === J(bx)) continue; list.push(x); }
+    out[k] = list;
+  }
+  out.settings = Object.assign({}, remote.settings || {});
+  for (const k of Object.keys(local.settings || {})) if (J(local.settings[k]) !== J((base.settings || {})[k])) out.settings[k] = local.settings[k];
+  const seen = new Set(); out.seenIds = [];
+  for (const id of [].concat(remote.seenIds || [], local.seenIds || [])) if (!seen.has(id)) { seen.add(id); out.seenIds.push(id); }
+  if (out.seenIds.length > 40000) out.seenIds = out.seenIds.slice(-40000);
+  const um = new Map(); for (const u of [].concat(remote.unparsed || [], local.unparsed || [])) if (!um.has(u.messageId)) um.set(u.messageId, u);
+  out.unparsed = J(local.unparsed) === J(base.unparsed) ? (remote.unparsed || []) : (J(remote.unparsed) === J(base.unparsed) ? (local.unparsed || []) : [...um.values()].slice(0, 200));
+  const lg = new Map(); for (const x of [].concat(remote.syncLog || [], local.syncLog || [])) lg.set(x.at + '|' + x.label, x);
+  out.syncLog = [...lg.values()].sort((a, b) => b.at - a.at).slice(0, 60);
+  return out;
+}
+// Two devices syncing the same inbox at once can each create the same order - fold duplicates together.
+function dedupeAfterMerge() {
+  if (typeof Parser === 'undefined') return;
+  const byNo = new Map(), drop = new Set();
+  for (const o of state.orders) {
+    const k = Parser.normOrderNo(o.orderNumber); if (!k) continue;
+    const key = k + '|' + (o.store || '');
+    const keep = byNo.get(key);
+    if (!keep) { byNo.set(key, o); continue; }
+    for (const m of o.messageIds || []) if (!keep.messageIds.includes(m)) keep.messageIds.push(m);
+    for (const e of o.emails || []) if (!keep.emails.some(x => x.messageId === e.messageId)) keep.emails.push(e);
+    for (const h of o.history || []) if (!keep.history.some(x => x.date === h.date && x.status === h.status)) keep.history.push(h);
+    keep.history.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (typeof STATUS !== 'undefined' && (STATUS[o.status] || {}).r > (STATUS[keep.status] || {}).r) keep.status = o.status;
+    for (const f of ['total', 'eta', 'deliveredAt', 'name', 'addr1', 'addr2', 'city', 'state', 'zip', 'recipientEmail', 'last4', 'profileId', 'profileLink', 'houseId', 'notes']) if ((keep[f] == null || keep[f] === '') && o[f]) keep[f] = o[f];
+    if (!keep.items.length && o.items.length) keep.items = o.items;
+    for (const t of o.tracking || []) if (!keep.tracking.some(x => x.number === t.number)) keep.tracking.push(t);
+    drop.add(o.id);
+  }
+  if (drop.size) state.orders = state.orders.filter(o => !drop.has(o.id));
+  const hk = new Map(), remap = new Map();
+  for (const h of state.houses) for (const k of h.keys || []) { if (hk.has(k) && hk.get(k) !== h) remap.set(h.id, hk.get(k)); else hk.set(k, h); }
+  if (remap.size) {
+    for (const [from, to] of remap) { const fh = state.houses.find(h => h.id === from); if (fh) { to.keys = Array.from(new Set([...(to.keys || []), ...(fh.keys || [])])); if (!to.nickname) to.nickname = fh.nickname; if (fh.notes && !to.notes) to.notes = fh.notes; } }
+    state.orders.forEach(o => { if (remap.has(o.houseId)) o.houseId = remap.get(o.houseId).id; });
+    state.houses = state.houses.filter(h => !remap.has(h.id));
+  }
+}
+function setSaveStat(kind, text) { const el = $('#saveStat'); if (el) el.innerHTML = `<span class="dot ${kind}"></span><span class="ellipsis">${esc(text)}</span>`; }
+window.addEventListener('beforeunload', e => { if (cryptoKey && (pendingSave || saving)) { saveNow({ force: true }); e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- undo (last action) ---------- */
+let lastUndo = null;
+function snapshot(label) { lastUndo = { label, json: JSON.stringify(state) }; }
+function undo() {
+  if (!lastUndo) return;
+  state = migrate(JSON.parse(lastUndo.json)); const l = lastUndo.label; lastUndo = null;
+  if (typeof selected !== 'undefined') selected.clear();
+  save(); refresh(); toast('Undid: ' + l);
+}
+function toast(msg, opts) {
+  const t = $('#toast'); $('#toastMsg').textContent = msg;
+  const b = $('#toastBtn'); b.hidden = !(opts && opts.undo && lastUndo);
+  b.onclick = () => { t.classList.remove('show'); undo(); };
+  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), opts && opts.undo ? 7000 : 2800);
+}
+function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
+
+/* ---------- CSV ---------- */
+function parseDelimited(text) {
+  text = String(text || '').replace(/\r\n?/g, '\n').replace(/^﻿/, '');
+  const first = text.split('\n')[0];
+  const d = first.includes('\t') ? '\t' : (first.split(';').length > first.split(',').length ? ';' : ',');
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"' && cell === '') q = true;
+    else if (c === d) { row.push(cell); cell = ''; }
+    else if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+const csvCell = v => { v = v == null ? '' : String(v); return /[",\n\r]/.test(v) || /^[=+\-@]/.test(v) && isNaN(Number(v)) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+const toCSV = (cols, rows) => [cols.join(','), ...rows.map(r => cols.map(c => csvCell(r[c])).join(','))].join('\n');
+const stamp = () => dayKey(new Date());
+
+/* ---------- dialogs ---------- */
+function openDlg(id) { const d = document.getElementById(id); if (!d.open) d.showModal(); return d; }
+function closeDlg(id) { const d = document.getElementById(id); if (d.open) d.close(); }
+document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
+document.addEventListener('mousedown', e => { if (e.target.tagName === 'DIALOG' && e.target.open) { const r = e.target.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.target._outside = true; } });
+document.addEventListener('mouseup', e => { if (e.target.tagName === 'DIALOG' && e.target._outside) { const r = e.target.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) e.target.close(); } $$('dialog').forEach(d => d._outside = false); });
+
+/* ---------- navigation ---------- */
+const ICONS = {
+  dashboard: '<path d="M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  profiles: '<circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 010 7M18 14.6c1.8.7 3 2.5 3.5 5.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  orders: '<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z M3.5 7.5L12 12l8.5-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  houses: '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  spending: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  inboxes: '<path d="M3 13l2.5-8h13L21 13v6H3z M3 13h5l1.5 2.5h5L16 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+};
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['houses', 'Houses'], ['calendar', 'Calendar'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
+const PAGES = {};
+let route = { page: 'dashboard', arg: '' };
+function go(page, arg) { const h = '#' + page + (arg ? '/' + arg : ''); if (location.hash !== h) location.hash = h; else applyRoute(); }
+function applyRoute() {
+  const [p, a] = (location.hash.slice(1) || 'dashboard').split('/');
+  route = { page: PAGES[p] ? p : 'dashboard', arg: a ? decodeURIComponent(a) : '' };
+  $$('#main > section.page').forEach(s => s.hidden = s.dataset.page !== route.page);
+  renderNav(); renderPage(); $('#main').scrollTop = 0;
+}
+window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
+function renderNav() {
+  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length };
+  $('#navlist').innerHTML = NAV.map(([k, l]) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
+}
+function renderPage() { try { PAGES[route.page].render(route.arg); } catch (e) { console.error(e); $('#pg-' + route.page).innerHTML = `<div class="note bad">Something went wrong showing this page: ${esc(e.message)}</div>`; } }
+function refresh() { if (!cryptoKey) return; renderNav(); renderPage(); }
+document.addEventListener('click', e => { const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); go(p, a); } });
+
+/* ---------- lock / unlock ---------- */
+const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('crown') : null;
+const TAB_ID = uid();
+if (bc) bc.onmessage = e => { if (e.data && e.data.type === 'unlocked' && e.data.tab !== TAB_ID && cryptoKey && !CLOUD) { lock('Crown was unlocked in another tab, so this tab locked itself to keep your data in sync.'); } };
+async function loadBlob() {
+  const local = readLocal(); let remote = null;
+  if (SERVER && !CLOUD) { try { remote = (await api('/api/vault')).vault; } catch (_) { } }
+  const cands = [remote, local].filter(validBlob);
+  cands.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  vaultBlob = cands[0] || null;
+  return cands;
+}
+function lockMode() { return CLOUD ? (pendingRestore ? 'restore' : cloudExists ? 'unlock' : 'create') : (vaultBlob ? 'unlock' : 'create'); }
+function renderLockUI() {
+  const mode = lockMode();
+  $('#pw2wrap').hidden = mode !== 'create';
+  $('#codeWrap').hidden = !(CLOUD && (mode === 'create' || mode === 'restore'));
+  $('#resetBtn').hidden = mode !== 'unlock';
+  $('#lockRestore').hidden = CLOUD && mode !== 'create';
+  $('#lockCancelRestore').hidden = mode !== 'restore';
+  $('#lockSub').textContent = mode === 'unlock' ? 'Enter your password to unlock.'
+    : mode === 'restore' ? 'Enter the password this backup was made with' + (CLOUD ? ', plus your setup code.' : '.')
+      : CLOUD ? 'Welcome to Crown Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
+        : 'Create a password. Everything in Crown is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
+  $('#lockBtn').textContent = mode === 'unlock' ? 'Unlock' : mode === 'restore' ? 'Restore & open' : 'Create & open';
+  $('#lockBtn').disabled = false;
+}
+async function setupLock(msg) {
+  $('#app').hidden = true; $('#lock').hidden = false;
+  $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = msg || '';
+  if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update Safari or Chrome.' : 'This browser can’t encrypt here. Open Crown in Chrome or Safari using Start Crown.command.'; return; }
+  if (CLOUD) {
+    try { const s = await api('/api/salt'); cloudExists = !!s.exists; }
+    catch (e) { $('#lockSub').textContent = e.message; $('#lockBtn').disabled = true; return; }
+  } else await loadBlob();
+  renderLockUI();
+  setTimeout(() => { if (!/(iPad|iPhone)/.test(navigator.userAgent)) $('#pw1').focus(); }, 60);
+}
+async function doUnlock() {
+  const pw = $('#pw1').value; $('#lockErr').textContent = '';
+  const mode = lockMode();
+  if (!pw) { $('#lockErr').textContent = 'Enter your password.'; return; }
+  const code = ($('#setupCode').value || '').trim();
+  if (CLOUD && (mode === 'create' || mode === 'restore') && !code) { $('#lockErr').textContent = 'Enter your setup code.'; return; }
+  $('#lockBtn').disabled = true; $('#lockBtn').textContent = mode === 'unlock' ? 'Unlocking…' : mode === 'restore' ? 'Restoring…' : 'Creating…';
+  try {
+    if (mode === 'restore') {
+      let out; try { out = await decryptBlob(pendingRestore, pw); } catch (_) { throw new Error('That password doesn’t open this backup.'); }
+      if (CLOUD) {
+        const blob = Object.assign({}, pendingRestore, { savedAt: Date.now() });
+        await api('/api/setup', { code, authKey: out.auth, vault: blob });
+        authKey = out.auth; rev = 1; baseJSON = JSON.stringify(out.data);
+      }
+      cryptoKey = out.key; salt = out.salt; state = migrate(out.data); pendingRestore = null; cloudExists = true;
+      if (CLOUD) baseJSON = JSON.stringify(state); else await saveNow();
+    } else if (mode === 'create') {
+      if (pw.length < 6) throw new Error('Use at least 6 characters.');
+      if (pw !== $('#pw2').value) throw new Error('Passwords don’t match.');
+      salt = crypto.getRandomValues(new Uint8Array(16)); const ks = await deriveKeys(pw, salt);
+      state = blankState();
+      if (CLOUD) {
+        const json = JSON.stringify(state); const blob = await encryptJSON(ks.key, salt, json);
+        const r = await api('/api/setup', { code, authKey: ks.auth, vault: blob });
+        authKey = ks.auth; rev = r.rev; baseJSON = json; cloudExists = true; cryptoKey = ks.key;
+      } else { cryptoKey = ks.key; await saveNow(); }
+    } else if (CLOUD) {
+      const s = await api('/api/salt'); if (!s.exists) { cloudExists = false; renderLockUI(); throw new Error('Crown Online has no data yet — set it up first.'); }
+      salt = b64d(s.salt); const ks = await deriveKeys(pw, salt);
+      authKey = ks.auth;
+      let r; try { r = await api('/api/vault'); } catch (e) { authKey = null; throw e; }
+      let data; try { data = await decryptWithKey(r.vault, ks.key); } catch (_) { authKey = null; throw new Error('Wrong password.'); }
+      cryptoKey = ks.key; salt = b64d(r.vault.salt); state = migrate(data); rev = r.rev; baseJSON = JSON.stringify(data);
+    } else {
+      const cands = await loadBlob(); let out = null;
+      for (const c of cands) { try { out = await decryptBlob(c, pw); break; } catch (_) { } }
+      if (!out) throw new Error('Wrong password.');
+      cryptoKey = out.key; salt = out.salt; state = migrate(out.data);
+      if (cands[0] && out && cands.length > 1) save(); // re-sync both copies
+    }
+    if (bc) bc.postMessage({ type: 'unlocked', tab: TAB_ID });
+    $('#setupCode').value = '';
+    $('#lock').hidden = true; $('#app').hidden = false; $('#noServerBanner').hidden = SERVER;
+    lastActivity = Date.now(); applyRoute(); if (typeof onUnlocked === 'function') onUnlocked();
+  } catch (e) { cryptoKey = null; if (CLOUD && mode !== 'unlock') authKey = null; $('#lockErr').textContent = e.message; }
+  finally { renderLockUI(); }
+}
+async function lock(msg) {
+  if (cryptoKey && (pendingSave || saving)) { try { await saveNow({ force: true }); } catch (_) { } }
+  cryptoKey = null; authKey = null; baseJSON = null; rev = 0; state = blankState(); lastUndo = null;
+  if (typeof selected !== 'undefined') selected.clear();
+  $$('dialog').forEach(d => d.open && d.close());
+  if (typeof onLocked === 'function') onLocked();
+  setupLock(msg);
+}
+let lastActivity = Date.now();
+['mousemove', 'keydown', 'mousedown', 'wheel', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+setInterval(() => { const m = state.settings && state.settings.autoLockMin; if (cryptoKey && m && Date.now() - lastActivity > m * 60000) lock('Locked after ' + m + ' minutes of inactivity.'); }, 20000);
+
+function askPassword(title, text) {
+  return new Promise(resolve => {
+    $('#apTitle').textContent = title; $('#apText').textContent = text; $('#apPw').value = ''; $('#apErr').textContent = '';
+    const d = openDlg('dlgAskPw'); setTimeout(() => $('#apPw').focus(), 50);
+    const done = v => { d.onclose = null; if (d.open) d.close(); resolve(v); };
+    $('#apGo').onclick = () => done($('#apPw').value);
+    $('#apPw').onkeydown = e => { if (e.key === 'Enter') done($('#apPw').value); };
+    d.onclose = () => resolve(null);
+  });
+}
+async function restoreFromBlob(blob) {
+  if (!validBlob(blob)) throw new Error('That file isn’t a Crown or Profile Manager backup.');
+  if (CLOUD && !cryptoKey) { pendingRestore = blob; $('#lockErr').textContent = ''; renderLockUI(); return true; }
+  if (!confirm('Replace everything currently in Crown with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
+  if (CLOUD) {
+    const pw = await askPassword('Restore backup', 'Enter the password this backup was made with.');
+    if (pw == null) return false;
+    let out; try { out = await decryptBlob(blob, pw); } catch (_) { throw new Error('That password doesn’t open this backup.'); }
+    await api('/api/restore', { vault: Object.assign({}, blob, { savedAt: Date.now() }), newAuthKey: out.auth });
+    cryptoKey = null; authKey = null; baseJSON = null; state = blankState();
+    await lock('Backup restored — unlock with the password it was made with.');
+    return true;
+  }
+  blob = Object.assign({}, blob, { savedAt: Date.now() });
+  writeLocal(blob);
+  if (SERVER) await api('/api/vault', blob, 'PUT');
+  cryptoKey = null; await setupLock('Backup restored — enter the password it was made with.');
+  return true;
+}
+
+/* ---------- boot ---------- */
+const Crown = {
+  async boot() {
+    $('#verLbl').textContent = 'v' + VERSION;
+    if (location.protocol.startsWith('http')) {
+      try { const p = await api('/api/ping'); SERVER = true; CLOUD = !!p.cloud; cloudInfo = p; } catch (_) { SERVER = false; }
+    }
+    document.documentElement.classList.toggle('cloud', CLOUD);
+    $('#lockBtn').onclick = doUnlock;
+    ['#pw1', '#pw2', '#setupCode'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); }));
+    $('#resetBtn').onclick = async () => {
+      if (CLOUD) {
+        const code = prompt('Forgot your password?\n\nThis permanently erases ALL Crown Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
+        if (!code) return;
+        if (!confirm('Last chance — erase everything in Crown Online?')) return;
+        try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Crown up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
+        return;
+      }
+      if (!confirm('This permanently erases ALL Crown data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
+      if (!confirm('Last chance — erase everything?')) return;
+      try { localStorage.removeItem(LS_KEY); } catch (_) { }
+      if (SERVER) { try { await api('/api/vault', { app: 'crown', v: 2, salt: 'x', iv: 'x', ct: 'x', erased: true, savedAt: Date.now() }, 'PUT'); } catch (_) { } }
+      vaultBlob = null; setupLock();
+    };
+    $('#lockRestore').onclick = () => $('#lockRestoreFile').click();
+    $('#lockCancelRestore').onclick = () => { pendingRestore = null; $('#lockErr').textContent = ''; renderLockUI(); };
+    $('#lockRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { $('#lockErr').textContent = err.message.includes('JSON') ? 'That file isn’t a Crown backup.' : err.message; } };
+    $('#lockNow').onclick = () => lock();
+    document.addEventListener('keydown', e => {
+      if (!cryptoKey) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && lastUndo) { e.preventDefault(); undo(); }
+      if (e.key === '/' && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !$$('dialog').some(d => d.open)) {
+        const s = route.page === 'profiles' ? $('#search') : $('#pg-' + route.page + ' input[data-search]'); if (s) { e.preventDefault(); s.focus(); }
+      }
+    });
+    await setupLock();
+  },
+};

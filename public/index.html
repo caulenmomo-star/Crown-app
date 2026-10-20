@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Crown">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Crown</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f5c451' d='M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ================= LOCK ================= -->
+<div id="lock" class="lock">
+  <div class="lockbox">
+    <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#f5c451" d="M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z"/><rect x="3" y="19.5" width="18" height="2" rx="1" fill="#f5c451"/></svg>Crown</div>
+    <div class="muted small" id="lockSub">Loading…</div>
+    <div class="field"><label for="pw1">Password</label><input type="password" id="pw1" autocomplete="current-password"></div>
+    <div class="field" id="pw2wrap" hidden><label for="pw2">Confirm password</label><input type="password" id="pw2" autocomplete="new-password"></div>
+    <div class="field" id="codeWrap" hidden><label for="setupCode">Setup code</label><input id="setupCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></div>
+    <button class="primary" id="lockBtn" disabled>Unlock</button>
+    <div class="err" id="lockErr"></div>
+    <div class="hstack" style="justify-content:space-between;margin-top:10px">
+      <button class="linkbtn" id="lockRestore">Restore a backup</button>
+      <button class="linkbtn" id="lockCancelRestore" hidden>Cancel restore</button>
+      <button class="linkbtn" id="resetBtn" hidden>Forgot password?</button>
+    </div>
+    <input type="file" id="lockRestoreFile" accept=".json" hidden>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" hidden>
+  <nav class="nav">
+    <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="#f5c451" d="M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z"/><rect x="3" y="19.5" width="18" height="2" rx="1" fill="#f5c451"/></svg>Crown<span class="ver" id="verLbl"></span></div>
+    <div class="navlist" id="navlist"></div>
+    <div class="navfoot">
+      <div class="pillstat" id="syncStat"><span class="dot"></span><span>Email sync off</span></div>
+      <div class="pillstat" id="saveStat"><span class="dot ok"></span><span>Saved</span></div>
+      <div class="hstack"><button class="sm" id="syncNowNav">Sync email</button><button class="sm" id="lockNow">Lock</button></div>
+    </div>
+  </nav>
+  <main id="main">
+    <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown with <b>Start Crown.command</b> to turn them on.</div>
+    <section class="page" data-page="dashboard" id="pg-dashboard"></section>
+    <section class="page" data-page="profiles" id="pg-profiles">
+      <div class="pagehead"><h1>Profiles</h1><span class="sub" id="profSub"></span><div class="spacer"></div>
+        <button id="importBtn">Mass import</button><button id="exportBtn">Export</button><button class="primary" id="addProfile">+ Add profile</button></div>
+      <div class="split">
+        <div class="catlist"><div id="cats"></div><button id="addCat" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New category</button></div>
+        <div style="min-width:0">
+          <div class="toolbar">
+            <input class="search" id="search" placeholder="Search name, email, city, last 4…  ( / )">
+            <div class="chips"><button class="chip" id="issuesChip">⚠ Issues only</button></div>
+            <div class="spacer"></div>
+            <button id="bulkBtn">Bulk edit</button><button id="l2Btn">Address line 2</button><button id="quickBtn">Quick tools</button>
+          </div>
+          <div class="selbar" id="selbar" hidden>
+            <strong id="selCount"></strong>
+            <select id="moveSel"></select>
+            <button id="dupBtn" class="sm">Duplicate</button>
+            <button id="delBtn" class="sm danger">Delete</button>
+            <div class="spacer"></div>
+            <button id="clearSel" class="sm ghost">Clear selection</button>
+          </div>
+          <div class="tablewrap"><table>
+            <thead><tr>
+              <th class="cb"><input type="checkbox" id="selAll" aria-label="Select all"></th>
+              <th class="sort" data-sort="name">Profile</th><th class="sort" data-sort="email">Email</th><th class="sort" data-sort="ship">Ship to</th><th class="sort" data-sort="city">City</th><th class="sort" data-sort="state">State</th><th>Card</th><th>Exp</th><th class="sort right" data-sort="orders">Orders</th><th class="sort right" data-sort="spent">Spent</th><th id="catCol">Category</th>
+            </tr></thead>
+            <tbody id="rows"></tbody>
+          </table><div class="empty" id="empty" hidden></div></div>
+        </div>
+      </div>
+    </section>
+    <section class="page" data-page="orders" id="pg-orders"></section>
+    <section class="page" data-page="houses" id="pg-houses"></section>
+    <section class="page" data-page="calendar" id="pg-calendar"></section>
+    <section class="page" data-page="spending" id="pg-spending"></section>
+    <section class="page" data-page="inboxes" id="pg-inboxes"></section>
+    <section class="page" data-page="settings" id="pg-settings"></section>
+  </main>
+</div>
+
+<!-- ================= PROFILE DIALOGS ================= -->
+<dialog id="dlgProfile" class="wide">
+  <div class="dhead"><span id="profTitle">Profile</span><span id="profHealth"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="tabs" id="profTabs"><button class="tab on" data-tab="details">Details</button><button class="tab" data-tab="orders">Orders</button></div><div id="profBody"></div><div id="profOrders" hidden></div></div>
+  <div class="dfoot"><button class="danger" id="profDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="profSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgImport">
+  <div class="dhead">Mass import profiles<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div class="row">
+      <div><label>Import into category</label><select id="impCat"></select></div>
+      <div><label>Or load a CSV / JSON file</label><input type="file" id="impFile" accept=".csv,.tsv,.txt,.json"></div>
+    </div>
+    <div style="margin-top:12px"><label>Paste rows from a spreadsheet or CSV. The first row must be column headers.</label>
+      <textarea id="impText" placeholder="name,email,phone,shipFirst,shipLast,shipAddr1,shipCity,shipState,shipZip,cardNumber,cardExpMonth,cardExpYear,cardCvv"></textarea></div>
+    <div id="impPreview" class="small muted" style="margin-top:10px"></div>
+    <div class="maplist" id="impMap"></div>
+    <div class="note">Headers are matched loosely ("First Name", "Address", "ZIP", "Card Number", "CVV", "Exp" as MM/YY all work). Missing billing columns = billing same as shipping. A <b>category</b> column puts each row in that category. <button class="linkbtn" id="tmplBtn">Download a blank template</button></div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="impGo" disabled>Import</button></div>
+</dialog>
+
+<dialog id="dlgBulk">
+  <div class="dhead">Bulk edit <span class="muted" id="bulkCount" style="font-weight:400"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div id="bulkRows"></div>
+    <button id="bulkAddRow" style="margin-top:4px">+ Change another field</button>
+    <div class="note">Tokens: <b>{n}</b> numbers profiles in order · <b>{r:1-999}</b> random number · <b>{name}</b> <b>{first}</b> <b>{last}</b> pull from each profile. Example: <code>{first}.{last}{r:10-99}@yourdomain.com</code></div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="bulkGo">Apply</button></div>
+</dialog>
+
+<dialog id="dlgL2">
+  <div class="dhead">Address line 2 <span class="muted" id="l2Count" style="font-weight:400"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="l2Body"></div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="l2Go">Apply</button></div>
+</dialog>
+
+<dialog id="dlgQuick" class="narrow">
+  <div class="dhead">Quick tools <span class="muted" id="quickCount" style="font-weight:400"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="list" id="quickList"></div></div>
+  <div class="dfoot"><button data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgExport" class="narrow">
+  <div class="dhead">Export profiles<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div class="section">Which profiles</div><div class="chips" id="expScope"></div>
+    <div class="section">Format</div><div class="chips" id="expFmt"></div>
+    <div class="note warn">Exports are <b>not encrypted</b> and include full card details. Delete the file after loading it into your bot.</div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="expGo">Download</button></div>
+</dialog>
+
+<!-- ================= ORDER DIALOGS ================= -->
+<dialog id="dlgOrder" class="wide">
+  <div class="dhead"><span id="ordTitle">Order</span><span id="ordBadges" class="hstack"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="tabs" id="ordTabs"><button class="tab on" data-tab="overview">Overview</button><button class="tab" data-tab="edit">Edit</button><button class="tab" data-tab="emails">Emails</button></div><div id="ordBody"></div></div>
+  <div class="dfoot"><button class="danger" id="ordDelete" style="margin-right:auto">Delete</button><button data-close>Close</button><button class="primary" id="ordSave" hidden>Save</button></div>
+</dialog>
+
+<dialog id="dlgOrderImport">
+  <div class="dhead">Import orders<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div><label>Load a CSV file (e.g. a bot's success export or a spreadsheet)</label><input type="file" id="oimpFile" accept=".csv,.tsv,.txt"></div>
+    <div style="margin-top:12px"><label>…or paste rows. First row = headers.</label><textarea id="oimpText" placeholder="order number,store,date,total,status,email,profile,items,tracking"></textarea></div>
+    <div id="oimpPreview" class="small muted" style="margin-top:10px"></div><div class="maplist" id="oimpMap"></div>
+    <div class="note">Rows whose order number already exists update that order instead of duplicating it. A <b>profile</b> column links each order to the profile with that name.</div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="oimpGo" disabled>Import</button></div>
+</dialog>
+
+<dialog id="dlgBot">
+  <div class="dhead">Paste bot checkout<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <label>Copy a checkout success message from Discord (Valor, Hayha, Shikari, Stellar…) and paste it here. Paste several at once if you like.</label>
+    <textarea id="botText" placeholder="Successful Checkout&#10;Site&#10;Target&#10;Product&#10;Pokémon TCG Elite Trainer Box&#10;Price&#10;$49.99&#10;Profile&#10;Target 12&#10;Order&#10;102003456789012"></textarea>
+    <div id="botPreview" style="margin-top:12px"></div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="botGo" disabled>Add</button></div>
+</dialog>
+
+<dialog id="dlgInbox">
+  <div class="dhead"><span id="inboxTitle">Add inbox</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="inboxBody"></div>
+  <div class="dfoot"><span id="inboxStatus" class="small" style="margin-right:auto"></span><button data-close>Cancel</button><button id="inboxTest">Test connection</button><button class="primary" id="inboxSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgPass" class="narrow">
+  <div class="dhead">Change password<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div><label>Current password</label><input type="password" id="cpOld"></div>
+    <div style="margin-top:10px"><label>New password</label><input type="password" id="cpNew"></div>
+    <div style="margin-top:10px"><label>Confirm new password</label><input type="password" id="cpNew2"></div>
+    <div class="err" id="cpErr"></div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="cpGo">Change password</button></div>
+</dialog>
+
+<dialog id="dlgAskPw" class="narrow">
+  <div class="dhead"><span id="apTitle">Password</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="small muted" id="apText" style="margin-bottom:10px"></div><input type="password" id="apPw" autocomplete="off"><div class="err" id="apErr"></div></div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="apGo">Continue</button></div>
+</dialog>
+
+<div class="toast" id="toast"><span id="toastMsg"></span><button class="sm" id="toastBtn" hidden>Undo</button></div>
+<input type="file" id="restoreFile" accept=".json" hidden>
+
+<script src="parser.js"></script>
+<script src="core.js"></script>
+<script src="profiles.js"></script>
+<script src="orders.js"></script>
+<script src="pages.js"></script>
+<script src="sync.js"></script>
+<script>Crown.boot();</script>
+</body>
+</html>
