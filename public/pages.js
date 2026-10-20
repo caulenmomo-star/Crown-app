@@ -54,6 +54,8 @@ PAGES.dashboard = {
       badProfiles && [`${plural(badProfiles, 'profile')} with issues (expired cards, typos, missing info)`, 'profiles', () => { issuesOnly = true; }],
       ...badInbox.map(a => [`Inbox ${a.label || a.user}: ${a.lastResult.error}`, 'inboxes', null]),
       state.unparsed.length && [`${plural(state.unparsed.length, 'order email')} Crown couldn’t read`, 'inboxes', null],
+      (() => { const n = suggestedDuplicates().length; return n && [`${plural(n, 'possible duplicate order')} to review`, 'orders', () => setTimeout(() => { cleanTab = 'dupes'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
+      (() => { const n = state.orders.filter(isSuspicious).length; return n && [`${plural(n, 'order')} that don’t look like real store orders`, 'orders', () => setTimeout(() => { cleanTab = 'junk'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
     ].filter(Boolean);
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
@@ -349,7 +351,11 @@ PAGES.settings = {
           <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div></div>
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
-          <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div></div>
+          <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
+          <div class="section">Stores Crown doesn’t recognize</div>
+          <div class="small muted" style="margin-bottom:8px">Off by default, so food delivery, app receipts and other non-store emails don’t become orders.</div>
+          <div class="chips"><button class="chip ${S.trackUnknown ? '' : 'on'}" id="stUnkOff">Ignore them</button><button class="chip ${S.trackUnknown ? 'on' : ''}" id="stUnkOn">Track them too</button></div>
+          ${(S.ignoredSenders || []).length ? `<div class="section">Ignored senders</div><div class="chips">${S.ignoredSenders.map(k => `<button class="chip" data-unign="${esc(k)}" title="Stop ignoring">${esc(k)} ✕</button>`).join('')}</div>` : ''}</div>
         <div class="card"><h3>Backups</h3>
           <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Crown Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Crown saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Crown with Start Crown.command to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
           <div class="hstack"><button id="stBackup">Download backup</button><button id="stRestore">Restore from file…</button></div>
@@ -357,7 +363,7 @@ PAGES.settings = {
         <div class="card"><h3>Data tools</h3>
           <div class="list">
             <div class="li"><div style="flex:1"><div>Re-match orders to profiles</div><div class="small muted">Re-run automatic linking (email → address → card). Links you set by hand are kept.</div></div><button class="sm" id="stRelink">Run</button></div>
-            <div class="li"><div style="flex:1"><div>Rebuild houses</div><div class="small muted">Regroup every order by street address. Nicknames and merges are kept where possible.</div></div><button class="sm" id="stRehouse">Run</button></div>
+            <div class="li"><div style="flex:1"><div>Rebuild houses</div><div class="small muted">Regroup every order by street address only (apt / unit / line 2 ignored). Nicknames and notes are kept.</div></div><button class="sm" id="stRehouse">Run</button></div>
             <div class="li"><div style="flex:1"><div>Export everything to CSV</div><div class="small muted">Profiles and orders as two spreadsheet files (not encrypted).</div></div><button class="sm" id="stCsv">Export</button></div>
             <div class="li"><div style="flex:1"><div style="color:var(--danger)">Delete all orders</div><div class="small muted">Profiles and inboxes stay. Next sync re-reads emails from the inbox look-back window.</div></div><button class="sm danger" id="stWipe">Delete</button></div>
           </div></div>
@@ -367,12 +373,15 @@ PAGES.settings = {
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();
     $('#stNotify').onclick = async () => { if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } } S.notify = !S.notify; save(); PAGES.settings.render(); if (S.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('Crown', { body: 'Notifications are on 👑' }); };
+    $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
+    $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
+    pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });
     $('#stEpSave').onclick = () => { S.easypostKey = $('#stEp').value.trim(); save(); toast(S.easypostKey ? 'EasyPost key saved' : 'EasyPost key removed'); };
     $('#stStores').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s; if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; } save(); PAGES.settings.render(); };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
     $('#stRestore').onclick = () => $('#restoreFile').click();
     $('#stRelink').onclick = () => { snapshot('re-match'); state.orders.forEach(o => { if (o.profileLink !== 'manual') { o.profileLink = ''; o.profileId = ''; } }); autoLinkAll(); save(); refresh(); toast(`Linked ${state.orders.filter(o => o.profileId).length} of ${plural(state.orders.length, 'order')}`, { undo: true }); };
-    $('#stRehouse').onclick = () => { snapshot('rebuild houses'); const keep = state.houses.filter(h => h.nickname || h.notes); state.houses = keep.map(h => Object.assign({}, h)); state.orders.forEach(resolveHouse); pruneHouses(); save(); refresh(); toast(`${plural(state.houses.length, 'house')} after rebuild`, { undo: true }); };
+    $('#stRehouse').onclick = () => { snapshot('rebuild houses'); regroupHouses(); save(); refresh(); toast(`${plural(state.houses.filter(h => houseOrders(h.id).length).length, 'house')} after rebuild`, { undo: true }); };
     $('#stCsv').onclick = () => {
       if (state.profiles.length) { const rows = state.profiles.map(p => { const o = { category: catName(p.categoryId) }; FIELDS.forEach(f => o[f.k] = f.bool ? (p[f.k] ? 'yes' : 'no') : p[f.k] ?? ''); o.notes = p.notes; return o; }); download(`crown-profiles-${stamp()}.csv`, toCSV(Object.keys(rows[0]), rows), 'text/csv'); }
       if (state.orders.length) setTimeout(() => exportOrders(state.orders), 400);

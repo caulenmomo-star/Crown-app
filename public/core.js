@@ -50,7 +50,7 @@ const isActive = o => ['placed', 'confirmed', 'shipped', 'ready'].includes(o.sta
 const orderSpend = o => isDead(o) ? 0 : (Number(o.total) || sum(o.items || [], i => (Number(i.price) || 0) * (Number(i.qty) || 1)));
 
 /* ---------- state ---------- */
-const DEFAULT_SETTINGS = { autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', firstLookback: 60, trackedStores: [] };
+const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', firstLookback: 60, trackedStores: [] };
 function blankState() {
   return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
@@ -72,7 +72,7 @@ let CLOUD = false, cloudInfo = {}, authKey = null, rev = 0, baseJSON = null, clo
 /* ---------- server API ---------- */
 async function api(path, body, method) {
   let res;
-  const headers = { 'X-Crown': '1' };
+  const headers = { 'X-Crown': '1', 'X-Crown-App': VERSION };
   if (body) headers['Content-Type'] = 'application/json';
   if (CLOUD && authKey) headers['X-Crown-Auth'] = authKey;
   try {
@@ -235,6 +235,7 @@ function mergeStates(base, local, remote) {
 // Two devices syncing the same inbox at once can each create the same order - fold duplicates together.
 function dedupeAfterMerge() {
   if (typeof Parser === 'undefined') return;
+  if (typeof mergeSameNumber === 'function') { mergeSameNumber(); dedupeHousesOnly(); return; }
   const byNo = new Map(), drop = new Set();
   for (const o of state.orders) {
     const k = Parser.normOrderNo(o.orderNumber); if (!k) continue;
@@ -252,6 +253,9 @@ function dedupeAfterMerge() {
     drop.add(o.id);
   }
   if (drop.size) state.orders = state.orders.filter(o => !drop.has(o.id));
+  dedupeHousesOnly();
+}
+function dedupeHousesOnly() {
   const hk = new Map(), remap = new Map();
   for (const h of state.houses) for (const k of h.keys || []) { if (hk.has(k) && hk.get(k) !== h) remap.set(h.id, hk.get(k)); else hk.set(k, h); }
   if (remap.size) {
@@ -336,7 +340,7 @@ function renderNav() {
 }
 function renderPage() { try { PAGES[route.page].render(route.arg); } catch (e) { console.error(e); $('#pg-' + route.page).innerHTML = `<div class="note bad">Something went wrong showing this page: ${esc(e.message)}</div>`; } }
 function refresh() { if (!cryptoKey) return; renderNav(); renderPage(); }
-document.addEventListener('click', e => { const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); go(p, a); } });
+document.addEventListener('click', e => { const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); if (n.classList.contains('navitem') && typeof resetPageFilters === 'function') resetPageFilters(p); go(p, a); } });
 
 /* ---------- lock / unlock ---------- */
 const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('crown') : null;

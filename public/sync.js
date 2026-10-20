@@ -54,7 +54,8 @@ async function syncAccount(a, totals, opts) {
     if (!p) return;
     res.found++;
     if (tracked && !tracked.has(p.store)) return;
-    const out = applyEmail(p, label);
+    const out = applyEmail(p, label, { reapply: !!opts.reapply });
+    if (out.ignored) { res.found--; return; }
     if (out.skipped) { addUnparsed(m, out.skipped); return; }
     if (out.created) { res.created++; totals.created++; }
     else if (out.changed) {
@@ -135,8 +136,8 @@ async function syncAll(manual, ids, opts) {
 }
 function rescan(id, days) {
   const a = state.imapAccounts.find(x => x.id === id); if (!a) return;
-  if (!confirm(`Re-read the last ${days} days of ${a.label || a.user}?\n\nOrders you deleted from that period will come back. Nothing is duplicated.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
-  syncAll(true, [id], { days, fresh: true });
+  if (!confirm(`Re-read the last ${days} days of ${a.label || a.user}?\n\nThis refreshes delivery dates and statuses. Nothing is duplicated, but orders you deleted from that period will come back.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
+  syncAll(true, [id], { days, fresh: true, reapply: true });
 }
 function scheduleSync() {
   clearTimeout(syncTimer); syncNextAt = 0;
@@ -146,6 +147,14 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { if (document.visibilityState === 'hidden') { scheduleSync(); return; } syncAll(false); }, m * 60000);
 }
 function onUnlocked() {
+  if (state.ordersVer !== 2 && state.orders.length) {
+    const merged = mergeSameNumber(); state.ordersVer = 2; invalidateStats(); save(); refresh();
+    // Re-read recent emails once with the improved reader so delivery dates and delivered statuses get corrected.
+    if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => syncAll(false, null, { days: Math.min(120, Math.max(30, ...state.imapAccounts.map(a => a.lookback || 60))), fresh: true, reapply: true }), 2500);
+    const junk = state.orders.filter(isSuspicious).length, dup = suggestedDuplicates().length;
+    if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
+  }
+  if (state.houseVer !== 2 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
   if (SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);

@@ -39,7 +39,19 @@ HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(ROOT, "app")
-DATA_DIR = os.environ.get("CROWN_DATA") or os.path.join(ROOT, "data")
+
+
+def default_data_dir():
+    """A fixed home for your data, separate from the app folder, so updating Crown never touches it."""
+    home = os.path.expanduser("~")
+    if sys.platform == "darwin":
+        return os.path.join(home, "Library", "Application Support", "Crown")
+    if os.name == "nt":
+        return os.path.join(os.environ.get("APPDATA") or home, "Crown")
+    return os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(home, ".local", "share"), "Crown")
+
+
+DATA_DIR = os.environ.get("CROWN_DATA") or default_data_dir()
 BACKUP_DIR = os.path.join(DATA_DIR, "backups")
 VAULT_PATH = os.path.join(DATA_DIR, "vault.json")
 MAX_BACKUPS = 60
@@ -127,6 +139,48 @@ def write_vault(obj):
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, VAULT_PATH)
+
+
+def vault_saved_at(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            v = json.load(f)
+        if v.get("erased") or not v.get("ct"):
+            return -1
+        return float(v.get("savedAt") or 0) / 1000.0 or os.path.getmtime(path)
+    except Exception:
+        return -1
+
+
+def import_old_data():
+    """First run of a new version: find data from older Crown folders (which kept it in Crown/data) and bring the newest copy here."""
+    if os.environ.get("CROWN_DATA") or os.path.exists(VAULT_PATH):
+        return None
+    import glob
+    home = os.path.expanduser("~")
+    places = [os.path.join(ROOT, "data")]
+    for base in [os.path.dirname(ROOT), os.path.join(home, "Downloads"), os.path.join(home, "Desktop"), os.path.join(home, "Documents"),
+                 os.path.join(home, "Applications"), "/Applications", home]:
+        places += glob.glob(os.path.join(base, "Crown*", "data")) + glob.glob(os.path.join(base, "*", "Crown*", "data"))
+    best, best_t = None, -1
+    for d in dict.fromkeys(places):
+        t = vault_saved_at(os.path.join(d, "vault.json"))
+        if t > best_t:
+            best, best_t = d, t
+    if not best or best_t < 0:
+        return None
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    shutil.copy2(os.path.join(best, "vault.json"), VAULT_PATH)
+    for b in glob.glob(os.path.join(best, "backups", "vault-*.json")):
+        dest = os.path.join(BACKUP_DIR, os.path.basename(b))
+        if not os.path.exists(dest):
+            shutil.copy2(b, dest)
+    try:
+        with open(os.path.join(best, "MOVED - read me.txt"), "w") as f:
+            f.write("Crown %s copied the data in this folder to:\n%s\n\nThis copy is no longer used. You can delete this old Crown folder whenever you like.\n" % (VERSION, DATA_DIR))
+    except Exception:
+        pass
+    return best
 
 
 def list_backups():
@@ -787,6 +841,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self._api_guard():
             return
         if self.path == "/api/vault":
+            if not self.headers.get("X-Crown-App"):
+                return self._send(200, {"ok": False, "error": "This Crown tab is from an older version. Close it and use the new one."})
+
             def fn():
                 write_vault(self._json())
                 return {"ok": True, "savedAt": time.time()}
@@ -795,6 +852,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         if not self._api_guard():
+            return
+        if self.path == "/api/shutdown":
+            self._send(200, {"ok": True})
+            threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
             return
         routes = {
             "/api/imap/test": lambda b: imap_test(b.get("account") or {}),
@@ -809,21 +870,65 @@ class Handler(BaseHTTPRequestHandler):
         self._run(lambda: fn(self._json()))
 
 
-def already_running(port):
+def running_version(port):
+    """Version of a Crown already running on this port ("" if it's an old one that doesn't say), or None."""
     try:
         req = urllib.request.Request("http://%s:%d/api/ping" % (HOST, port), headers={"X-Crown": "1"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         with opener.open(req, timeout=2) as r:
-            return json.loads(r.read().decode()).get("ok") is True
+            j = json.loads(r.read().decode())
+            return str(j.get("version") or "") if j.get("ok") else None
     except Exception:
-        return False
+        return None
+
+
+def stop_old_crown(port):
+    """Close an older Crown that's still running, so the new version can take over."""
+    try:
+        req = urllib.request.Request("http://%s:%d/api/shutdown" % (HOST, port), data=b"{}", method="POST",
+                                     headers={"X-Crown": "1", "Content-Type": "application/json"})
+        urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=2)
+    except Exception:
+        pass
+    time.sleep(0.6)
+    if running_version(port) is None:
+        return True
+    try:  # versions before 2.0 have no shutdown button - find the process on the port
+        pids = subprocess.run(["lsof", "-ti", "tcp:%d" % port, "-sTCP:LISTEN"], capture_output=True, timeout=5).stdout.decode().split()
+        for pid in pids:
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", pid], capture_output=True, timeout=5).stdout.decode()
+            if "server.py" in cmd and int(pid) != os.getpid():
+                os.kill(int(pid), 15)
+    except Exception:
+        pass
+    for _ in range(20):
+        time.sleep(0.25)
+        if running_version(port) is None:
+            return True
+    return False
+
+
+def already_running(port):
+    return running_version(port) is not None
 
 
 def main():
     global PORT
     os.makedirs(BACKUP_DIR, exist_ok=True)
     httpd = None
+    for port in range(BASE_PORT, BASE_PORT + 12):  # an old Crown may still be running from the previous version
+        v = running_version(port)
+        if v is not None and v != VERSION:
+            print("Closing the older Crown (%s) that's still running..." % (v or "1.x"))
+            stop_old_crown(port)
+    moved = import_old_data()
+    if moved:
+        print("  Brought your data over from %s" % moved)
     for port in range(BASE_PORT, BASE_PORT + 12):
+        v = running_version(port)
+        if v is not None and v != VERSION:
+            print("Closing the older Crown (%s) that's still running..." % (v or "1.x"))
+            stop_old_crown(port)
         if already_running(port):
             url = "http://%s:%d/" % (HOST, port)
             print("Crown is already running - opening %s" % url)

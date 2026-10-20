@@ -31,23 +31,25 @@
   const storeInfo = k => STORE_BY_KEY[k] || STORE_BY_KEY.other;
 
   // ---------------------------------------------------------------- status
-  const SURVEY = ['guest survey', 'we want to hear', 'how did we do', 'rate your', 'review your purchase', 'leave a review', 'tell us about'];
-  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'sorry, we', "we're sorry", 'we are sorry', 'item canceled', 'item cancelled', 'unable to fulfill'];
+  // Subjects that are never real order updates: surveys, reviews, promos.
+  const SURVEY = ['guest survey', 'survey', 'we want to hear', 'how did we do', 'how was', 'rate your', 'rate us', 'review your', 'write a review', 'leave a review', 'tell us about', 'feedback', 'did you enjoy'];
+  const PROMO = /(\d+\s?% off|\bsale\b|\bdeals?\b|\bcoupon|\bpromo|\bsave \$|\bsave up\b|\bfree shipping\b|\brewards?\b|\bpoints\b|\bnewsletter|\bwishlist|\bback in stock|\bprice drop|\bjust dropped|\bnew arrivals?|\bdon'?t miss|\blast chance|\babandon|\bleft in your cart|\bstill thinking|\bunsubscribe)/i;
+  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill'];
   const REFUNDED = ['refund issued', 'refund has been', 'your refund', 'refund processed', 'refund confirmation', 'return received', 'return has been processed'];
-  const DELIVERED = ['delivered', 'was picked up', 'has been picked up', 'picked up your order'];
+  const DELIVERED = ['delivered', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived'];
   const READY = ['ready for pickup', 'ready for drive up', 'ready to pick up', 'is ready for pick'];
-  const SHIPPED = ['shipped', 'on its way', 'on the way', 'out for delivery', 'tracking number', 'tracking info', 'has been dispatched', 'in transit', 'heading your way', 'about to arrive'];
-  const CONFIRMED = ['order confirm', 'thanks for your order', 'thank you for your order', 'thanks for your delivery order', 'thanks for your pickup order', 'thanks for your drive up order', 'thanks for your shipping order', 'order received', 'order placed', "we've got your order", 'we got your order', 'thanks for shopping', 'your receipt', 'order successful', 'purchase successful', 'checkout successful', 'purchase confirmation', 'order summary', 'order details', 'thanks for your purchase', 'thank you for your purchase', 'order is confirmed', 'order has been received', 'order acknowledgement', 'order acknowledgment', 'was received', 'we received your order', 'order was placed', 'order has been placed'];
+  const SHIPPED = ['shipped', 'has shipped', 'on its way', 'is on the way', 'are on the way', 'out for delivery', 'tracking number', 'has been dispatched', 'in transit', 'shipment'];
+  const CONFIRMED = ['order confirm', 'thanks for your order', 'thank you for your order', 'thanks for your delivery order', 'thanks for your pickup order', 'thanks for your drive up order', 'thanks for your shipping order', 'order received', 'order placed', "we've got your order", 'we got your order', 'order successful', 'purchase successful', 'checkout successful', 'purchase confirmation', 'thanks for your purchase', 'thank you for your purchase', 'order is confirmed', 'order has been received', 'order acknowledgement', 'order acknowledgment', 'we received your order', 'order was placed', 'order has been placed', 'order was received'];
   const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, SHIPPED, CONFIRMED)));
   const SUBJECT_PATTERNS = ['thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*#?\\s*\\d{6,}'];
 
   function classifyStatus(subject) {
     const s = String(subject || '').toLowerCase();
     if (!s.trim()) return null;
-    if (SURVEY.some(k => s.includes(k))) return null;
+    if (SURVEY.some(k => s.includes(k)) || PROMO.test(s)) return null;
     if (REFUNDED.some(k => s.includes(k))) return 'refunded';
     if (CANCELLED.some(k => s.includes(k)) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
-    if (DELIVERED.some(k => s.includes(k)) && !/not\s+delivered|delivery\s+(attempt|exception|delay)/.test(s)) return 'delivered';
+    if (DELIVERED.some(k => s.includes(k)) && !/not\s+delivered|delivery\s+(attempt|exception|delay)/.test(s) && (/\b(order|package|item|items|shipment|parcel|purchase)\b/.test(s) || /^\s*delivered\s*:/.test(s) || /#\s?\d{5,}/.test(s) || /\b(arrived|is here|are here)\b/.test(s))) return 'delivered';
     if (READY.some(k => s.includes(k))) return 'ready';
     if (SHIPPED.some(k => s.includes(k))) return 'shipped';
     if (CONFIRMED.some(k => s.includes(k)) || /thanks for your [a-z ]{0,20}order/i.test(s)) return 'confirmed';
@@ -176,6 +178,24 @@
   }
   const looksLikeName = s => /^[A-Za-z][A-Za-z'.\-]*(?:\s+[A-Za-z][A-Za-z'.\-]*){0,3}$/.test(s) && !/\d/.test(s);
   const UNIT_RE = /\b(apt\.?|apartment|unit|suite|ste\.?|#|rm\.?|room|bldg\.?|building|fl\.?|floor|lot|trlr|trailer|spc|space|dept|po box)\s*#?\s*[a-z0-9\-]+/i;
+  // Split "123 Main St Apt 4" -> { street: "123 Main St", unit: "Apt 4" }. Handles units at the end, in the
+  // middle ("123 Main St Bldg 2 Apt 4"), up front ("Apt 4, 123 Main St" / "#4 123 Main St") and bare trailing
+  // unit numbers after a street suffix or direction ("123 Main St 4B", "11662 S 2670 W 12").
+  const UNIT_WORDS = '(?:apt|apartment|unit|suite|ste|rm|room|bldg|building|fl|flr|floor|lot|trlr|trailer|spc|space|dept|box|no|number)';
+  const UNIT_VAL = '(?:[a-z]?-?\\d[a-z0-9\\-]*|[a-z](?![a-z]))';
+  const UNIT_ANY = new RegExp('(?:^|[\\s,]+)((?:' + UNIT_WORDS + '\\.?\\s*#?\\s*' + UNIT_VAL + '|#\\s*[a-z0-9\\-]+)(?:[\\s,]+.*)?)$', 'i');
+  const UNIT_LEAD = new RegExp('^((?:' + UNIT_WORDS + '\\.?\\s*#?\\s*' + UNIT_VAL + '|#\\s*[a-z0-9\\-]+))[\\s,]+(?=\\d)', 'i');
+  const SUFFIX = '(?:st|str|street|ave|av|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|boulevard|way|pl|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail|loop|row|run|pass|pike|sq|square|n|s|e|w|ne|nw|se|sw|north|south|east|west|northeast|northwest|southeast|southwest)';
+  const BARE_TAIL = new RegExp('^(.*\\b' + SUFFIX + '\\.?)\\s+(\\d{1,5}[a-z]?|[a-df-mo-rt-vx-z])$', 'i');
+  function splitUnit(addr1) {
+    let s = String(addr1 || '').replace(/\s+/g, ' ').trim(); const units = [];
+    const lead = s.match(UNIT_LEAD); if (lead) { units.push(lead[1]); s = s.slice(lead[0].length); }
+    const any = s.match(UNIT_ANY);
+    if (any && any.index > 0 && /\d/.test(s.slice(0, any.index))) { units.push(any[1]); s = s.slice(0, any.index); }
+    const bare = s.match(BARE_TAIL);
+    if (bare && /\d/.test(bare[1])) { units.push(bare[2]); s = bare[1]; }
+    return { street: s.replace(/[\s,#]+$/, '').trim(), unit: units.join(' ').replace(/\s+/g, ' ').trim() };
+  }
   function parseAddress(raw) {
     const out = { name: '', addr1: '', addr2: '', city: '', state: '', zip: '' };
     if (!raw) return out;
@@ -188,10 +208,10 @@
     if (parts.length) out.city = parts.pop();
     if (parts.length) out.addr1 = parts.shift();
     if (parts.length) out.addr2 = parts.join(', ');
-    if (!out.addr2) {
-      const um = out.addr1.match(new RegExp('\\s+(' + UNIT_RE.source + ')$', 'i'));
-      if (um) { out.addr2 = um[1].trim(); out.addr1 = out.addr1.slice(0, um.index).trim(); }
-    }
+    // "Apt 3, 123 Main St" - the unit came first as its own part
+    if (out.addr1 && out.addr2 && !/^\d/.test(out.addr1) && /^\d/.test(out.addr2)) { const u = out.addr1; out.addr1 = out.addr2.split(',')[0].trim(); out.addr2 = [u].concat(out.addr2.split(',').slice(1).map(x => x.trim()).filter(Boolean)).join(', '); }
+    const su = splitUnit(out.addr1);
+    if (su.unit) { out.addr1 = su.street; out.addr2 = [su.unit, out.addr2].filter(Boolean).join(', '); }
     return out;
   }
   function extractName(text) {
@@ -202,29 +222,45 @@
     return m2 ? m2[1] : '';
   }
 
-  const MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?';
-  const DATE_WORD = MONTH + '\\s+\\d{1,2}(?:st|nd|rd|th)?(?:,?\\s+\\d{4})?';
+  // Dates are parsed by hand (not new Date("Oct 21 2026")) because Safari can't read those strings.
+  const MONTH_IDX = { jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11 };
+  const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?';
+  const DATE_WORD = '\\b' + MONTH + '\\s+\\d{1,2}(?:st|nd|rd|th)?\\b(?:,?\\s+\\d{4})?';
+  const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const pad = n => String(n).padStart(2, '0');
+  const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+  function refDate(refISO) { const r = refISO ? new Date(refISO) : new Date(); return Number.isNaN(r.getTime()) ? new Date() : r; }
   function isoFrom(str, refISO) {
-    const ref = refISO ? new Date(refISO) : new Date();
-    let d;
-    const num = str.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
-    if (num) {
-      let y = num[3] ? Number(num[3]) : ref.getFullYear(); if (y < 100) y += 2000;
-      d = new Date(y, Number(num[1]) - 1, Number(num[2]));
-    } else {
-      const clean = str.replace(/(\d)(st|nd|rd|th)/i, '$1').replace(/\./g, '').replace(/Sept/i, 'Sep');
-      d = new Date(/\d{4}/.test(clean) ? clean : clean + ' ' + ref.getFullYear());
+    const ref = refDate(refISO); const s = String(str || '').trim().toLowerCase();
+    let y, m, d, hasYear = false, mm = s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+    if (mm) { m = +mm[1] - 1; d = +mm[2]; if (mm[3]) { y = +mm[3]; if (y < 100) y += 2000; hasYear = true; } }
+    else {
+      mm = s.match(new RegExp('^(' + MONTH + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:,?\\s+(\\d{4}))?$', 'i'));
+      if (!mm) return '';
+      m = MONTH_IDX[mm[1].replace('.', '')]; d = +mm[2]; if (mm[3]) { y = +mm[3]; hasYear = true; }
     }
-    if (Number.isNaN(d.getTime())) return '';
-    if (!/\d{4}/.test(str) && d.getTime() < ref.getTime() - 60 * 864e5) d.setFullYear(d.getFullYear() + 1);
-    const p = n => String(n).padStart(2, '0');
-    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+    if (m == null || m < 0 || m > 11 || d < 1 || d > 31) return '';
+    if (!hasYear) {
+      y = ref.getFullYear(); const c = new Date(y, m, d);
+      if (c.getTime() < ref.getTime() - 60 * 864e5) y++; else if (c.getTime() - ref.getTime() > 300 * 864e5) y--;
+    }
+    const dt = new Date(y, m, d); return dt.getMonth() === m ? ymd(dt) : '';
   }
+  function relDayIso(word, refISO) {
+    const ref = refDate(refISO); const base = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()); const w = word.toLowerCase();
+    if (w === 'today') return ymd(base);
+    if (w === 'tomorrow') return ymd(new Date(base.getFullYear(), base.getMonth(), base.getDate() + 1));
+    const i = DAYS.findIndex(x => x.startsWith(w.slice(0, 3))); if (i < 0) return '';
+    const diff = (i - base.getDay() + 7) % 7; return ymd(new Date(base.getFullYear(), base.getMonth(), base.getDate() + diff));
+  }
+  // Phrases that introduce an arrival date. Not "Delivers to:" / "Delivery address" (those are addresses).
+  const ETA_TRIG = '(?:arriv(?:es|ing|al)?(?:\\s+(?:by|on))?|get it(?:\\s+by)?|estimated\\s+(?:delivery|arrival)(?:\\s+date)?|expected\\s+(?:delivery|arrival|by)|delivery\\s+(?:date|by|estimate|expected|window)|deliver(?:s|ing|ed)?\\s+(?:by|on)|will\\s+be\\s+delivered(?:\\s+(?:by|on))?|should\\s+arrive|ready\\s+(?:for\\s+pick\\s?up\\s+)?by|pick\\s?up\\s+by|eta|deliver(?:s|ing)?(?=\\s+(?:mon|tue|wed|thu|fri|sat|sun|' + MONTH.replace('\\.?', '') + '|\\d)))';
   function extractEta(text, refISO) {
     const t = String(text || '');
-    const trig = '(?:arriv\\w*|deliver\\w*|get it|estimated delivery|expected|eta|ready by|pick ?up by)';
-    const res = [new RegExp(trig + '\\b[^.\\n]{0,30}?(' + DATE_WORD + ')', 'i'), new RegExp(trig + '\\b[^.\\n]{0,30}?(\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?)', 'i')];
-    for (const re of res) { const m = t.match(re); if (m) { const iso = isoFrom(m[1], refISO); if (iso) return iso; } }
+    const gap = '\\b[^.\\n]{0,28}?';
+    let m = t.match(new RegExp(ETA_TRIG + gap + '(' + DATE_WORD + ')', 'i')); if (m) { const v = isoFrom(m[1].replace(/\s+/g, ' '), refISO); if (v) return v; }
+    m = t.match(new RegExp(ETA_TRIG + gap + '\\b(\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?)\\b', 'i')); if (m) { const v = isoFrom(m[1], refISO); if (v) return v; }
+    m = t.match(new RegExp(ETA_TRIG + '\\s+(?:by\\s+|on\\s+|this\\s+)?(today|tomorrow|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\b', 'i')); if (m) { const v = relDayIso(m[1], refISO); if (v) return v; }
     return '';
   }
 
@@ -271,15 +307,16 @@
 
   // ---------------------------------------------------------------- addresses / houses
   const WORDS = { street: 'st', str: 'st', avenue: 'ave', av: 'ave', road: 'rd', drive: 'dr', lane: 'ln', court: 'ct', boulevard: 'blvd', place: 'pl', circle: 'cir', parkway: 'pkwy', highway: 'hwy', terrace: 'ter', square: 'sq', trail: 'trl', north: 'n', south: 's', east: 'e', west: 'w', northeast: 'ne', northwest: 'nw', southeast: 'se', southwest: 'sw', apartment: 'apt', suite: 'ste', building: 'bldg', floor: 'fl', room: 'rm', mount: 'mt', point: 'pt', crossing: 'xing', expressway: 'expy', freeway: 'fwy', center: 'ctr', heights: 'hts', junction: 'jct', mountain: 'mtn', ridge: 'rdg', valley: 'vly', view: 'vw', village: 'vlg' };
+  // Houses are grouped on the street address ONLY - any apt / unit / suite / line 2 is ignored.
   function normStreet(addr1) {
-    let s = String(addr1 || '').toLowerCase().replace(new RegExp('\\s+' + UNIT_RE.source + '$', 'i'), '');
+    let s = splitUnit(addr1).street.toLowerCase();
     s = s.replace(/[.,#]/g, ' ').replace(/\s+/g, ' ').trim();
     return s.split(' ').map(w => WORDS[w] || w).join(' ');
   }
   const normUnit = a => String(a || '').toLowerCase().replace(/\b(apartment|apt|unit|suite|ste|#|room|rm|no|number|bldg|building|fl|floor|lot|trlr|spc|space)\b/g, '').replace(/[^a-z0-9]/g, '');
   const zip5 = z => String(z || '').slice(0, 5);
   const houseKey = (addr1, zip) => { const s = normStreet(addr1); return s ? s + '|' + zip5(zip) : ''; };
-  const unitKey = (addr1, addr2, zip) => { const h = houseKey(addr1, zip); return h ? h + '|' + normUnit(addr2) : ''; };
+  const unitKey = (addr1, addr2, zip) => { const h = houseKey(addr1, zip); return h ? h + '|' + normUnit([splitUnit(addr1).unit, addr2].filter(Boolean).join(' ')) : ''; };
 
   // ---------------------------------------------------------------- main
   function parseOrderEmail(m) {
@@ -315,7 +352,15 @@
     };
   }
 
-  const API = { STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  // A sender key for "ignore this sender": the whole domain for normal stores, the exact address for relay
+  // / personal-mail addresses (so ignoring one Hide-My-Email relay doesn't block every store).
+  function senderKey(from) {
+    const m = String(from || '').toLowerCase().match(/[a-z0-9._%+\-]+@([a-z0-9.\-]+)/); if (!m) return '';
+    const dom = m[1];
+    if (/privaterelay|icloud\.com|me\.com|mac\.com|gmail\.com|googlemail|yahoo|outlook|hotmail|live\.com|aol\.com|relay|forward/.test(dom)) return m[0];
+    const parts = dom.split('.'); return parts.slice(-2).join('.');
+  }
+  const API = { STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

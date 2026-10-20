@@ -12,6 +12,8 @@ const orderTitle = o => o.items && o.items.length ? o.items[0].name + (o.items.l
 const itemCount = o => sum(o.items || [], i => Number(i.qty) || 1);
 function findOrder(no, store) {
   const n = Parser.normOrderNo(no); if (!n) return null;
+  // Long order numbers are unique on their own - match them no matter which store an email got tagged with.
+  if (n.length >= 8) return state.orders.find(o => Parser.normOrderNo(o.orderNumber) === n) || null;
   return state.orders.find(o => Parser.normOrderNo(o.orderNumber) === n && (!store || !o.store || store === 'other' || o.store === 'other' || o.store === store)) || null;
 }
 function newOrder(fields) {
@@ -38,12 +40,120 @@ function resolveHouse(o) {
     const street = key.split('|')[0];
     h = state.houses.find(h => (h.keys || []).some(k => k.split('|')[0] === street && (!k.split('|')[1] || !key.split('|')[1])));
   }
-  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(o.addr1), city: titleAddr(o.city), state: String(o.state || '').toUpperCase(), zip: Parser.zip5(o.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
+  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(Parser.splitUnit(o.addr1).street), city: titleAddr(o.city), state: String(o.state || '').toUpperCase(), zip: Parser.zip5(o.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
   else if (!h.keys.includes(key)) h.keys.push(key);
   if (!h.zip && o.zip) h.zip = Parser.zip5(o.zip);
   if (!h.city && o.city) h.city = titleAddr(o.city);
   if (!h.state && o.state) h.state = String(o.state).toUpperCase();
   o.houseId = h.id; return h;
+}
+// Regroup every order by street address only (apt / unit / line 2 ignored). Keeps nicknames and notes,
+// merging houses that turn out to be the same street. Also moves any unit stuck in an order's address 1 into address 2.
+const isIgnoredSender = from => { const k = Parser.senderKey(from); return !!k && (state.settings.ignoredSenders || []).includes(k); };
+// Fold order `o` into `keep` (same order seen twice). Keeps every email, history entry, item and tracking number.
+function mergeOrderInto(keep, o) {
+  for (const m of o.messageIds || []) if (!keep.messageIds.includes(m)) keep.messageIds.push(m);
+  for (const e of o.emails || []) if (!keep.emails.some(x => x.messageId === e.messageId)) keep.emails.push(e);
+  for (const h of o.history || []) if (!keep.history.some(x => x.date === h.date && x.status === h.status)) keep.history.push(h);
+  keep.history.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if ((STATUS[o.status] || {}).r > (STATUS[keep.status] || {}).r) keep.status = o.status;
+  for (const f of ['orderNumber', 'total', 'eta', 'deliveredAt', 'name', 'addr1', 'addr2', 'city', 'state', 'zip', 'recipientEmail', 'last4', 'houseId', 'notes']) if ((keep[f] == null || keep[f] === '') && o[f]) keep[f] = o[f];
+  if (o.profileLink === 'manual' && keep.profileLink !== 'manual') { keep.profileId = o.profileId; keep.profileLink = 'manual'; } else if (!keep.profileId && o.profileId) { keep.profileId = o.profileId; keep.profileLink = o.profileLink; }
+  if ((!keep.store || keep.store === 'other') && o.store && o.store !== 'other') keep.store = o.store;
+  if (o.orderDate && (!keep.orderDate || o.orderDate < keep.orderDate)) keep.orderDate = o.orderDate;
+  if (!keep.items.length && o.items.length) keep.items = o.items;
+  for (const t of o.tracking || []) if (!keep.tracking.some(x => x.number === t.number)) keep.tracking.push(t);
+  if (o.source === 'email' || keep.source === 'email') keep.source = 'email';
+  keep.updatedAt = Date.now();
+  state.orders = state.orders.filter(x => x.id !== o.id);
+}
+// Same order number twice = definitely the same order.
+function mergeSameNumber() {
+  const by = new Map(); let n = 0;
+  for (const o of state.orders.slice()) {
+    const k = Parser.normOrderNo(o.orderNumber); if (k.length < 5) continue;
+    const keep = by.get(k);
+    if (keep && (k.length >= 8 || keep.store === o.store || keep.store === 'other' || o.store === 'other')) { const [a, b] = (keep.emails.length >= o.emails.length) ? [keep, o] : [o, keep]; mergeOrderInto(a, b); by.set(k, a); n++; }
+    else by.set(k, o);
+  }
+  return n;
+}
+// Likely duplicates that need a human look: an order with no order number (added by hand / pasted from a bot)
+// that matches an email order from the same store within 2 days with the same total or item.
+function suggestedDuplicates() {
+  const out = [], used = new Set();
+  const loose = state.orders.filter(o => !Parser.normOrderNo(o.orderNumber));
+  for (const a of loose) {
+    const da = toDate(a.orderDate); if (!da) continue;
+    const name = ((a.items[0] || {}).name || '').toLowerCase().slice(0, 30);
+    const m = state.orders.find(b => b !== a && b.id !== a.notDupOf && !used.has(b.id) && Parser.normOrderNo(b.orderNumber) && (b.store === a.store || a.store === 'other' || b.store === 'other') &&
+      Math.abs((toDate(b.orderDate) || 0) - da) <= 2 * 864e5 &&
+      ((a.total != null && b.total != null && Math.abs(a.total - b.total) < 0.02) || (name && (b.items || []).some(i => String(i.name || '').toLowerCase().includes(name)))));
+    if (m) { out.push([m, a]); used.add(m.id); used.add(a.id); }
+  }
+  return out;
+}
+// Orders that came from email but don't look like real store orders under the current rules.
+function isSuspicious(o) {
+  if (o.source !== 'email' || o.keepAnyway) return false;
+  if (o.store === 'other' && !state.settings.trackUnknown) return true;
+  if ((o.emails || []).length && o.emails.every(e => isIgnoredSender(e.from))) return true;
+  if ((o.emails || []).length && o.emails.every(e => !Parser.classifyStatus(e.subject))) return true;
+  return false;
+}
+let cleanTab = 'dupes';
+function openCleanup() { cleanTab = suggestedDuplicates().length || !state.orders.some(isSuspicious) ? 'dupes' : 'junk'; renderCleanup(); openDlg('dlgClean'); }
+function renderCleanup() {
+  const dup = suggestedDuplicates(), junk = state.orders.filter(isSuspicious);
+  $('#cleanTabs').innerHTML = `<button class="tab ${cleanTab === 'dupes' ? 'on' : ''}" data-ct="dupes">Possible duplicates (${dup.length})</button><button class="tab ${cleanTab === 'junk' ? 'on' : ''}" data-ct="junk">Not real orders (${junk.length})</button>`;
+  const row = o => `<div style="flex:1;min-width:0"><div class="ellipsis">${esc(orderTitle(o)) || '#' + esc(o.orderNumber || '—')}</div><div class="small muted ellipsis">${Parser.storeInfo(o.store).label} · ${o.orderNumber ? '#' + esc(o.orderNumber) : 'no order #'} · ${fmtDate(o.orderDate)} · ${fmtMoney(o.total)} · ${esc({ email: 'from email', manual: 'added by you', bot: 'bot paste', import: 'imported' }[o.source] || o.source)}</div></div>`;
+  if (cleanTab === 'dupes') {
+    $('#cleanBody').innerHTML = dup.length ? `<div class="small muted" style="margin-bottom:10px">Each pair looks like the same checkout recorded twice — usually a bot paste or hand-added order plus the email for it. Merging keeps everything from both.</div>` + dup.map(([a, b], i) => `<div class="card" style="margin-bottom:10px;padding:12px"><div class="li" style="border:none;padding:4px 0">${row(a)}</div><div class="li" style="border:none;padding:4px 0">${row(b)}</div><div class="hstack" style="margin-top:6px"><button class="sm primary" data-merge="${i}">Merge into one</button><button class="sm" data-notdup="${i}">Not duplicates</button></div></div>`).join('') + `<button class="primary" id="mergeAll">Merge all ${dup.length}</button>`
+      : '<div class="empty sm">No duplicates found. 👑<br><span class="small">Orders with the same order number are merged automatically.</span></div>';
+  } else {
+    const senders = {}; junk.forEach(o => (o.emails || []).forEach(e => { const k = Parser.senderKey(e.from); if (k) senders[k] = (senders[k] || 0) + 1; }));
+    $('#cleanBody').innerHTML = junk.length ? `<div class="small muted" style="margin-bottom:10px">These came from emails that don't look like store orders (unknown senders, promos, receipts). Remove them, or keep any that are real.</div>
+      <div class="list">${junk.map(o => `<div class="li">${row(o)}<button class="sm" data-keep="${o.id}">Keep</button><button class="sm danger" data-del="${o.id}">Remove</button></div>`).join('')}</div>
+      <div class="hstack" style="margin-top:12px"><button class="primary danger" id="delJunk">Remove all ${junk.length}</button></div>
+      ${Object.keys(senders).length ? `<div class="section">Ignore future emails from</div><div class="chips">${Object.entries(senders).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([k, n]) => `<button class="chip" data-ign="${esc(k)}">${esc(k)} <span class="n">${n}</span></button>`).join('')}</div>` : ''}`
+      : '<div class="empty sm">Everything looks like a real order. 👑</div>';
+  }
+}
+$('#cleanTabs').onclick = e => { const b = e.target.closest('[data-ct]'); if (b) { cleanTab = b.dataset.ct; renderCleanup(); } };
+$('#cleanBody').onclick = e => {
+  const d = e.target.closest('button'); if (!d) return; const ds = d.dataset;
+  const dup = suggestedDuplicates();
+  if (ds.merge != null) { snapshot('merge orders'); const [a, b] = dup[+ds.merge]; mergeOrderInto(a, b); resolveHouse(a); autoLink(a); }
+  else if (ds.notdup != null) { dup[+ds.notdup][1].orderNumber = dup[+ds.notdup][1].orderNumber || ''; dup[+ds.notdup][1].notDupOf = dup[+ds.notdup][0].id; }
+  else if (d.id === 'mergeAll') { snapshot('merge orders'); dup.forEach(([a, b]) => { mergeOrderInto(a, b); resolveHouse(a); autoLink(a); }); }
+  else if (ds.keep) { const o = state.orders.find(x => x.id === ds.keep); if (o) o.keepAnyway = true; }
+  else if (ds.del) { snapshot('remove order'); state.orders = state.orders.filter(x => x.id !== ds.del); }
+  else if (d.id === 'delJunk') { if (!confirm('Remove all of these?')) return; snapshot('remove non-orders'); state.orders = state.orders.filter(o => !isSuspicious(o)); }
+  else if (ds.ign) { const s = state.settings; s.ignoredSenders = Array.from(new Set([...(s.ignoredSenders || []), ds.ign])); toast('Emails from ' + ds.ign + ' will be ignored'); }
+  else return;
+  pruneHouses(); invalidateStats(); save(); renderCleanup(); refresh(); if (lastUndo && !ds.ign && !ds.keep && !ds.notdup) toast('Done', { undo: true });
+};
+function regroupHouses() {
+  for (const o of state.orders) {
+    const su = Parser.splitUnit(o.addr1);
+    if (su.unit) { o.addr1 = su.street; o.addr2 = [su.unit, o.addr2].filter(Boolean).join(', '); }
+  }
+  const byKey = new Map(), merged = new Map();
+  for (const h of state.houses) {
+    h.addr1 = titleAddr(Parser.splitUnit(h.addr1).street);
+    const key = Parser.houseKey(h.addr1, h.zip);
+    h.keys = key ? [key] : [];
+    const keep = key && byKey.get(key);
+    if (keep) {
+      merged.set(h.id, keep.id);
+      if (!keep.nickname && h.nickname) keep.nickname = h.nickname;
+      if (h.notes) keep.notes = [keep.notes, h.notes].filter(Boolean).join('\n');
+    } else if (key) byKey.set(key, h);
+  }
+  state.houses = state.houses.filter(h => !merged.has(h.id));
+  for (const o of state.orders) { if (merged.has(o.houseId)) o.houseId = merged.get(o.houseId); resolveHouse(o); }
+  pruneHouses();
+  state.houseVer = 2;
 }
 function pruneHouses() { const used = new Set(state.orders.map(o => o.houseId)); state.houses = state.houses.filter(h => used.has(h.id) || h.nickname || h.notes); }
 
@@ -70,9 +180,18 @@ function autoLinkAll() { state.orders.forEach(autoLink); if (typeof invalidateSt
 const LINK_LABEL = { email: 'matched by email', address: 'matched by address', card: 'matched by card', manual: 'linked by you', bot: 'from bot checkout' };
 
 /* ---------- email ingestion ---------- */
-function applyEmail(r, accountLabel) {
-  // r = Parser.parseOrderEmail(...) result
+function findByTracking(tracking) {
+  const nums = (tracking || []).map(t => t.number).filter(Boolean); if (!nums.length) return null;
+  return state.orders.find(o => (o.tracking || []).some(t => nums.includes(t.number))) || null;
+}
+function applyEmail(r, accountLabel, opts) {
+  // r = Parser.parseOrderEmail(...) result. opts.reapply = re-read an email we've seen before (rescan) to refresh dates/status.
+  opts = opts || {};
+  if (isIgnoredSender(r.from)) return { ignored: true };
+  if (r.store === 'other' && !state.settings.trackUnknown) return { ignored: true };
   let o = r.orderNumber ? findOrder(r.orderNumber, r.store) : null;
+  // Shipping / delivery emails often have only a tracking number - match those to the order that has it.
+  if (!o) o = findByTracking(r.tracking);
   let created = false;
   if (!o) {
     if (!r.orderNumber) return { skipped: 'no order number' };
@@ -81,16 +200,21 @@ function applyEmail(r, accountLabel) {
     if (r.status === 'delivered') o.deliveredAt = r.date;
     state.orders.push(o); created = true;
   }
-  if (o.messageIds.includes(r.messageId)) return { order: o, created: false, changed: false };
-  const before = o.status;
-  if (r.messageId) o.messageIds.push(r.messageId);
-  o.emails.push({ messageId: r.messageId, subject: r.subject, date: r.date, status: r.status, from: r.from, inbox: accountLabel || '' });
+  const seenBefore = !!r.messageId && o.messageIds.includes(r.messageId);
+  if (seenBefore && !opts.reapply) return { order: o, created: false, changed: false };
+  const before = o.status, beforeEta = o.eta;
+  if (!seenBefore) {
+    if (r.messageId) o.messageIds.push(r.messageId);
+    o.emails.push({ messageId: r.messageId, subject: r.subject, date: r.date, status: r.status, from: r.from, inbox: accountLabel || '' });
+  }
   if (!created) {
     const rankNew = STATUS[r.status].r, rankOld = (STATUS[o.status] || STATUS.placed).r;
-    if (rankNew >= rankOld) setStatus(o, r.status, r.date, 'email', r.subject);
-    else o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject + ' (older email)' }), o.history.sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  }
+    const already = o.history.some(h => h.status === r.status && h.date === r.date);
+    if (rankNew > rankOld || (rankNew === rankOld && r.status !== o.status && r.date >= (o.statusAt || ''))) { setStatus(o, r.status, r.date, 'email', r.subject); o.statusAt = r.date; }
+    else if (!already) { o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject + (rankNew < rankOld ? ' (older email)' : '') }); o.history.sort((a, b) => String(a.date).localeCompare(String(b.date))); }
+  } else o.statusAt = r.date;
   if (r.store && r.store !== 'other' && (!o.store || o.store === 'other')) o.store = r.store;
+  if (r.orderNumber && !o.orderNumber) o.orderNumber = r.orderNumber;
   if (r.date && (!o.orderDate || r.date < o.orderDate)) o.orderDate = r.date;
   if (r.total != null && (o.total == null || r.status === 'confirmed' && o.source === 'email' && !o.totalLocked)) o.total = r.total;
   if (r.items && r.items.length && !o.items.length) o.items = r.items;
@@ -99,12 +223,13 @@ function applyEmail(r, accountLabel) {
   if (r.name && !o.name) o.name = r.name;
   if (r.address && r.address.addr1 && !o.addr1) Object.assign(o, { addr1: r.address.addr1, addr2: r.address.addr2, city: r.address.city, state: r.address.state, zip: r.address.zip });
   if (r.address && r.address.name && !o.name) o.name = r.address.name;
-  if (r.eta && !['delivered', 'cancelled', 'refunded'].includes(r.status)) o.eta = r.eta;
-  if (r.status === 'delivered' && (!o.deliveredAt || r.date > o.deliveredAt)) o.deliveredAt = r.date;
+  // The newest email wins for the arrival date (a shipping email beats the original estimate, even if read out of order).
+  if (r.eta && !['delivered', 'cancelled', 'refunded'].includes(r.status) && !o.etaLocked && (!o.etaAt || r.date >= o.etaAt)) { o.eta = r.eta; o.etaAt = r.date; }
+  if (r.status === 'delivered' && (!o.deliveredAt || o.deliveredAt === o.eta || r.date < o.deliveredAt || !o.deliveredFromEmail)) { o.deliveredAt = r.date; o.deliveredFromEmail = true; }
   for (const t of r.tracking || []) if (!o.tracking.some(x => x.number === t.number)) o.tracking.push({ number: t.number, carrier: t.carrier });
   resolveHouse(o); autoLink(o);
   o.updatedAt = Date.now();
-  return { order: o, created, changed: created || before !== o.status, from: before };
+  return { order: o, created, changed: created || before !== o.status || beforeEta !== o.eta, from: before };
 }
 
 /* ================= shared order list ================= */
@@ -120,6 +245,22 @@ document.addEventListener('click', e => { const r = e.target.closest('[data-orde
 /* ================= orders page ================= */
 const OF = { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', sort: 'date', dir: -1, page: 0 };
 let oSelected = new Set();
+// The sidebar always opens the full, unfiltered list; filters only stick when you set them on the page itself.
+function resetPageFilters(page) {
+  if (page === 'orders') { Object.assign(OF, { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', page: 0 }); oSelected.clear(); }
+  if (page === 'profiles' && typeof issuesOnly !== 'undefined') { issuesOnly = false; }
+  if (page === 'houses') HF.q = '';
+}
+function activeFilterText() {
+  const f = [];
+  if (OF.status !== 'all') f.push((STATUS_TABS.find(t => t[0] === OF.status) || [, OF.status])[1]);
+  if (OF.store) f.push(Parser.storeInfo(OF.store).label);
+  if (OF.profile) f.push(OF.profile === '__none' ? 'not linked to a profile' : 'profile ' + ((profileById(OF.profile) || {}).name || '?'));
+  if (OF.house) f.push(OF.house === '__none' ? 'no address' : 'house ' + houseLabel(houseById(OF.house)));
+  if (OF.range !== 'all') f.push((RANGE_OPTS.find(r => r[0] === OF.range) || [, OF.range])[1].toLowerCase());
+  if (OF.q) f.push('search “' + OF.q + '”');
+  return f;
+}
 const RANGE_OPTS = [['all', 'All time'], ['today', 'Today'], ['7', 'Last 7 days'], ['30', 'Last 30 days'], ['90', 'Last 90 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year']];
 function rangeBounds(r) {
   const now = new Date(), start = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -164,6 +305,7 @@ PAGES.orders = {
     const cols = [['date', 'Date'], ['store', 'Store'], ['no', 'Order #'], ['item', 'Items'], ['total', 'Total', 'right'], ['status', 'Status'], ['profile', 'Profile'], ['house', 'House'], ['eta', 'Arrives']];
     const unlinked = state.orders.filter(o => !o.profileId).length;
     pg.innerHTML = `<div class="pagehead"><h1>Orders</h1><span class="sub">${plural(list.length, 'order')} · ${fmtMoney(sum(list, orderSpend))} spent</span><div class="spacer"></div>
+      ${(() => { const n = suggestedDuplicates().length + state.orders.filter(isSuspicious).length; return n ? `<button id="oClean" style="border-color:#5a4520;color:#ecc87c">Clean up (${n})</button>` : ''; })()}
       <button id="oBot">Paste bot checkout</button><button id="oImp">Import</button><button id="oExp">Export</button>${state.settings.easypostKey ? '<button id="oTrack">Refresh tracking</button>' : ''}<button class="primary" id="oAdd">+ Add order</button></div>
       <div class="toolbar"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}">
         <div class="chips">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
@@ -174,6 +316,7 @@ PAGES.orders = {
         <select id="oRange">${RANGE_OPTS.map(([v, l]) => `<option value="${v}" ${OF.range === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         ${OF.q || OF.store || OF.profile || OF.house || OF.range !== 'all' || OF.status !== 'all' ? '<button class="ghost sm" id="oReset">Reset filters</button>' : ''}
       </div>
+      ${activeFilterText().length ? `<div class="note warn" style="margin:0 0 10px;display:flex;align-items:center;gap:10px"><span style="flex:1">Showing only: <b>${esc(activeFilterText().join(' · '))}</b> — ${list.length} of ${state.orders.length} orders</span><button class="sm" id="oReset2">Show all orders</button></div>` : ''}
       <div class="selbar" ${oSelected.size ? '' : 'hidden'}><strong>${oSelected.size} selected</strong>
         <select id="oSetStatus"><option value="">Set status…</option>${STATUSES.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select>
         <select id="oSetProf"><option value="">Link to profile…</option><option value="__auto">Auto-match again</option><option value="__none">Unlink</option>${state.profiles.map(p => `<option value="${p.id}">${esc(p.name || 'Untitled')}</option>`).join('')}</select>
@@ -186,7 +329,7 @@ PAGES.orders = {
         <td class="right">${fmtMoney(o.total)}</td><td>${statusBadge(o.status)}</td>
         <td>${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
         <td class="ellipsis" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint">—</span>'}</td>
-        <td>${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint">—</span>' : o.eta ? `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>` : '<span class="faint">—</span>'}</td>
+        <td>${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : '<span class="faint">—</span>'}</td>
         <td>${(o.tracking || []).slice(0, 1).map(t => `<a href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener" class="small">${esc(t.carrier || 'Track')}</a>`).join('')}${o.tracking.length > 1 ? ` <span class="faint small">+${o.tracking.length - 1}</span>` : ''}</td></tr>`; }).join('')}</tbody></table>
       ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
       ${pages > 1 ? `<div class="pager">Page ${OF.page + 1} of ${pages}<button class="sm" id="oPrev" ${OF.page ? '' : 'disabled'}>‹ Prev</button><button class="sm" id="oNext" ${OF.page < pages - 1 ? '' : 'disabled'}>Next ›</button></div>` : ''}`;
@@ -197,7 +340,8 @@ PAGES.orders = {
     $('#oProf').onchange = e => { OF.profile = e.target.value; OF.page = 0; rr(); };
     $('#oHouse').onchange = e => { OF.house = e.target.value; OF.page = 0; rr(); };
     $('#oRange').onchange = e => { OF.range = e.target.value; OF.page = 0; rr(); };
-    if ($('#oReset')) $('#oReset').onclick = () => { Object.assign(OF, { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', page: 0 }); rr(); };
+    if ($('#oReset')) $('#oReset').onclick = () => { resetPageFilters('orders'); rr(); };
+    if ($('#oReset2')) $('#oReset2').onclick = () => { resetPageFilters('orders'); rr(); };
     if ($('#oPrev')) $('#oPrev').onclick = () => { OF.page--; rr(); };
     if ($('#oNext')) $('#oNext').onclick = () => { OF.page++; rr(); };
     $$('#pg-orders th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (OF.sort === k) OF.dir *= -1; else { OF.sort = k; OF.dir = ['date', 'total', 'eta', 'status'].includes(k) ? -1 : 1; } rr(); });
@@ -208,6 +352,7 @@ PAGES.orders = {
     if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } }); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
     if ($('#oDel')) $('#oDel').onclick = () => { const n = oSelected.size; if (!confirm(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
     $('#oAdd').onclick = () => openOrder(null);
+    if ($('#oClean')) $('#oClean').onclick = openCleanup;
     $('#oBot').onclick = openBotPaste; $('#oImp').onclick = openOrderImport; $('#oExp').onclick = () => exportOrders(list);
     if ($('#oTrack')) $('#oTrack').onclick = () => refreshAllTracking();
   },
@@ -312,6 +457,7 @@ $('#ordSave').onclick = () => {
   snapshot(ordIsNew ? 'add order' : 'edit order');
   const real = ordIsNew ? o : state.orders.find(x => x.id === o.id);
   const tot = g('oeTotal').replace(/[$,]/g, '');
+  if (g('oeEta') !== (real.eta || '')) real.etaLocked = !!g('oeEta');
   Object.assign(real, { store: g('oeStore'), orderNumber: no, total: tot === '' ? null : (Number.isFinite(Number(tot)) ? Math.round(Number(tot) * 100) / 100 : real.total), eta: g('oeEta'), last4: g('oeL4').replace(/\D/g, '').slice(-4), name: g('oeName'), recipientEmail: g('oeEmail').toLowerCase(), addr1: g('oeA1'), addr2: g('oeA2'), city: g('oeCity'), state: g('oeState').toUpperCase(), zip: g('oeZip'), notes: $('#oeNotes').value, items: parseItemsText($('#oeItems').value), updatedAt: Date.now() });
   if (real.total != null) real.totalLocked = true;
   const dVal = g('oeDate'); if (dVal && dVal !== dayKey(toDate(real.orderDate) || new Date())) { const d = parseDay(dVal); const old = toDate(real.orderDate) || new Date(); d.setHours(old.getHours(), old.getMinutes()); real.orderDate = d.toISOString(); }
@@ -463,7 +609,7 @@ PAGES.houses = {
     const sorters = { orders: (a, b) => b.s.n - a.s.n, spent: (a, b) => b.s.spent - a.s.spent, active: (a, b) => b.s.active - a.s.active || b.s.n - a.s.n, recent: (a, b) => String(b.s.last).localeCompare(String(a.s.last)), az: (a, b) => houseLabel(a.h).localeCompare(houseLabel(b.h), undefined, { numeric: true }) };
     hs.sort(sorters[HF.sort] || sorters.orders);
     const noAddr = state.orders.filter(o => !o.houseId).length;
-    pg.innerHTML = `<div class="pagehead"><h1>Houses</h1><span class="sub">${plural(total, 'house')} · grouped by street address (apt / unit ignored)</span></div>
+    pg.innerHTML = `<div class="pagehead"><h1>Houses</h1><span class="sub">${plural(total, 'house')} · grouped by street address only — apt, unit and line 2 ignored</span></div>
       <div class="toolbar"><input class="search" data-search id="hQ" placeholder="Search address, name, unit…  ( / )" value="${esc(HF.q)}">
       <div class="chips">${[['orders', 'Most orders'], ['spent', 'Most spent'], ['active', 'Most active'], ['recent', 'Newest'], ['az', 'A–Z']].map(([k, l]) => `<button class="chip ${HF.sort === k ? 'on' : ''}" data-hs="${k}">${l}</button>`).join('')}</div></div>
       ${noAddr ? `<div class="note" style="margin:0 0 12px">${plural(noAddr, 'order')} ${noAddr === 1 ? 'has' : 'have'} no shipping address yet, so ${noAddr === 1 ? 'it isn’t' : 'they aren’t'} in a house. Addresses come from order confirmation emails. <a href="#orders" onclick="OF.house='__none'">See them</a></div>` : ''}
