@@ -1166,7 +1166,7 @@ class handler(BaseHTTPRequestHandler):
 
     def _guard(self):
         if self.headers.get("X-Crown") != "1":
-            self._send(403, {"ok": False, "error": "Forbidden"})
+            self._send(403, {"ok": False, "error": "Forbidden", "seen": self._route(), "raw": self.path[:80]})
             return False
         return True
 
