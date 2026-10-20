@@ -1171,9 +1171,9 @@ class handler(BaseHTTPRequestHandler):
         return True
 
     def do_GET(self):
-        if not self._guard():
-            return
         r = self._route()
+        if r != "/ping" and not self._guard():  # the status check is read-only and safe to leave open
+            return
         h = self.headers
         if r == "/ping":
             def ping():
