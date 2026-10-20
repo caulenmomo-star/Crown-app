@@ -299,7 +299,7 @@ PAGES.inboxes = {
   render() {
     const pg = $('#pg-inboxes'); const S = state.settings;
     pg.innerHTML = `<div class="pagehead"><h1>Inboxes</h1><span class="sub">Crown reads order emails from these and keeps your orders up to date</span><div class="spacer"></div>
-      ${state.imapAccounts.length ? `<button id="ibSyncAll" ${syncing || !SERVER ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync all now'}</button>` : ''}<button class="primary" id="ibAdd">+ Add inbox</button></div>
+      ${state.imapAccounts.length ? `<button id="ibReread" ${syncing || rereading || !SERVER ? 'disabled' : ''} title="Re-read every order email and refill totals, items, pictures, addresses and houses">${rereading ? 'Re-reading…' : 'Re-read all order emails'}</button><button id="ibSyncAll" ${syncing || !SERVER ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync all now'}</button>` : ''}<button class="primary" id="ibAdd">+ Add inbox</button></div>
       ${!SERVER ? '<div class="note bad" style="margin:0 0 14px">Email sync needs Crown’s helper. Close this tab and open Crown with <b>Start Crown.command</b>.</div>' : ''}
       <div class="card" style="margin-bottom:14px"><h3>Automatic sync</h3><div class="chips" id="ibAuto">${[[0, 'Off'], [1, 'Every minute'], [2, 'Every 2 min'], [5, 'Every 5 min'], [15, 'Every 15 min'], [30, 'Every 30 min']].map(([v, l]) => `<button class="chip ${S.autoSyncMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div><div class="small faint" style="margin-top:8px">Runs while Crown is open and unlocked.${syncNextAt && S.autoSyncMin ? ' Next sync ' + new Date(syncNextAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '.' : ''}</div></div>
       ${state.imapAccounts.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));margin-bottom:14px">${state.imapAccounts.map(a => { const r = a.lastResult; const busy = syncingIds.has(a.id); const P = PROVIDERS[a.provider] || PROVIDERS.other; return `<div class="card">
@@ -315,6 +315,7 @@ PAGES.inboxes = {
       </div>`;
     $('#ibAdd').onclick = () => openInbox(null);
     if ($('#ibSyncAll')) $('#ibSyncAll').onclick = () => syncAll(true);
+    if ($('#ibReread')) $('#ibReread').onclick = () => { if (confirm('Re-read every order email from your inboxes?\n\nThis refills totals, items, pictures, addresses and houses for all your orders. It can take a few minutes.')) { rereadAll(false); setTimeout(() => PAGES.inboxes.render(), 300); } };
     $('#ibAuto').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; state.settings.autoSyncMin = +b.dataset.v; save(); scheduleSync(); PAGES.inboxes.render(); };
     if ($('#ibClearUn')) $('#ibClearUn').onclick = () => { state.unparsed = []; save(); refresh(); };
     pg.querySelectorAll('[data-unhide]').forEach(b => b.onclick = () => { state.unparsed = state.unparsed.filter(u => u.messageId !== b.dataset.unhide); save(); refresh(); });

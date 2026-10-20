@@ -151,8 +151,8 @@ async function syncAll(manual, ids, opts) {
 }
 function rescan(id, days) {
   const a = state.imapAccounts.find(x => x.id === id); if (!a) return;
-  if (!confirm(`Re-read the last ${days} days of ${a.label || a.user}?\n\nThis refreshes delivery dates and statuses. Nothing is duplicated, but orders you deleted from that period will come back.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
-  syncAll(true, [id], { days, fresh: true, reapply: true });
+  if (!confirm(`Re-read every order email from the last ${days} days of ${a.label || a.user}?\n\nThis refills totals, items, pictures, addresses and tracking. Nothing is duplicated, but orders you deleted from that period will come back.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
+  syncAll(true, [id], { days, fresh: true, reapply: true, full: true }).then(() => { if (!cryptoKey) return; regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); invalidateStats(); save(); refresh(); });
 }
 function scheduleSync() {
   clearTimeout(syncTimer); syncNextAt = 0;
@@ -176,26 +176,53 @@ function onUnlocked() {
   if (state.houseVer !== 2 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
   // 0.4.0: the email reader was rebuilt against real store emails (totals, items + pictures, addresses, tracking,
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
-  if (state.readerVer !== READER_VER) {
-    const accs = state.imapAccounts.filter(a => a.enabled !== false);
-    if (SERVER && accs.length) setTimeout(async () => {
-      if (syncing) return;
-      toast('Crown’s email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…');
-      const days = Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60);
-      await syncAll(false, null, { days: Math.min(days, 180), fresh: true, reapply: true, full: true });
-      if (!cryptoKey) return;
-      state.readerVer = READER_VER; regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); pruneHouses(); invalidateStats(); save(); refresh();
-      toast('Re-read finished — orders updated');
-    }, 3000);
-    else if (!accs.length) state.readerVer = READER_VER;
-  }
+  const needReread = state.readerVer !== READER_VER;
+  if (needReread) { if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => rereadAll(true), 1500); else if (!state.imapAccounts.length) state.readerVer = READER_VER; }
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
-  if (SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);
+  if (!needReread && SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);
+}
+// Re-read every order email in the lookback window with the current reader and refresh every order, house and link.
+// Runs once automatically after a reader upgrade (it waits for any sync already running, never skips), and from the
+// "Re-read all order emails" button. Only marked done when every inbox read without errors, so it retries otherwise.
+let rereading = false;
+// Older readers glued words onto order numbers ("102003655603099ARE" from "...#102003655603099are about to ship").
+// Re-derive each email order's number from its email subjects so the pieces merge back into one order.
+function fixOrderNumbers() {
+  let n = 0;
+  for (const o of state.orders) {
+    if (o.source !== 'email' || !o.orderNumber) continue;
+    const cur = Parser.normOrderNo(o.orderNumber);
+    for (const e of o.emails || []) {
+      const v = Parser.extractOrderNumber(e.subject || '', ''); const nv = Parser.normOrderNo(v);
+      if (nv && nv !== cur && nv.length >= 6 && cur.startsWith(nv) && /^[A-Z]+$/.test(cur.slice(nv.length))) { o.orderNumber = v; n++; break; }
+    }
+    if (/^\d{6,}[A-Z]{2,}$/.test(Parser.normOrderNo(o.orderNumber))) { o.orderNumber = Parser.normOrderNo(o.orderNumber).replace(/[A-Z]+$/, ''); n++; }
+  }
+  return n;
+}
+async function rereadAll(auto) {
+  if (rereading || !cryptoKey || !SERVER) return; rereading = true;
+  try {
+    const accs = state.imapAccounts.filter(a => a.enabled !== false); if (!accs.length) return;
+    for (let i = 0; i < 1200 && syncing; i++) await new Promise(r => setTimeout(r, 500)); // wait for a running sync to finish
+    if (!cryptoKey) return;
+    const fixed = fixOrderNumbers(), merged0 = mergeSameNumber(); if (fixed || merged0) { invalidateStats(); save(); refresh(); }
+    toast(auto ? 'Crown’s email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
+    const days = Math.min(180, Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60));
+    await syncAll(false, accs.map(a => a.id), { days, fresh: true, reapply: true, full: true });
+    if (!cryptoKey) return;
+    const failed = accs.filter(a => a.lastResult && a.lastResult.error);
+    fixOrderNumbers(); mergeSameNumber(); regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); pruneHouses(); invalidateStats();
+    if (!failed.length) state.readerVer = READER_VER;
+    save(); refresh();
+    const withPics = state.orders.filter(o => (o.items || []).some(i => i.image)).length, inHouse = state.orders.filter(o => o.houseId).length;
+    toast(failed.length ? `Re-read finished with problems: ${failed[0].lastResult.error} — it will try again next time` : `Re-read finished — ${inHouse} of ${plural(state.orders.length, 'order')} in houses, ${withPics} with pictures`);
+  } finally { rereading = false; }
 }
 function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 // catch up right away when you come back to Crown
-document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (m && accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (m && accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
 $('#syncNowNav').onclick = () => syncAll(true);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */

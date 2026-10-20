@@ -2,6 +2,14 @@
 
 Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.4.2 — Re-read fix (2026-10-20)
+
+- Fixed: the one-time re-read after updating was skipped whenever a normal sync started first, so existing orders never got their pictures, totals or addresses. It now waits for the other sync and always runs.
+- The re-read only counts as done when every inbox read without errors. Otherwise it tries again next time.
+- New “Re-read all order emails” button on the Inboxes page, so you can refill everything whenever you want.
+- Old orders whose numbers had words stuck on the end (like “…099ARE”) are repaired and merged back into the right order.
+- When the re-read finishes, Crown tells you how many orders are in houses and how many have pictures.
+
 ## v0.4.1 — Second pass (2026-10-20)
 
 - Walmart “Shipped:”, “Arrived:” and “Canceled:” emails and Pokémon Center confirmations are now read correctly, all tested against your real emails.
