@@ -763,7 +763,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
          ".png": "image/png", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".json": "application/json", ".webmanifest": "application/manifest+json"}
 
 
-class Handler(BaseHTTPRequestHandler):
+class _LocalHandler(BaseHTTPRequestHandler):
     server_version = "Crown/" + VERSION
 
     def log_message(self, fmt, *args):  # keep the terminal quiet
@@ -936,7 +936,7 @@ def main():
                 webbrowser.open(url)
             return
         try:
-            httpd = ThreadingHTTPServer((HOST, port), Handler)
+            httpd = ThreadingHTTPServer((HOST, port), _LocalHandler)
             PORT = port
             break
         except OSError:
@@ -1166,7 +1166,7 @@ class handler(BaseHTTPRequestHandler):
 
     def _guard(self):
         if self.headers.get("X-Crown") != "1":
-            self._send(403, {"ok": False, "error": "Forbidden", "seen": self._route(), "raw": self.path[:80]})
+            self._send(403, {"ok": False, "error": "Forbidden"})
             return False
         return True
 
