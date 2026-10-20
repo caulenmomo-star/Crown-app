@@ -35,7 +35,7 @@ PAGES.dashboard = {
     const spentM = sum(thisM, orderSpend), spentLM = sum(lastM, orderSpend);
     const transit = state.orders.filter(inTransit);
     const d30 = state.orders.filter(o => inRange(o.orderDate, '30'));
-    const stick = d30.length ? Math.round(d30.filter(o => !isDead(o)).length / d30.length * 100) : null;
+    const si30 = stickInfo(d30), stick = si30.rate;
     const soon = state.orders.filter(o => isActive(o) && o.eta && o.eta <= dayKey(new Date(Date.now() + 1 * 864e5)) && o.eta >= tk);
     const upcoming = state.orders.filter(o => isActive(o) && o.eta && o.eta >= tk).sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 8);
     const overdue = state.orders.filter(o => isActive(o) && o.eta && o.eta < tk && (inTransit(o) || o.status === 'confirmed'));
@@ -64,7 +64,7 @@ PAGES.dashboard = {
         <div class="kpi"><div class="l">Spent this month</div><div class="v">${fmtMoney(spentM)}</div><div class="d">${spentLM ? (spentM >= spentLM ? '▲ ' : '▼ ') + fmtMoney(Math.abs(spentM - spentLM)) + ' vs same point last month' : '&nbsp;'}</div></div>
         <div class="kpi"><div class="l">Orders this month</div><div class="v">${thisM.filter(o => !isDead(o)).length}</div><div class="d">${thisM.filter(isDead).length} cancelled</div></div>
         <div class="kpi"><div class="l">In transit</div><div class="v">${transit.length}</div><div class="d">${soon.length ? soon.length + ' arriving by tomorrow' : '&nbsp;'}</div></div>
-        <div class="kpi"><div class="l">Stick rate (30d)</div><div class="v">${stick == null ? '—' : stick + '%'}</div><div class="d">${d30.length ? d30.filter(o => !isDead(o)).length + ' of ' + d30.length + ' stuck' : '&nbsp;'}</div></div>
+        <div class="kpi"><div class="l">Stick rate (30d)</div><div class="v">${stick == null ? '—' : stick + '%'}</div><div class="d">${d30.length ? `${si30.stuck} shipped · ${si30.dead} cancelled${si30.pending ? ' · ' + si30.pending + ' pending' : ''}` : '&nbsp;'}</div></div>
         <div class="kpi"><div class="l">Profiles</div><div class="v">${state.profiles.length}</div><div class="d">${state.categories.length} categories</div></div>
         <div class="kpi"><div class="l">Houses</div><div class="v">${state.houses.filter(h => houseOrders(h.id).length).length}</div><div class="d">&nbsp;</div></div>
       </div>
@@ -120,20 +120,36 @@ PAGES.calendar = {
 /* ================= spending ================= */
 const SP = { range: '30', theme: 'aurora' };
 const SP_RANGES = [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['365', '12 months'], ['all', 'All time']];
-function spRangeLabel() { if (SP.range.startsWith('m:')) { const [y, m] = SP.range.slice(2).split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); } return { 7: 'Last 7 days', 30: 'Last 30 days', 90: 'Last 90 days', month: 'This month', lastmonth: 'Last month', year: 'This year', 365: 'Last 12 months', all: 'All time' }[SP.range]; }
-function spOrders() {
-  if (SP.range.startsWith('m:')) { const [y, m] = SP.range.slice(2).split('-').map(Number); return state.orders.filter(o => { const d = toDate(o.orderDate); return d && d.getFullYear() === y && d.getMonth() === m - 1; }); }
-  return state.orders.filter(o => inRange(o.orderDate, SP.range));
+// A date range is a preset key ('30', 'month', ...), a month 'm:2026-09', or a custom span 'c:2026-09-01:2026-09-30'.
+function rangeSpan(spec) {
+  const now = new Date();
+  if (spec.startsWith('m:')) { const [y, m] = spec.slice(2).split('-').map(Number); return [new Date(y, m - 1, 1), new Date(y, m, 1)]; }
+  if (spec.startsWith('c:')) { const [, a, b] = spec.split(':'); const s0 = a ? parseDay(a) : null, e0 = b ? parseDay(b) : null; return [s0, e0 ? new Date(e0.getFullYear(), e0.getMonth(), e0.getDate() + 1) : null]; }
+  if (spec === 'today') return [new Date(now.getFullYear(), now.getMonth(), now.getDate()), null];
+  if (spec === 'yesterday') return [new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1), new Date(now.getFullYear(), now.getMonth(), now.getDate())];
+  return rangeBounds(spec);
 }
+function rangeLabel(spec) {
+  if (spec.startsWith('m:')) { const [y, m] = spec.slice(2).split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); }
+  if (spec.startsWith('c:')) {
+    const [, a, b] = spec.split(':'); const f = d => parseDay(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return a && b ? (a === b ? f(a) : f(a) + ' – ' + f(b)) : a ? 'Since ' + f(a) : b ? 'Through ' + f(b) : 'All time';
+  }
+  return { today: 'Today', yesterday: 'Yesterday', 7: 'Last 7 days', 30: 'Last 30 days', 90: 'Last 90 days', month: 'This month', lastmonth: 'Last month', year: 'This year', 365: 'Last 12 months', all: 'All time' }[spec] || spec;
+}
+function ordersInRange(spec) { const [a, b] = rangeSpan(spec); return state.orders.filter(o => { const d = toDate(o.orderDate); if (!d) return spec === 'all'; return (!a || d >= a) && (!b || d < b); }); }
+function spRangeLabel() { return rangeLabel(SP.range); }
+function spOrders() { return ordersInRange(SP.range); }
 function spStats(list) {
   const live = list.filter(o => !isDead(o)), dead = list.filter(isDead);
   const spent = sum(live, orderSpend);
   const group = (keyFn, nameFn) => { const m = {}; live.forEach(o => { const k = keyFn(o); if (!k) return; const g = m[k] = m[k] || { k, v: 0, n: 0 }; g.v += orderSpend(o); g.n++; }); return Object.values(m).sort((a, b) => b.v - a.v).map(g => Object.assign(g, { name: nameFn(g.k) })); };
-  const items = {}; live.forEach(o => (o.items || []).forEach(i => { const k = i.name; const g = items[k] = items[k] || { name: k, qty: 0, v: 0 }; g.qty += Number(i.qty) || 1; g.v += (Number(i.price) || 0) * (Number(i.qty) || 1); }));
+  const items = {}; live.forEach(o => (o.items || []).forEach(i => { const q = qtyOf(i); if (!q) return; const k = i.name; const g = items[k] = items[k] || { name: k, qty: 0, v: 0, image: '' }; g.qty += q; g.v += (Number(i.price) || 0) * q; if (!g.image && i.image) g.image = i.image; }));
+  const si = stickInfo(list);
   const cardOf = o => { const p = profileById(o.profileId); const l4 = o.last4 || (p && String(p.cardNumber || '').replace(/\D/g, '').slice(-4)); return l4 || ''; };
   return {
     list, live, dead, spent, items: sum(live, itemCount), avg: live.length ? spent / live.length : 0, deadSpent: sum(dead, o => Number(o.total) || 0),
-    stick: list.length ? Math.round(live.length / list.length * 100) : null,
+    stick: si.rate, stuck: list.filter(isStuck), pending: list.filter(isPending), pendingSpent: sum(list.filter(isPending), orderSpend), cancelledItems: sum(list, o => isDead(o) ? itemCount(o) + cancelledCount(o) : cancelledCount(o)),
     byStore: group(o => o.store, k => Parser.storeInfo(k).label), byHouse: group(o => o.houseId, k => houseLabel(houseById(k))), byProfile: group(o => o.profileId, k => (profileById(k) || {}).name || 'Untitled'), byCard: group(cardOf, k => '•••• ' + k),
     topItems: Object.values(items).sort((a, b) => b.qty - a.qty || b.v - a.v).slice(0, 8),
   };
@@ -141,8 +157,7 @@ function spStats(list) {
 function spBuckets(list) {
   const ds = list.map(o => toDate(o.orderDate)).filter(Boolean);
   const now = new Date();
-  let start = rangeBounds(SP.range)[0], end = rangeBounds(SP.range)[1] || new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  if (SP.range.startsWith('m:')) { const [y, m] = SP.range.slice(2).split('-').map(Number); start = new Date(y, m - 1, 1); end = new Date(y, m, 1); }
+  let [start, end] = rangeSpan(SP.range); end = end || new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   if (!start) start = ds.length ? new Date(Math.min(...ds)) : new Date(now.getFullYear(), now.getMonth(), 1);
   start = new Date(start.getFullYear(), start.getMonth(), start.getDate());
   const spanDays = Math.max(1, Math.round((end - start) / 864e5));
@@ -161,15 +176,17 @@ function spBuckets(list) {
 PAGES.spending = {
   render() {
     const pg = $('#pg-spending'); const list = spOrders(); const s = spStats(list); const { buckets, unit } = spBuckets(list);
+    const cardSpec = SHARE.range === 'page' ? SP.range : SHARE.range; const cs = cardSpec === SP.range ? s : spStats(ordersInRange(cardSpec));
     const months = []; const n = new Date(); for (let i = 0; i < 24; i++) { const d = new Date(n.getFullYear(), n.getMonth() - i, 1); months.push([`m:${d.getFullYear()}-${pad2(d.getMonth() + 1)}`, d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })]); }
     pg.innerHTML = `<div class="pagehead"><h1>Spending</h1><span class="sub">${esc(spRangeLabel())}</span><div class="spacer"></div>
       <div class="chips">${SP_RANGES.map(([k, l]) => `<button class="chip ${SP.range === k ? 'on' : ''}" data-sr="${k}">${l}</button>`).join('')}</div>
-      <select id="spMonth" style="width:auto"><option value="">Pick a month…</option>${months.map(([k, l]) => `<option value="${k}" ${SP.range === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      <select id="spMonth" style="width:auto"><option value="">Pick a month…</option>${months.map(([k, l]) => `<option value="${k}" ${SP.range === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <span class="hstack" style="gap:6px"><input type="date" id="spFrom" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[1] : ''}" title="From"><span class="faint">to</span><input type="date" id="spTo" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[2] : ''}" title="To"></span></div>
       <div class="kpis">
-        <div class="kpi"><div class="l">Spent</div><div class="v">${fmtMoney(s.spent)}</div><div class="d">cancelled & refunded not counted</div></div>
-        <div class="kpi"><div class="l">Orders that stuck</div><div class="v">${s.live.length}</div><div class="d">${s.items} items</div></div>
+        <div class="kpi"><div class="l">Spent</div><div class="v">${fmtMoney(s.spent)}</div><div class="d">${s.pending.length ? fmtMoney(s.pendingSpent) + ' still pending · ' : ''}cancelled not counted</div></div>
+        <div class="kpi"><div class="l">Orders that stuck</div><div class="v">${s.stuck.length}</div><div class="d">${s.pending.length ? s.pending.length + ' pending · ' : ''}${s.items} items</div></div>
         <div class="kpi"><div class="l">Average order</div><div class="v">${fmtMoney(s.avg)}</div></div>
-        <div class="kpi"><div class="l">Stick rate</div><div class="v">${s.stick == null ? '—' : s.stick + '%'}</div><div class="d">${s.dead.length} cancelled (${fmtMoney(s.deadSpent)})</div></div>
+        <div class="kpi"><div class="l">Stick rate</div><div class="v">${s.stick == null ? '—' : s.stick + '%'}</div><div class="d">${s.dead.length} cancelled (${fmtMoney(s.deadSpent)})${s.cancelledItems ? ' · ' + s.cancelledItems + ' items' : ''}</div></div>
         <div class="kpi"><div class="l">Top store</div><div class="v" style="font-size:19px">${s.byStore[0] ? esc(s.byStore[0].name) : '—'}</div><div class="d">${s.byStore[0] ? fmtMoney(s.byStore[0].v) : '&nbsp;'}</div></div>
       </div>
       <div class="card" style="margin-bottom:14px"><h3>Spent per ${unit}</h3>${svgBars(buckets)}</div>
@@ -180,9 +197,13 @@ PAGES.spending = {
         <div class="card"><h3>By card</h3>${hbars(s.byCard.slice(0, 10).map(g => ({ name: g.name, v: g.v, n: g.n, c: 'var(--gold)' })), { fmt: r => fmtMoney(r.v) + ' · ' + r.n })}</div>
       </div>
       <div class="card" style="margin-bottom:14px"><h3>Top items</h3>${s.topItems.length ? `<div class="list">${s.topItems.map(i => `<div class="li"><div class="badge">${i.qty}×</div><div style="flex:1;min-width:0" class="ellipsis">${esc(i.name)}</div><div class="muted">${i.v ? fmtMoney(i.v) : ''}</div></div>`).join('')}</div>` : '<div class="empty sm">No item details yet.</div>'}</div>
-      <div class="card"><h3>Checkout card <span class="faint" style="font-weight:400">— a shareable recap of this range</span></h3>
+      <div class="card"><h3>Checkout card <span class="faint" style="font-weight:400">— a shareable recap</span></h3>
         <div class="sharewrap"><canvas id="shareCanvas" width="1080" height="1350"></canvas><div>
-          <div class="section" style="margin-top:0">Theme</div><div class="chips">${Object.keys(THEMES).map(t => `<button class="chip ${SP.theme === t ? 'on' : ''}" data-th="${t}">${THEMES[t].name}</button>`).join('')}</div>
+          <div class="section" style="margin-top:0">Date range</div>
+          <div class="chips" id="shRange">${[['page', 'Same as page'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['all', 'All time']].map(([k, l]) => `<button class="chip ${SHARE.range === k ? 'on' : ''}" data-shr="${k}">${l}</button>`).join('')}</div>
+          <div class="hstack" style="gap:6px;margin-top:8px"><input type="date" id="shFrom" style="width:auto" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[1] : ''}"><span class="faint">to</span><input type="date" id="shTo" style="width:auto" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[2] : ''}"></div>
+          <div class="small faint" style="margin-top:6px">${esc(rangeLabel(cardSpec))} · ${plural(cs.list.length, 'order')}</div>
+          <div class="section">Theme</div><div class="chips">${Object.keys(THEMES).map(t => `<button class="chip ${SP.theme === t ? 'on' : ''}" data-th="${t}">${THEMES[t].name}</button>`).join('')}</div>
           <div class="section">Show</div><div class="chips">${[['money', 'Dollar amounts'], ['items', 'Top items'], ['store', 'Top store']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${l}</button>`).join('')}</div>
           <div class="hstack" style="margin-top:16px"><button class="primary" id="shDl">Download PNG</button><button id="shCopy">Copy image</button></div>
           <div class="small faint" style="margin-top:10px">The card never includes addresses, names, emails or card numbers.</div></div></div></div>`;
@@ -190,12 +211,16 @@ PAGES.spending = {
     $('#spMonth').onchange = e => { if (e.target.value) { SP.range = e.target.value; PAGES.spending.render(); } };
     pg.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { SP.theme = b.dataset.th; PAGES.spending.render(); });
     pg.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { SHARE[b.dataset.sh] = !SHARE[b.dataset.sh]; PAGES.spending.render(); });
-    drawShareCard($('#shareCanvas'), s);
+    drawShareCard($('#shareCanvas'), cs, rangeLabel(cardSpec));
+    const custom = (a, b) => { const f = $(a).value, t = $(b).value; if (!f && !t) return null; return 'c:' + (f || '') + ':' + (t || ''); };
+    $('#spFrom').onchange = $('#spTo').onchange = () => { const c = custom('#spFrom', '#spTo'); if (c) { SP.range = c; PAGES.spending.render(); } };
+    $('#shFrom').onchange = $('#shTo').onchange = () => { const c = custom('#shFrom', '#shTo'); if (c) { SHARE.range = c; PAGES.spending.render(); } };
+    $('#shRange').onclick = e => { const b = e.target.closest('[data-shr]'); if (b) { SHARE.range = b.dataset.shr; PAGES.spending.render(); } };
     $('#shDl').onclick = () => { $('#shareCanvas').toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
     $('#shCopy').onclick = () => { $('#shareCanvas').toBlob(async b => { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Download instead.'); } }, 'image/png'); };
   },
 };
-const SHARE = { money: true, items: true, store: true };
+const SHARE = { money: true, items: true, store: true, range: 'page' };
 const THEMES = {
   aurora: { name: 'Aurora', bg: ['#0b1020', '#1b1748', '#0d3b3a'], blobs: ['#7c8cff', '#2dd4bf'], accent: '#a5b4fc' },
   ice: { name: 'Ice', bg: ['#07111f', '#0c2d4d', '#0a4f73'], blobs: ['#7dd3fc', '#e0f2fe'], accent: '#bae6fd' },
@@ -207,17 +232,17 @@ const THEMES = {
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function fitFont(ctx, text, maxW, weight, size, F) { let s = size; ctx.font = `${weight} ${s}px ${F}`; while (s > 18 && ctx.measureText(String(text)).width > maxW) { s -= 2; ctx.font = `${weight} ${s}px ${F}`; } return s; }
 function fitText(ctx, text, maxW) { text = String(text); if (ctx.measureText(text).width <= maxW) return text; while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1); return text + '…'; }
-function drawShareCard(cv, s) {
+function drawShareCard(cv, s, label) {
   const ctx = cv.getContext('2d'); const W = cv.width, H = cv.height; const T = THEMES[SP.theme] || THEMES.aurora;
   const F = '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", sans-serif';
   const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, T.bg[0]); g.addColorStop(0.55, T.bg[1]); g.addColorStop(1, T.bg[2]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   [[W * 0.85, H * 0.12, 520, T.blobs[0]], [W * 0.1, H * 0.78, 600, T.blobs[1]]].forEach(([x, y, r, c]) => { const rg = ctx.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, c + '55'); rg.addColorStop(1, c + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); });
   ctx.fillStyle = '#f5c451'; ctx.save(); ctx.translate(80, 86); ctx.scale(2.6, 2.6); ctx.beginPath(); ctx.moveTo(3, 18); ctx.lineTo(21, 18); ctx.lineTo(22, 7); ctx.lineTo(16.5, 11); ctx.lineTo(12, 4); ctx.lineTo(7.5, 11); ctx.lineTo(2, 7); ctx.closePath(); ctx.fill(); ctx.fillRect(3, 19.5, 18, 2); ctx.restore();
   ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.font = `700 34px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.fillText('CHECKOUT RECAP', 160, 132);
-  ctx.fillStyle = T.accent; ctx.font = `500 30px ${F}`; ctx.fillText(spRangeLabel(), 80, 230);
+  ctx.fillStyle = T.accent; ctx.font = `500 30px ${F}`; ctx.fillText(label || spRangeLabel(), 80, 230);
   const big = SHARE.money ? fmtMoney(s.spent, s.spent >= 100000) : String(s.live.length);
   ctx.fillStyle = '#fff'; fitFont(ctx, big, W - 160, 800, SHARE.money ? 150 : 170, F); ctx.fillText(big, 72, 392);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 34px ${F}`; ctx.fillText(SHARE.money ? 'spent on orders that stuck' : (s.live.length === 1 ? 'order secured' : 'orders secured'), 80, 470);
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 34px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), 80, 470);
   const boxes = [[SHARE.money ? String(s.live.length) : String(s.items), SHARE.money ? 'Orders' : 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [SHARE.money ? USD0.format(Math.round(s.avg)) : String(s.dead.length), SHARE.money ? 'Avg order' : 'Cancelled'], [String(s.items), 'Items']].slice(0, SHARE.money ? 4 : 3);
   const bw = (W - 160 - (boxes.length - 1) * 24) / boxes.length;
   boxes.forEach(([v, l], i) => { const x = 80 + i * (bw + 24), y = 520; ctx.fillStyle = 'rgba(255,255,255,.08)'; rr(ctx, x, y, bw, 170, 26); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 48, 750, 56, F); ctx.fillText(v, x + 26, y + 92); ctx.fillStyle = 'rgba(255,255,255,.65)'; ctx.font = `500 26px ${F}`; ctx.fillText(l, x + 26, y + 138); });

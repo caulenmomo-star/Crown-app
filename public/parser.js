@@ -157,12 +157,17 @@
 
   function money(v) { const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; }
   const AMT = '(?:USD\\s*)?\\$\\s*([\\d,]+\\.\\d{2})|([\\d,]+\\.\\d{2})\\s*USD';
+  // A payment line ("we processed a payment of $X", "we'll reauthorize $X") can cover only part of an order,
+  // so it's only used when the email has no real order total.
+  function extractPayment(text) {
+    const m = String(text || '').match(new RegExp('(?:processed|charged|(?:re)?authoriz(?:e|ed))\\s+(?:a\\s+)?(?:payment\\s+)?(?:of|for)\\s+(?:' + AMT + ')', 'i'));
+    return m ? money(m[1] || m[2]) : null;
+  }
   function extractTotal(text) {
     const t = String(text || '');
     // "Order total ... $150.41" - the label may sit a line or a short phrase away from the amount.
     const strong = new RegExp('(?:order total|grand total|total charged|amount charged|total paid|payment total|you paid|total amount|order amount|estimated total|total due|charged to your card)[^$\\d]{0,60}?(?:' + AMT + ')', 'i');
     let m = t.match(strong); if (m) return money(m[1] || m[2]);
-    m = t.match(new RegExp('(?:processed|charged|(?:re)?authoriz(?:e|ed))\\s+(?:a\\s+)?(?:payment\\s+)?(?:of|for)\\s+(?:' + AMT + ')', 'i')); if (m) return money(m[1] || m[2]);
     // last plain "Total" (not subtotal, not "you saved a total of")
     let last = null; const re = new RegExp('\\btotal\\b[\\s:\\-]*(?:' + AMT + ')', 'gi');
     while ((m = re.exec(t))) {
@@ -484,10 +489,13 @@
       rawAddress: rawAddr || '',
       eta: (() => { for (const s of sources) { const v = extractEta(s, m.date); if (v) return v; } return ''; })(),
       deliveredOn: status === 'delivered' ? first(s => extractDeliveredOn(s, m.date)) || '' : '',
-      total: first(extractTotal),
+      total: first(extractTotal) ?? first(extractPayment),
+      totalKind: first(extractTotal) != null ? 'order' : first(extractPayment) != null ? 'payment' : '',
       tracking: (() => { for (const s of sources) { const v = extractTracking(s, orderNumber); if (v.length) return v; } return []; })(),
       last4: first(extractLast4) || '',
       items: settlePrices(items, sub),
+      // "We had to cancel an item in your order" - only part of the order is cancelled
+      partial: status === 'cancelled' && (/\b(an item|some items|one item|1 item|items? in your order|items? from your order|part of your order|an item from|some of your items)\b/i.test(subject) || /\b(rest of your order|remaining items?|other items? (?:in|from) your order)\b/i.test(text)),
     };
   }
 
@@ -509,7 +517,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

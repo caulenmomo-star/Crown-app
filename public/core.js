@@ -1,6 +1,6 @@
 /* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.4.2'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
+const VERSION = '0.4.3'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -49,7 +49,17 @@ const storeBadge = k => { const s = Parser.storeInfo(k); return `<span class="ba
 const isDead = o => o.status === 'cancelled' || o.status === 'refunded';
 const isActive = o => ['placed', 'confirmed', 'shipped', 'ready', 'out'].includes(o.status);
 const inTransit = o => o.status === 'shipped' || o.status === 'ready' || o.status === 'out';
-const orderSpend = o => isDead(o) ? 0 : (Number(o.total) || sum(o.items || [], i => (Number(i.price) || 0) * (Number(i.qty) || 1)));
+// Quantity of an item still in the order (a cancelled-down item can be 0; a missing qty means 1).
+const qtyOf = i => i.qty == null || i.qty === '' ? 1 : Math.max(0, Number(i.qty) || 0);
+const orderSpend = o => isDead(o) ? 0 : (o.total != null && o.total !== '' && Number.isFinite(Number(o.total)) ? Number(o.total) : sum(o.items || [], i => (Number(i.price) || 0) * qtyOf(i)));
+// "Stuck" = the store actually shipped it (or it's ready / delivered). Placed & confirmed orders can still be cancelled,
+// so they're "pending" and left out of the stick rate until they ship or get cancelled.
+const isStuck = o => ['shipped', 'out', 'ready', 'delivered'].includes(o.status);
+const isPending = o => o.status === 'placed' || o.status === 'confirmed';
+function stickInfo(list) {
+  const stuck = list.filter(isStuck).length, dead = list.filter(isDead).length, pending = list.filter(isPending).length;
+  return { stuck, dead, pending, rate: stuck + dead ? Math.round(stuck / (stuck + dead) * 100) : null };
+}
 
 /* ---------- state ---------- */
 const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', firstLookback: 60, trackedStores: [] };

@@ -1,6 +1,15 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.3', date: '2026-10-20', title: 'Correct numbers, clear all, recap range', items: [
+    'New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown rebuild every order fresh from your email.',
+    'Stick rate is now correct: only orders that shipped, are out for delivery, are ready or were delivered count as stuck. Placed and confirmed orders show as “pending” until they ship or get cancelled.',
+    'Partial cancellations (“we had to cancel an item”) no longer cancel the whole order. Only those items are removed, and their share of the total comes off.',
+    'Item quantities count correctly. A fully cancelled item counts as 0, not 1.',
+    'A preorder payment or shipment charge no longer replaces the real order total.',
+    'Spending shows money still pending and how many items were cancelled.',
+    'The checkout recap card has its own date range: Today, Yesterday, 7 or 30 days, this month, last month, this year, all time, or any custom From–To dates. The Spending page also accepts custom dates.',
+  ] },
   { v: '0.4.2', date: '2026-10-20', title: 'Re-read fix', items: [
     'Fixed: the one-time re-read after updating was skipped whenever a normal sync started first, so existing orders never got their pictures, totals or addresses. It now waits for the other sync and always runs.',
     'The re-read only counts as done when every inbox read without errors. Otherwise it tries again next time.',

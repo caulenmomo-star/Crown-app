@@ -12,7 +12,8 @@ const orderTitle = o => o.items && o.items.length ? o.items[0].name + (o.items.l
 const orderImage = o => ((o.items || []).find(i => i.image) || {}).image || '';
 // Product picture in a fixed frame; if the store's image can't load, the empty frame stays (no broken-image icon).
 const thumb = (src, cls) => `<span class="thumb ${cls || ''}${src ? '' : ' none'}">${src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
-const itemCount = o => sum(o.items || [], i => Number(i.qty) || 1);
+const itemCount = o => sum(o.items || [], qtyOf);
+const cancelledCount = o => sum(o.items || [], i => Number(i.cancelledQty) || 0);
 function findOrder(no, store) {
   const n = Parser.normOrderNo(no); if (!n) return null;
   // Long order numbers are unique on their own - match them no matter which store an email got tagged with.
@@ -71,6 +72,8 @@ function mergeOrderInto(keep, o) {
   if ((!keep.store || keep.store === 'other') && o.store && o.store !== 'other') keep.store = o.store;
   if (o.orderDate && (!keep.orderDate || o.orderDate < keep.orderDate)) keep.orderDate = o.orderDate;
   if (!keep.items.length && o.items.length) keep.items = o.items;
+  if (o.cancels) keep.cancels = Object.assign({}, o.cancels, keep.cancels || {});
+  if (o.cancelDeduct && !keep.cancelDeduct) keep.cancelDeduct = o.cancelDeduct;
   for (const t of o.tracking || []) if (!keep.tracking.some(x => x.number === t.number)) keep.tracking.push(t);
   if (o.source === 'email' || keep.source === 'email') keep.source = 'email';
   keep.updatedAt = Date.now();
@@ -243,7 +246,7 @@ function mergeItems(o, items, authoritative) {
   if (o.itemsLocked) return;
   for (const n of items) {
     const k = itemKey(n.name); const have = o.items.find(i => itemKey(i.name) === k || (k.length >= 12 && (itemKey(i.name).startsWith(k.slice(0, 16)) || k.startsWith(itemKey(i.name).slice(0, 16)))));
-    if (have) { if (!have.image && n.image) have.image = n.image; if (have.price == null && n.price != null) have.price = n.price; if (authoritative && n.qty) have.qty = n.qty; }
+    if (have) { if (!have.image && n.image) have.image = n.image; if (have.price == null && n.price != null) have.price = n.price; if (authoritative && n.qty) have.qty = Math.max(0, n.qty - (Number(have.cancelledQty) || 0)); }
     else if (authoritative || o.items.every(i => i.price == null)) o.items.push(Object.assign({}, n));
   }
 }
@@ -254,6 +257,33 @@ function fillImages(o) {
     const k = itemKey(it.name); if (k.length < 10) continue;
     for (const x of state.orders) { if (x === o) continue; const hit = (x.items || []).find(i => i.image && itemKey(i.name) === k); if (hit) { it.image = hit.image; break; } }
   }
+}
+// Apply a cancellation email to an order's items. Returns 'full' (whole order cancelled) or 'partial'.
+// Each email is applied once (re-reading never subtracts twice); the result is remembered per email.
+function applyCancel(o, r) {
+  o.cancels = o.cancels || {};
+  const mid = r.messageId || r.subject + '|' + r.date;
+  if (o.cancels[mid]) return o.cancels[mid];
+  let kind = r.partial ? 'partial' : 'full';
+  const live = (o.items || []).filter(i => qtyOf(i) > 0);
+  if (r.items && r.items.length && live.length) {
+    const sub = sum(o.items, i => (Number(i.price) || 0) * (qtyOf(i) + (Number(i.cancelledQty) || 0)));
+    const ratio = sub > 0 && o.total != null ? Number(o.total) / sub : 1; // spreads tax/shipping across items
+    let deduct = 0, matched = 0;
+    for (const c of r.items) {
+      const k = itemKey(c.name);
+      const it = o.items.find(i => qtyOf(i) > 0 && (itemKey(i.name) === k || (k.length >= 12 && (itemKey(i.name).startsWith(k.slice(0, 16)) || k.startsWith(itemKey(i.name).slice(0, 16))))));
+      if (!it) continue;
+      const q = Math.min(qtyOf(it), Number(c.qty) || 1); if (!q) continue;
+      it.qty = qtyOf(it) - q; it.cancelledQty = (Number(it.cancelledQty) || 0) + q; matched++;
+      if (it.price != null) deduct += Number(it.price) * q * ratio;
+    }
+    if (matched) {
+      kind = o.items.every(i => qtyOf(i) === 0) ? 'full' : 'partial';
+      if (kind === 'partial' && deduct && o.total != null && !o.totalLocked) { deduct = Math.round(deduct * 100) / 100; o.total = Math.max(0, Math.round((Number(o.total) - deduct) * 100) / 100); o.cancelDeduct = Math.round(((Number(o.cancelDeduct) || 0) + deduct) * 100) / 100; }
+    }
+  }
+  o.cancels[mid] = kind; return kind;
 }
 function applyEmail(r, accountLabel, opts) {
   // r = Parser.parseOrderEmail(...) result. opts.reapply = re-read an email we've seen before (rescan) to refresh dates/status.
@@ -266,8 +296,9 @@ function applyEmail(r, accountLabel, opts) {
   let created = false;
   if (!o) {
     if (!r.orderNumber) return { skipped: 'no order number' };
-    o = newOrder({ orderNumber: r.orderNumber, store: r.store, status: r.status, orderDate: r.date, source: 'email', history: [] });
-    o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject });
+    const st0 = r.status === 'cancelled' && r.partial ? 'placed' : r.status;
+    o = newOrder({ orderNumber: r.orderNumber, store: r.store, status: st0, orderDate: r.date, source: 'email', history: [] });
+    if (st0 === r.status) o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject });
     if (r.status === 'delivered') o.deliveredAt = r.date;
     state.orders.push(o); created = true;
   }
@@ -278,7 +309,13 @@ function applyEmail(r, accountLabel, opts) {
     if (r.messageId) o.messageIds.push(r.messageId);
     o.emails.push({ messageId: r.messageId, subject: r.subject, date: r.date, status: r.status, from: r.from, inbox: accountLabel || '' });
   }
-  if (!created) {
+  // Cancellation emails: work out whether the whole order or just some items were cancelled.
+  let cancelKind = '';
+  if (r.status === 'cancelled') cancelKind = applyCancel(o, r);
+  if (cancelKind === 'partial') {
+    if (!o.history.some(h => h.status === 'partial' && h.date === r.date)) { o.history.push({ status: 'partial', date: r.date, source: 'email', note: r.subject }); o.history.sort((a, b) => String(a.date).localeCompare(String(b.date))); }
+    if (created) o.statusAt = r.date;
+  } else if (!created) {
     const rankNew = STATUS[r.status].r, rankOld = (STATUS[o.status] || STATUS.placed).r;
     const already = o.history.some(h => h.status === r.status && h.date === r.date);
     if (rankNew > rankOld || (rankNew === rankOld && r.status !== o.status && r.date >= (o.statusAt || ''))) { setStatus(o, r.status, r.date, 'email', r.subject); o.statusAt = r.date; }
@@ -287,8 +324,9 @@ function applyEmail(r, accountLabel, opts) {
   if (r.store && r.store !== 'other' && (!o.store || o.store === 'other')) o.store = r.store;
   if (r.orderNumber && !o.orderNumber) o.orderNumber = r.orderNumber;
   if (r.date && (!o.orderDate || r.date < o.orderDate)) o.orderDate = r.date;
-  if (r.total != null && (o.total == null || r.status === 'confirmed' && o.source === 'email' && !o.totalLocked)) o.total = r.total;
-  if (r.items && r.items.length) mergeItems(o, r.items, r.status === 'confirmed');
+  if (r.total != null && r.status !== 'cancelled' && (o.total == null || r.status === 'confirmed' && r.totalKind !== 'payment' && o.source === 'email' && !o.totalLocked)) o.total = Math.round((r.total - (Number(o.cancelDeduct) || 0)) * 100) / 100;
+  if (r.items && r.items.length && r.status !== 'cancelled') mergeItems(o, r.items, r.status === 'confirmed');
+  else if (r.items && r.items.length && cancelKind === 'full' && !o.items.length) o.items = r.items.map(i => Object.assign({}, i));
   if (r.to && !o.recipientEmail) o.recipientEmail = r.to;
   if (r.last4 && !o.last4) o.last4 = r.last4;
   if (r.name && !o.name) o.name = r.name;
@@ -381,7 +419,7 @@ PAGES.orders = {
     const unlinked = state.orders.filter(o => !o.profileId).length;
     pg.innerHTML = `<div class="pagehead"><h1>Orders</h1><span class="sub">${plural(list.length, 'order')} · ${fmtMoney(sum(list, orderSpend))} spent</span><div class="spacer"></div>
       ${(() => { const n = suggestedDuplicates().length + state.orders.filter(isSuspicious).length; return n ? `<button id="oClean" style="border-color:#5a4520;color:#ecc87c">Clean up (${n})</button>` : ''; })()}
-      <button id="oBot">Paste bot checkout</button><button id="oImp">Import</button><button id="oExp">Export</button>${state.settings.easypostKey ? '<button id="oTrack">Refresh tracking</button>' : ''}<button class="primary" id="oAdd">+ Add order</button></div>
+      <button id="oBot">Paste bot checkout</button><button id="oImp">Import</button><button id="oExp">Export</button>${state.settings.easypostKey ? '<button id="oTrack">Refresh tracking</button>' : ''}${state.orders.length ? '<button class="danger" id="oClearAll">Clear all orders</button>' : ''}<button class="primary" id="oAdd">+ Add order</button></div>
       <div class="toolbar"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}">
         <div class="chips">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
       <div class="toolbar">
@@ -401,7 +439,7 @@ PAGES.orders = {
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
         <td>${fmtDate(o.orderDate)}</td><td>${storeBadge(o.store)}</td><td class="mono small">${esc(o.orderNumber || '—')}</td>
         <td style="max-width:320px" title="${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(orderTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
-        <td class="right">${fmtMoney(o.total)}</td><td>${statusBadge(o.status)}</td>
+        <td class="right">${fmtMoney(orderSpend(o) || o.total)}</td><td>${statusBadge(o.status)}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:#ef5b5b">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
         <td>${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
         <td class="ellipsis" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint">—</span>'}</td>
         <td>${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : '<span class="faint">—</span>'}</td>
@@ -427,11 +465,23 @@ PAGES.orders = {
     if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } resolveHouse(o); }); pruneHouses(); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
     if ($('#oDel')) $('#oDel').onclick = () => { const n = oSelected.size; if (!confirm(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
     $('#oAdd').onclick = () => openOrder(null);
+    if ($('#oClearAll')) $('#oClearAll').onclick = clearAllOrders;
     if ($('#oClean')) $('#oClean').onclick = openCleanup;
     $('#oBot').onclick = openBotPaste; $('#oImp').onclick = openOrderImport; $('#oExp').onclick = () => exportOrders(list);
     if ($('#oTrack')) $('#oTrack').onclick = () => refreshAllTracking();
   },
 };
+// Wipe every order (and the houses they made) so they can be rebuilt cleanly from email. Undo-able right after.
+function clearAllOrders() {
+  const n = state.orders.length; if (!n) return;
+  if (!confirm(`Delete all ${plural(n, 'order')}?\n\nThis also clears houses that only came from orders (houses you nicknamed or wrote notes on are kept). Profiles, inboxes and settings stay.\n\nYou can undo right after.`)) return;
+  snapshot('clear all orders');
+  state.orders = []; state.houses = state.houses.filter(h => h.nickname || h.notes); state.unparsed = [];
+  oSelected.clear(); invalidateStats(); save(); refresh();
+  toast(`Cleared ${plural(n, 'order')}`, { undo: true });
+  const accs = state.imapAccounts.filter(a => a.enabled !== false);
+  if (SERVER && accs.length) setTimeout(() => { if (confirm('Rebuild your orders from your email now?\n\nCrown will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
+}
 function exportOrders(list) {
   if (!list.length) { toast('Nothing to export'); return; }
   const rows = list.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return { date: dayKey(toDate(o.orderDate) || new Date()), store: Parser.storeInfo(o.store).label, order_number: o.orderNumber, status: STATUS[o.status].l, total: o.total ?? '', items: (o.items || []).map(i => `${i.qty}x ${i.name}${i.price != null ? ' @ ' + i.price : ''}`).join(' | '), item_count: itemCount(o), profile: p ? p.name : '', link: o.profileLink || '', name: o.name, email: o.recipientEmail, address1: o.addr1, address2: o.addr2, city: o.city, state: o.state, zip: o.zip, house: h ? houseLabel(h) : '', eta: o.eta, delivered: o.deliveredAt ? dayKey(toDate(o.deliveredAt)) : '', tracking: (o.tracking || []).map(t => t.number).join(' '), card_last4: o.last4, notes: o.notes }; });
@@ -474,13 +524,13 @@ function renderOrderDlg() {
       </div>
       <div class="section">Notes</div><textarea id="ovNotes" style="min-height:70px;font-family:inherit;font-size:13px" placeholder="Add a note…">${esc(o.notes)}</textarea>
     </div><div>
-      <div class="section" style="margin-top:0">Items (${itemCount(o)})</div>
-      ${o.items.length ? `<div class="list">${o.items.map(i => `<div class="li">${thumb(i.image)}<div class="badge">${i.qty || 1}×</div><div style="flex:1;min-width:0" class="ellipsis" title="${esc(i.name)}">${esc(i.name)}</div><div class="muted">${i.price != null ? fmtMoney(i.price) + ((i.qty || 1) > 1 ? ' <span class="faint small">ea</span>' : '') : ''}</div></div>`).join('')}</div>` : '<div class="faint small">No items detected. Add them on the Edit tab.</div>'}
+      <div class="section" style="margin-top:0">Items (${itemCount(o)}${cancelledCount(o) ? ' · ' + cancelledCount(o) + ' cancelled' : ''})</div>
+      ${o.items.length ? `<div class="list">${o.items.map(i => `<div class="li">${thumb(i.image)}<div class="badge">${qtyOf(i)}×</div><div style="flex:1;min-width:0" class="ellipsis" title="${esc(i.name)}">${esc(i.name)}${i.cancelledQty ? ` <span class="small" style="color:var(--bad,#ef5b5b)">· ${i.cancelledQty} cancelled</span>` : ''}</div><div class="muted">${i.price != null ? fmtMoney(i.price) + (qtyOf(i) + (Number(i.cancelledQty) || 0) > 1 ? ' <span class="faint small">ea</span>' : '') : ''}</div></div>`).join('')}</div>` : '<div class="faint small">No items detected. Add them on the Edit tab.</div>'}
       <div class="section">Tracking</div>
       ${o.tracking.length ? o.tracking.map((t, i) => `<div class="card" style="padding:10px 12px;margin-bottom:8px"><div class="hstack"><b>${esc(t.carrier || 'Carrier')}</b><a class="mono small" href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener">${esc(t.number)} ↗</a><div class="spacer"></div>${state.settings.easypostKey ? `<button class="sm" data-live="${i}">${t.live ? '↻ Refresh' : 'Live tracking'}</button>` : ''}</div>
         ${t.live ? `<div class="small" style="margin-top:6px">${esc(String(t.live.status || '').replace(/_/g, ' '))}${t.live.est ? ' · est. ' + fmtDate(t.live.est) : ''} <span class="faint">· checked ${ago(t.live.checkedAt)}</span></div>${(t.live.events || []).slice(-4).reverse().map(ev => `<div class="small muted" style="margin-top:3px">${fmtDT(ev.date)} — ${esc(ev.message)}${ev.location ? ' · ' + esc(ev.location) : ''}</div>`).join('')}` : ''}</div>`).join('') : `<div class="faint small">No tracking numbers yet — they’re added automatically from shipping emails.${state.settings.easypostKey ? '' : ' Add an EasyPost key in Settings for live tracking.'}</div>`}
       <div class="section">Timeline</div>
-      <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${(STATUS[hh.status] || STATUS.placed).c}"><div><b>${esc((STATUS[hh.status] || {}).l || hh.status)}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
+      <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${hh.status === 'partial' ? '#ef5b5b' : (STATUS[hh.status] || STATUS.placed).c}"><div><b>${esc(hh.status === 'partial' ? 'Some items cancelled' : (STATUS[hh.status] || {}).l || hh.status)}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
     </div></div>`;
     $('#ovStatus').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('change status'); setStatus(real, e.target.value, null, 'manual'); real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
     $('#ovProf').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('link profile'); real.profileId = e.target.value; real.profileLink = e.target.value ? 'manual' : ''; if (!e.target.value) autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
@@ -507,7 +557,7 @@ function renderOrderDlg() {
       <div class="s2"><label>City</label><input id="oeCity" value="${v('city')}"></div><div><label>State</label><input id="oeState" value="${v('state')}"></div><div><label>ZIP</label><input id="oeZip" value="${v('zip')}"></div>
     </div>
     <div class="section">Items <span style="text-transform:none;letter-spacing:0;font-weight:400">— one per line: <code>2 x Item name | 49.99</code></span></div>
-    <textarea id="oeItems" style="min-height:90px">${esc((o.items || []).map(i => `${i.qty || 1} x ${i.name}${i.price != null ? ' | ' + i.price : ''}`).join('\n'))}</textarea>
+    <textarea id="oeItems" style="min-height:90px">${esc((o.items || []).map(i => `${qtyOf(i)} x ${i.name}${i.price != null ? ' | ' + i.price : ''}`).join('\n'))}</textarea>
     <div class="section">Tracking numbers <span style="text-transform:none;letter-spacing:0;font-weight:400">— one per line</span></div>
     <textarea id="oeTrk" style="min-height:60px">${esc((o.tracking || []).map(t => t.number).join('\n'))}</textarea>
     <div class="section">Notes</div><textarea id="oeNotes" style="min-height:60px;font-family:inherit;font-size:13px">${esc(o.notes)}</textarea>`;
@@ -533,7 +583,7 @@ $('#ordSave').onclick = () => {
   const real = ordIsNew ? o : state.orders.find(x => x.id === o.id);
   const tot = g('oeTotal').replace(/[$,]/g, '');
   if (g('oeEta') !== (real.eta || '')) real.etaLocked = !!g('oeEta');
-  const oldItemsText = (real.items || []).map(i => `${i.qty || 1} x ${i.name}${i.price != null ? ' | ' + i.price : ''}`).join('\n');
+  const oldItemsText = (real.items || []).map(i => `${qtyOf(i)} x ${i.name}${i.price != null ? ' | ' + i.price : ''}`).join('\n');
   const itemsChanged = $('#oeItems').value.trim() !== oldItemsText.trim();
   const oldTotal = real.total;
   const newItems = itemsChanged ? parseItemsText($('#oeItems').value).map(n => { const was = (real.items || []).find(i => itemKey(i.name) === itemKey(n.name)); return was && was.image ? Object.assign(n, { image: was.image }) : n; }) : real.items;
@@ -715,11 +765,11 @@ function renderHouse(id) {
     <button id="hNick">${h.nickname ? 'Rename' : 'Give it a nickname'}</button>
     <select id="hMerge" style="width:auto"><option value="">Merge into…</option>${others.map(x => `<option value="${x.id}">${esc(houseLabel(x))}</option>`).join('')}</select></div>
     <div class="kpis">
-      <div class="kpi"><div class="l">Orders</div><div class="v">${s.n}</div><div class="d">${itemCount({ items: s.os.flatMap(o => o.items || []) })} items</div></div>
+      <div class="kpi"><div class="l">Orders</div><div class="v">${s.n}</div><div class="d">${sum(s.os.filter(o => !isDead(o)), itemCount)} items</div></div>
       <div class="kpi"><div class="l">Spent</div><div class="v">${fmtMoney(s.spent)}</div></div>
       <div class="kpi"><div class="l">Active</div><div class="v">${s.active}</div></div>
       <div class="kpi"><div class="l">Delivered</div><div class="v">${s.delivered}</div></div>
-      <div class="kpi"><div class="l">Cancelled</div><div class="v">${s.dead}</div><div class="d">${s.n ? Math.round((s.n - s.dead) / s.n * 100) + '% stick rate' : ''}</div></div>
+      <div class="kpi"><div class="l">Cancelled</div><div class="v">${s.dead}</div><div class="d">${(() => { const si = stickInfo(s.os); return si.rate == null ? (si.pending ? si.pending + ' pending' : '') : si.rate + '% stick rate' + (si.pending ? ' · ' + si.pending + ' pending' : ''); })()}</div></div>
     </div>
     <div class="cols3" style="margin-bottom:14px">
       <div class="card"><h3>Names used</h3>${chipsOf(s.names)}</div>
