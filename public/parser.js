@@ -360,7 +360,17 @@
     if (/privaterelay|icloud\.com|me\.com|mac\.com|gmail\.com|googlemail|yahoo|outlook|hotmail|live\.com|aol\.com|relay|forward/.test(dom)) return m[0];
     const parts = dom.split('.'); return parts.slice(-2).join('.');
   }
-  const API = { STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  // True when the sender is a normal company domain that isn't one of the known stores (Uber, Apple, newsletters...).
+  // Relay / personal addresses return false - those need the email body to tell which store sent them.
+  function isNonStoreSender(from, subject) {
+    const k = senderKey(from); if (!k || k.includes('@')) return false;
+    return detectStore(from, subject, '') === 'other';
+  }
+  // Worth showing under "couldn't read": a known store's email whose subject is clearly about an order.
+  function looksLikeOrderMail(subject, store) {
+    return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
+  }
+  const API = { STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -3,7 +3,8 @@
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
-const BODY_BATCH = 20, PARALLEL = 3;
+// Online, every request signs in to the mailbox again, so use bigger batches and more at once.
+const batchSize = () => CLOUD ? 30 : 20, parallel = () => CLOUD ? 6 : 3;
 let seenSet = null, seenArr = null;
 function seen() { if (!seenSet || seenArr !== state.seenIds) { seenSet = new Set(state.seenIds); seenArr = state.seenIds; } return seenSet; }
 function markSeen(id) {
@@ -11,8 +12,10 @@ function markSeen(id) {
   state.seenIds.push(id); seenSet.add(id);
   if (state.seenIds.length > MAX_SEEN) { state.seenIds.splice(0, state.seenIds.length - MAX_SEEN); seenSet = null; }
 }
-function addUnparsed(m, reason) {
+function addUnparsed(m, reason, store) {
   if (state.unparsed.some(u => u.messageId === m.messageId)) return;
+  if (!Parser.looksLikeOrderMail(m.subject, store || Parser.detectStore(m.from, m.subject, ''))) return; // promos etc. never get listed
+  if (isIgnoredSender(m.from)) return;
   state.unparsed.unshift({ messageId: m.messageId, subject: m.subject || '(no subject)', from: m.from || '', date: m.date || '', reason });
   if (state.unparsed.length > 200) state.unparsed.length = 200;
 }
@@ -56,7 +59,7 @@ async function syncAccount(a, totals, opts) {
     if (tracked && !tracked.has(p.store)) return;
     const out = applyEmail(p, label, { reapply: !!opts.reapply });
     if (out.ignored) { res.found--; return; }
-    if (out.skipped) { addUnparsed(m, out.skipped); return; }
+    if (out.skipped) { addUnparsed(m, out.skipped, p.store); return; }
     if (out.created) { res.created++; totals.created++; }
     else if (out.changed) {
       res.updated++; totals.updated++;
@@ -68,9 +71,19 @@ async function syncAccount(a, totals, opts) {
     const scan = await api('/api/imap/scan', { account: acc, since: dayKey(since), afterUid: incremental ? a.lastUid : 0, uidValidity: incremental ? a.uidValidity : '', keywords: Parser.SUBJECT_KEYWORDS, patterns: Parser.SUBJECT_PATTERNS });
     if (!cryptoKey) return res;
     const skip = opts.fresh ? new Set() : seen();
-    const todo = scan.candidates.filter(c => !skip.has(c.mid));
+    // When re-reading, only re-download emails for orders that are still on their way (to fix dates / statuses).
+    const activeMids = new Set(); if (opts.reapply) state.orders.filter(isActive).forEach(o => (o.messageIds || []).forEach(m => activeMids.add(m)));
+    const seenAll = seen();
+    // Decide from the subject + sender alone whether an email is worth downloading at all.
+    const todo = scan.candidates.filter(c => {
+      if (activeMids.has(c.mid)) return true;
+      if (skip.has(c.mid) || (opts.reapply && seenAll.has(c.mid))) return false;
+      const junk = !Parser.classifyStatus(c.subject) || (c.from && isIgnoredSender(c.from)) || (c.from && !state.settings.trackUnknown && Parser.isNonStoreSender(c.from, c.subject));
+      if (junk) { markSeen(c.mid); return false; }
+      return true;
+    });
     let done = 0, failedMin = Infinity, failMsg = '';
-    const chunks = []; for (let i = 0; i < todo.length; i += BODY_BATCH) chunks.push(todo.slice(i, i + BODY_BATCH));
+    const B = batchSize(); const chunks = []; for (let i = 0; i < todo.length; i += B) chunks.push(todo.slice(i, i + B));
     const total = todo.length;
     syncProgress[a.id] = total ? `reading 0 of ${total}` : ''; showProgress();
     let next = 0;
@@ -88,7 +101,7 @@ async function syncAccount(a, totals, opts) {
         syncProgress[a.id] = `reading ${done} of ${total}`; showProgress();
       }
     };
-    await Promise.all(Array.from({ length: Math.min(PARALLEL, chunks.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(parallel(), chunks.length) }, worker));
     if (!cryptoKey) return res;
     a.uidValidity = scan.uidValidity || '';
     a.folderSynced = a.folder || 'INBOX';
@@ -147,10 +160,13 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { if (document.visibilityState === 'hidden') { scheduleSync(); return; } syncAll(false); }, m * 60000);
 }
 function onUnlocked() {
+  // Drop anything in "couldn't read" that isn't a real-looking store order email (old builds listed promos there).
+  const keepUn = state.unparsed.filter(u => Parser.looksLikeOrderMail(u.subject, Parser.detectStore(u.from, u.subject, '')) && !isIgnoredSender(u.from));
+  if (keepUn.length !== state.unparsed.length) { state.unparsed = keepUn; save(); }
   if (state.ordersVer !== 2 && state.orders.length) {
     const merged = mergeSameNumber(); state.ordersVer = 2; invalidateStats(); save(); refresh();
     // Re-read recent emails once with the improved reader so delivery dates and delivered statuses get corrected.
-    if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => syncAll(false, null, { days: Math.min(120, Math.max(30, ...state.imapAccounts.map(a => a.lookback || 60))), fresh: true, reapply: true }), 2500);
+    if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => syncAll(false, null, { days: 45, fresh: true, reapply: true }), 2500);
     const junk = state.orders.filter(isSuspicious).length, dup = suggestedDuplicates().length;
     if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
   }

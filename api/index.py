@@ -34,7 +34,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.0.0"
+VERSION = "2.1.0"
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -520,6 +520,9 @@ class Pooled(object):
                 conns.remove(self.c)
 
     def __exit__(self, et, ev, tb):
+        if os.environ.get("CROWN_NO_POOL"):  # testing: behave like a fresh serverless instance every time
+            self._discard()
+            return False
         if et is not None and not issubclass(et, UserError):
             self._discard()  # connection may be in a bad state
         else:
@@ -644,7 +647,7 @@ def imap_scan(req):
                 if not wanted(subject):
                     continue
                 mid = (h.get("Message-ID") or "").strip() or ("uid:%s:%s:%s" % (acc.get("user", ""), folder, uid))
-                cands.append({"uid": int(uid), "mid": mid, "subject": subject})
+                cands.append({"uid": int(uid), "mid": mid, "subject": subject, "from": dh(h.get("From"))})
         cands.sort(key=lambda x: x["uid"])
         max_uid = int(info["uidnext"]) - 1 if info.get("uidnext") else 0
         if not max_uid:
