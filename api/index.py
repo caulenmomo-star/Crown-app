@@ -34,7 +34,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.1.0"
+VERSION = "0.4.0"  # prerelease - stays 0.x until Crown is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -425,12 +425,30 @@ SLIM_DROP = re.compile(r"<!--.*?-->|<(style|script|head|title|svg|noscript)\b[^>
 SLIM_TAG = re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(/?)>", re.S)
 
 
+SLIM_ATTR = re.compile(r"""\s(src|alt|width|height)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))""", re.I)
+
+
+def _slim_tag(m):
+    tag = m.group(2).lower()
+    if tag == "img" and not m.group(1):
+        # keep what the reader needs to find item pictures: src, alt text and size
+        keep = []
+        for a in SLIM_ATTR.finditer(m.group(0)):
+            v = a.group(2) if a.group(2) is not None else (a.group(3) if a.group(3) is not None else a.group(4))
+            name = a.group(1).lower()
+            if name == "src" and not v.lower().startswith("http"):
+                return " "
+            keep.append('%s="%s"' % (name, v.replace('"', "&quot;")[:600]))
+        return "<img %s>" % " ".join(keep) if keep else " "
+    return "<%s%s%s>" % (m.group(1), tag, m.group(3))
+
+
 def slim_html(html, limit=200000):
     """Strip styling/attributes the order reader never uses - typically 5-10x smaller."""
     if not html:
         return ""
     h = SLIM_DROP.sub(" ", html)
-    h = SLIM_TAG.sub(lambda m: "<%s%s%s>" % (m.group(1), m.group(2).lower(), m.group(3)), h)
+    h = SLIM_TAG.sub(_slim_tag, h)
     h = re.sub(r"[ \t\r\f\v]+", " ", h)
     h = re.sub(r"\n\s*\n+", "\n", h)
     return h[:limit]
@@ -567,7 +585,7 @@ def ensure_folder(c, folder, force=False):
     return c.get("info") or {}
 
 
-GMAIL_WORDS = ["order", "orders", "shipped", "shipping", "delivered", "delivery", "cancel", "canceled", "cancelled",
+GMAIL_WORDS = ["order", "orders", "preorder", "arrive", "arrives", "arrived", "arriving", "items", "package", "canceled", "shipped", "shipping", "delivered", "delivery", "cancel", "canceled", "cancelled",
                "cancellation", "refund", "receipt", "purchase", "pickup", "tracking", "sorry", "thanks", "thank",
                "confirmation", "confirmed", "\"on its way\"", "\"on the way\"", "\"picked up\"", "\"ready for\"",
                "\"in transit\""]
@@ -844,8 +862,8 @@ class _LocalHandler(BaseHTTPRequestHandler):
         if not self._api_guard():
             return
         if self.path == "/api/vault":
-            if not self.headers.get("X-Crown-App"):
-                return self._send(200, {"ok": False, "error": "This Crown tab is from an older version. Close it and use the new one."})
+            if self.headers.get("X-Crown-App") != VERSION:
+                return self._send(200, {"ok": False, "outdated": True, "error": "Crown was updated. Reload this tab to keep going."})
 
             def fn():
                 write_vault(self._json())
@@ -1221,6 +1239,8 @@ class handler(BaseHTTPRequestHandler):
             return
         r = self._route()
         h = self.headers
+        if r == "/vault" and h.get("X-Crown-App") != VERSION:
+            return self._send(200, {"ok": False, "outdated": True, "error": "Crown was updated. Reload this page to keep going."})
         if r == "/vault":
             def put():
                 b = self._body()

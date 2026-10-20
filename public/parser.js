@@ -8,7 +8,7 @@
   const STORES = [
     { key: 'target', label: 'Target', color: '#e0384a', domains: ['target.com'] },
     { key: 'walmart', label: 'Walmart', color: '#4aa3ff', domains: ['walmart.com'] },
-    { key: 'pokemoncenter', label: 'Pokémon Center', color: '#ffcb05', domains: ['pokemoncenter.com'], alias: ['pokemon center'] },
+    { key: 'pokemoncenter', label: 'Pokémon Center', color: '#ffcb05', domains: ['pokemoncenter.com', 'pokemon.com'], alias: ['pokemon center'] },
     { key: 'bestbuy', label: 'Best Buy', color: '#ffd23f', domains: ['bestbuy.com'] },
     { key: 'amazon', label: 'Amazon', color: '#ff9900', domains: ['amazon.com'] },
     { key: 'gamestop', label: 'GameStop', color: '#d1323a', domains: ['gamestop.com'] },
@@ -19,7 +19,7 @@
     { key: 'newegg', label: 'Newegg', color: '#f8951d', domains: ['newegg.com'] },
     { key: 'kohls', label: "Kohl's", color: '#8c5bb0', domains: ['kohls.com'], alias: ['kohls'] },
     { key: 'menards', label: 'Menards', color: '#ff7a1a', domains: ['menards.com'] },
-    { key: 'playstation', label: 'PlayStation Direct', color: '#3e6fd8', domains: ['direct.playstation.com', 'playstation.com'] },
+    { key: 'playstation', label: 'PlayStation Direct', color: '#3e6fd8', domains: ['direct.playstation.com', 'playstation.com', 'sony.com'], alias: ['playstation direct'] },
     { key: 'topps', label: 'Topps', color: '#e9473f', domains: ['topps.com'] },
     { key: 'funko', label: 'Funko', color: '#34b3e4', domains: ['funko.com'] },
     { key: 'lego', label: 'LEGO', color: '#f6c400', domains: ['lego.com'] },
@@ -34,26 +34,32 @@
   // Subjects that are never real order updates: surveys, reviews, promos.
   const SURVEY = ['guest survey', 'survey', 'we want to hear', 'how did we do', 'how was', 'rate your', 'rate us', 'review your', 'write a review', 'leave a review', 'tell us about', 'feedback', 'did you enjoy'];
   const PROMO = /(\d+\s?% off|\bsale\b|\bdeals?\b|\bcoupon|\bpromo|\bsave \$|\bsave up\b|\bfree shipping\b|\brewards?\b|\bpoints\b|\bnewsletter|\bwishlist|\bback in stock|\bprice drop|\bjust dropped|\bnew arrivals?|\bdon'?t miss|\blast chance|\babandon|\bleft in your cart|\bstill thinking|\bunsubscribe)/i;
-  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill'];
-  const REFUNDED = ['refund issued', 'refund has been', 'your refund', 'refund processed', 'refund confirmation', 'return received', 'return has been processed'];
-  const DELIVERED = ['delivered', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived'];
-  const READY = ['ready for pickup', 'ready for drive up', 'ready to pick up', 'is ready for pick'];
-  const SHIPPED = ['shipped', 'has shipped', 'on its way', 'is on the way', 'are on the way', 'out for delivery', 'tracking number', 'has been dispatched', 'in transit', 'shipment'];
-  const CONFIRMED = ['order confirm', 'thanks for your order', 'thank you for your order', 'thanks for your delivery order', 'thanks for your pickup order', 'thanks for your drive up order', 'thanks for your shipping order', 'order received', 'order placed', "we've got your order", 'we got your order', 'order successful', 'purchase successful', 'checkout successful', 'purchase confirmation', 'thanks for your purchase', 'thank you for your purchase', 'order is confirmed', 'order has been received', 'order acknowledgement', 'order acknowledgment', 'we received your order', 'order was placed', 'order has been placed', 'order was received'];
-  const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, SHIPPED, CONFIRMED)));
-  const SUBJECT_PATTERNS = ['thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*#?\\s*\\d{6,}'];
+  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill', 'we canceled', 'we cancelled', 'canceled your', 'cancelled your'];
+  const REFUNDED = ['refund issued', 'refund has been', 'your refund', 'refund processed', 'refund confirmation', 'return received', 'return has been processed', 'refunded'];
+  const DELIVERED = ['delivered', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived', 'items arrived', 'item arrived'];
+  const READY = ['ready for pickup', 'ready for drive up', 'ready to pick up', 'is ready for pick', 'ready for curbside', 'ready for in-store pickup'];
+  const OUT = ['out for delivery', 'arrive today', 'arrives today', 'arriving today', 'coming today', 'delivering today', 'will be delivered today'];
+  const SHIPPED = ['shipped', 'has shipped', 'on its way', 'is on the way', 'are on the way', 'on their way', 'tracking number', 'has been dispatched', 'in transit', 'shipment', 'about to ship', 'ready to ship', 'getting ready to ship', 'preparing to ship', 'arrive tomorrow', 'arrives tomorrow', 'arriving tomorrow', 'arriving soon', 'arrives soon', 'headed your way', 'heading your way', 'on the move', 'label created', 'has been sent', 'have been sent', 'shipping update', 'package update', 'tracking info', 'tracking update'];
+  const CONFIRMED = ['order confirm', 'thanks for your order', 'thank you for your order', 'thanks for your delivery order', 'thanks for your pickup order', 'thanks for your drive up order', 'thanks for your shipping order', 'thanks for shopping', 'thank you for shopping', "here's your order", 'here is your order', 'order received', 'order placed', "we've got your order", 'we got your order', 'order successful', 'purchase successful', 'checkout successful', 'purchase confirmation', 'thanks for your purchase', 'thank you for your purchase', 'order is confirmed', 'order has been received', 'order acknowledgement', 'order acknowledgment', 'we received your order', 'order was placed', 'order has been placed', 'order was received', 'your preorder', 'your pre-order', 'preorder payment', 'pre-order payment', 'preorder is', 'pre-order is', 'release day', "we're on it", 'your receipt', 'order details', 'order update', 'order status'];
+  const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, OUT, SHIPPED, CONFIRMED)));
+  // Python-compatible regexes (the helper filters subjects with these too).
+  const SUBJECT_PATTERNS = ['thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}'];
+  const SUBJECT_RES = SUBJECT_PATTERNS.map(p => new RegExp(p, 'i'));
+  const has = (s, list) => list.some(k => s.includes(k));
 
   function classifyStatus(subject) {
-    const s = String(subject || '').toLowerCase();
+    const s = String(subject || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
     if (!s.trim()) return null;
-    if (SURVEY.some(k => s.includes(k)) || PROMO.test(s)) return null;
-    if (REFUNDED.some(k => s.includes(k))) return 'refunded';
-    if (CANCELLED.some(k => s.includes(k)) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
-    if (DELIVERED.some(k => s.includes(k)) && !/not\s+delivered|delivery\s+(attempt|exception|delay)/.test(s) && (/\b(order|package|item|items|shipment|parcel|purchase)\b/.test(s) || /^\s*delivered\s*:/.test(s) || /#\s?\d{5,}/.test(s) || /\b(arrived|is here|are here)\b/.test(s))) return 'delivered';
-    if (READY.some(k => s.includes(k))) return 'ready';
-    if (SHIPPED.some(k => s.includes(k))) return 'shipped';
-    if (CONFIRMED.some(k => s.includes(k)) || /thanks for your [a-z ]{0,20}order/i.test(s)) return 'confirmed';
-    if (/order\s*#?\s*\d{6,}/i.test(s) || /\border (?:was |has been |is )?(?:received|placed|confirmed)\b/i.test(s)) return 'confirmed';
+    if (has(s, SURVEY) || PROMO.test(s)) return null;
+    if (/\b(not|never)\s+(been\s+)?(shipped|delivered)\b|delivery\s+(attempt|exception|delay)|\bdelayed\b|\brunning late\b/.test(s) && !has(s, CANCELLED)) return /order|#\s*\d/.test(s) ? 'shipped' : null;
+    if (has(s, REFUNDED) && !/refund (?:policy|request)/.test(s)) return 'refunded';
+    if (has(s, CANCELLED) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
+    if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*delivered\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
+    if (has(s, READY)) return 'ready';
+    if (has(s, OUT)) return 'out';
+    if (has(s, SHIPPED)) return 'shipped';
+    if (has(s, CONFIRMED) || /thanks for your [a-z ]{0,20}order/.test(s)) return 'confirmed';
+    if (/\border\s*#\s*:?\s*[a-z]{0,4}-?\d{4,}/.test(s) || /order\s*(?:number|no\.?)?\s*#?\s*:?\s*\d{6,}/.test(s) || /#\s*:?\s*\d{9,}/.test(s) || /\border (?:was |has been |is )?(?:received|placed|confirmed)\b/.test(s)) return 'confirmed';
     return null;
   }
 
@@ -68,7 +74,20 @@
       return Object.prototype.hasOwnProperty.call(ENT, e) ? ENT[e] : m;
     });
   }
-  function htmlToText(html) {
+  // Images in an email: [{src, alt}] in document order. Used to find each item's picture.
+  function attr(tag, name) { const m = tag.match(new RegExp('\\s' + name + '\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))', 'i')); return m ? decodeEntities(m[1] ?? m[2] ?? m[3] ?? '').trim() : ''; }
+  // Clearly-not-a-product pictures (logos, social icons, tracking pixels, banners).
+  const TRACKER_IMG = /\/o\/|opentracker|\/gp\/r\.html|realtime\.bestbuy|\/open\.|pixel|spacer|beacon|1x1|blank\.gif/i;
+  const JUNK_IMG = /logo|[_\-\/]icons?[_\-\/.]|arrow|bullseye|joy-|social|facebook|twitter|instagram|pinterest|youtube|tiktok|app-?store|google-?play|appdownload|appphone|checkmark|thumbs_|steptracker|ops_(?:visa|master|amex|disc)|\/dam\/|\/dfw\/|\/dfwrs\/|circlecard|baseactivity|freesdd/i;
+  const JUNK_ALT = /logo|icon|arrow|\bvisa\b|mastercard|amex|discover|card image|app store|google play|visit us|follow us|bullseye|circle card|shopping bag|delivering an order|bringing an order|holding a|walmart (?:home|plus|cash)|^x$|youtube|instagram|tiktok|facebook|pinterest|^completed$|deal of the day|outlet|support|confirm/i;
+  function productImage(img, strict) {
+    if (!img || !/^https:\/\//i.test(img.src) || TRACKER_IMG.test(img.src)) return false;
+    if (img.alt && JUNK_ALT.test(img.alt)) return false;
+    if (strict && JUNK_IMG.test(img.src)) return false;
+    const w = parseInt(img.w, 10) || 0, h = parseInt(img.h, 10) || 0;
+    return !((w && w < 40) || (h && h < 30));
+  }
+  function htmlToText(html, imgs) {
     if (!html) return '';
     let s = String(html)
       .replace(/<!--[\s\S]*?-->/g, ' ')
@@ -76,9 +95,16 @@
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/(p|div|tr|li|h[1-6]|table|tbody|thead|section|article|header|footer|ul|ol|blockquote|center)>/gi, '\n')
       .replace(/<(td|th)[^>]*>/gi, ' ')
+      .replace(/<img\b[^>]*>/gi, t => { if (!imgs) return ' '; imgs.push({ src: attr(t, 'src'), alt: attr(t, 'alt'), w: attr(t, 'width'), h: attr(t, 'height') }); return '\n\u27E6img:' + (imgs.length - 1) + '\u27E7\n'; })
       .replace(/<[^>]+>/g, ' ');
-    s = decodeEntities(s).replace(/[​-‍⁠﻿͏­]/g, '');
-    return s.split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim()).filter(Boolean).join('\n');
+    s = decodeEntities(s).replace(/[\u200B-\u200D\u2060\uFEFF\u034F\u00AD\u2007\u202A-\u202E]/g, '');
+    return s.split('\n').map(l => l.replace(/[ \t ]+/g, ' ').trim()).filter(Boolean).join('\n').replace(/\n:\s*/g, ': ');
+  }
+  // Plain-text parts: decode stray entities, drop long tracking links and invisible padding characters.
+  function cleanPlain(t) {
+    return decodeEntities(String(t || '')).replace(/[\u200B-\u200D\u2060\uFEFF\u034F\u00AD\u2007\u202A-\u202E]/g, '')
+      .replace(/\[([^\]]*)\]\((https?:[^)]+)\)/g, '$1').replace(/<?https?:\/\/\S+>?/g, ' ')
+      .split('\n').map(l => l.replace(/[ \t\u00A0]+/g, ' ').trim()).filter(Boolean).join('\n');
   }
   const flat = t => String(t || '').replace(/\s*\n+\s*/g, ', ').replace(/(,\s*){2,}/g, ', ').replace(/[ \t]+/g, ' ');
 
@@ -96,7 +122,7 @@
     const name = (f.match(/^\s*"?([^"<@]+?)"?\s*</) || [])[1] || '';
     const hay = [name, subject, String(text || '').slice(0, 6000)];
     for (const h of hay) {
-      const t = String(h || '').toLowerCase();
+      const t = String(h || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
       if (!t) continue;
       for (const s of STORES) {
         if (s.key === 'other') continue;
@@ -110,15 +136,16 @@
   // ---------------------------------------------------------------- fields
   function extractOrderNumber(subject, text) {
     const pats = [
-      /\b(\d{3}-\d{7}-\d{7})\b/,                                             // Amazon
-      /\b(BBY01-\d{9,14})\b/i,                                               // Best Buy
-      /order\s*(?:number|no\.?|#)?\s*[:#]?\s*(\d{7}-\d{8})\b/i,               // Walmart
-      /order\s*(?:number|no\.?|#|id)?\s*[:#\-]?\s*(\d{6,9}-?\d{0,8})\b/i,     // Target & generic numeric
-      /order\s*(?:number|no\.?|#|id)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-]{5,24})\b/i, // generic alphanumeric
-      /\b#\s?([A-Z0-9]{2,6}-?\d{5,14})\b/,                                   // "#P001234567"
+      /\b(\d{3}-\d{7}-\d{7})\b/,                                                      // Amazon
+      /\b(BBY01-\d{9,14})\b/i,                                                        // Best Buy
+      /\border\s*(?:number|no\.?|#|id)?[\s:#]*(\d{7}-\d{8})(?!\d)/i,                    // Walmart
+      /\border\s*(?:number|no\.?|#|id)?[\s:#\-]*(\d{6,22}(?:-\d{2,12})?)(?!\d)/i,       // Target & generic numeric
+      /\border\s*(?:number|no\.?|#|id)[\s:#]*([A-Z0-9][A-Z0-9\-]{5,24})\b/i,             // generic alphanumeric
+      /#\s*:?\s*(\d{9,22})(?!\d)/,                                                     // "... payment soon #102003655603099"
+      /\b#\s?([A-Z]{1,6}-?\d{5,14})\b/,                                                // "#P001234567"
     ];
     for (const src of [subject, text]) {
-      const s = String(src || '');
+      const s = String(src || '').replace(/[\u200E\u200F\u202A-\u202E]/g, '');
       for (const re of pats) {
         const m = s.match(re);
         if (m && /\d/.test(m[1]) && m[1].replace(/\D/g, '').length >= 5) return m[1].toUpperCase();
@@ -129,52 +156,136 @@
   const normOrderNo = n => String(n || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
   function money(v) { const n = Number(String(v).replace(/,/g, '')); return Number.isFinite(n) ? Math.round(n * 100) / 100 : null; }
+  const AMT = '(?:USD\\s*)?\\$\\s*([\\d,]+\\.\\d{2})|([\\d,]+\\.\\d{2})\\s*USD';
   function extractTotal(text) {
     const t = String(text || '');
-    const strong = t.match(/(?:order total|grand total|total charged|amount charged|total paid|payment total|you paid|total amount|order amount|estimated total)\s*[:\-]?\s*(?:USD\s*)?\$\s*([\d,]+\.\d{2})/i);
-    if (strong) return money(strong[1]);
-    let last = null; const re = /\btotal\b\s*[:\-]?\s*(?:USD\s*)?\$\s*([\d,]+\.\d{2})/gi; let m;
-    while ((m = re.exec(t))) last = m[1];
-    return last != null ? money(last) : null;
+    // "Order total ... $150.41" - the label may sit a line or a short phrase away from the amount.
+    const strong = new RegExp('(?:order total|grand total|total charged|amount charged|total paid|payment total|you paid|total amount|order amount|estimated total|total due|charged to your card)[^$\\d]{0,60}?(?:' + AMT + ')', 'i');
+    let m = t.match(strong); if (m) return money(m[1] || m[2]);
+    m = t.match(new RegExp('(?:processed|charged|(?:re)?authoriz(?:e|ed))\\s+(?:a\\s+)?(?:payment\\s+)?(?:of|for)\\s+(?:' + AMT + ')', 'i')); if (m) return money(m[1] || m[2]);
+    // last plain "Total" (not subtotal, not "you saved a total of")
+    let last = null; const re = new RegExp('\\btotal\\b[\\s:\\-]*(?:' + AMT + ')', 'gi');
+    while ((m = re.exec(t))) {
+      const before = t.slice(Math.max(0, m.index - 12), m.index).toLowerCase();
+      if (/sub\s*$/.test(before) || /(saved|savings|save)\s+(a\s+)?$/.test(before)) continue;
+      last = m[1] || m[2];
+    }
+    if (last != null) return money(last);
+    m = t.match(/\b(?:order\s+)?subtotal\b[^$\n]{0,30}\n?\s*\$\s*([\d,]+\.\d{2})/i); // some stores (Pokémon Center) only show a subtotal
+    return m ? money(m[1]) : null;
   }
+  function extractSubtotal(text) { const m = String(text || '').match(/\bsubtotal\b[^$\n]{0,30}\n?\s*\$\s*([\d,]+\.\d{2})/i); return m ? money(m[1]) : null; }
 
-  function extractItems(text) {
+  // Items: every "Qty: N" (same line or the next) is one item; its name is the nearest real line above it.
+  // Pictures come from the email's <img> tags: the one whose alt text matches the name, else the closest one above.
+  const IMG_MARK = /^\u27E6img:(\d+)\u27E7$/;
+  const NOT_NAME = /^(qty|quantity|price|item|items|subtotal|total|tax|estimated|order|delivers?|ship|shipping|sold by|ships? from|arrives?|arriving|get it|\$|each|details|view|track|model|sku|upc|dpci|tcin|color|size|style|note|pre-?ordered|preorder|status|in stock|free|return|rate|write a review|delivered|items? delivered|fulfilled by|seller|condition|gift|protection|plan|warranty|qty:|edit|remove|buy again)\b/i;
+  const normName = s => String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/^(quantity\s+\d+\s+items?\s+|product image for:?\s*)/, '').replace(/[^a-z0-9]+/g, '');
+  function nameMatches(a, b) {
+    const x = normName(a), y = normName(b); if (x.length < 6 || y.length < 6) return false;
+    const n = Math.min(x.length, y.length, 28); return x.slice(0, n) === y.slice(0, n) || x.includes(y.slice(0, 24)) || y.includes(x.slice(0, 24));
+  }
+  function extractItems(text, imgs) {
+    imgs = imgs || [];
     const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
     const items = [];
-    const bad = /^(qty|quantity|price|item|items|subtotal|total|tax|shipping|estimated|order|delivers?|ship|sold by|ships? from|arrives?|get it|\$|each|details|view|track)/i;
     const priceOf = s => { const m = String(s || '').match(/\$\s*([\d,]+\.\d{2})/); return m ? money(m[1]) : null; };
-    for (let i = 0; i < lines.length && items.length < 25; i++) {
+    const isPriceLine = s => /^[\s$\d,.\/a-z]*\$\s*[\d,]+\.\d{2}[\s\/a-z.]*$/i.test(s) && !/[a-z]{4,}/i.test(s.replace(/\b(each|ea|usd|per|unit)\b/gi, ''));
+    const okName = c => c && c.length >= 4 && !IMG_MARK.test(c) && !NOT_NAME.test(c) && !/^[\s$\d,.:#\-\/x]+$/i.test(c) && /[a-z]{2}/i.test(c) && !/:\s*$/.test(c) && !/\b(?:qty|quantity)\b/i.test(c) && !isPriceLine(c);
+    for (let i = 0; i < lines.length && items.length < 40; i++) {
       const L = lines[i];
-      const q = L.match(/\b(?:qty|quantity)\s*[:x]?\s*(\d{1,3})\b/i);
-      if (!q) continue;
-      let name = L.slice(0, q.index).replace(/[\s,:\-|•]+$/, '').trim();
-      if (name.length < 4 || bad.test(name)) {
-        for (let j = i - 1; j >= Math.max(0, i - 3); j--) {
+      let q = L.match(/\b(?:qty|quantity)\s*[:x]?\s*(\d{1,3})\b/i), qty;
+      let nameLimit = i;
+      if (q) qty = +q[1];
+      else if (/^(?:qty|quantity)\s*:?$/i.test(L) && /^\d{1,3}$/.test(lines[i + 1] || '')) { qty = +lines[i + 1]; q = { index: 0 }; }
+      else continue;
+      let name = L.slice(0, q.index).replace(/[\s,:\-|•]+$/, '').trim(), at = i;
+      if (!okName(name)) {
+        name = '';
+        for (let j = nameLimit - 1; j >= Math.max(0, nameLimit - 8); j--) {
           const c = lines[j];
-          if (c.length >= 4 && !bad.test(c) && !/^\$?[\d,.\s]+$/.test(c) && !/\b(?:qty|quantity)\b/i.test(c)) { name = c; break; }
+          if (/\b(?:qty|quantity)\b/i.test(c) && j < i) break; // the previous item
+          if (okName(c)) { name = c; at = j; break; }
         }
       }
-      if (!name || name.length < 4 || bad.test(name)) continue;
-      name = name.replace(/\s*\$\s*[\d,]+\.\d{2}.*$/, '').slice(0, 160).trim();
-      const price = priceOf(L.slice(q.index)) ?? priceOf(lines[i + 1]) ?? priceOf(L);
-      const key = name.toLowerCase();
-      const prev = items.find(x => x.name.toLowerCase() === key);
-      if (prev) continue;
-      items.push({ name, qty: Number(q[1]) || 1, price });
+      if (!name) continue;
+      name = name.replace(/\s*\$\s*[\d,]+\.\d{2}.*$/, '').replace(/\s+/g, ' ').slice(0, 160).trim();
+      // price: on the qty line, or in the lines between the name and a few lines past the qty
+      let price = null, each = false;
+      for (let j = at; j <= Math.min(lines.length - 1, i + 3); j++) {
+        if (j > i && /\b(?:qty|quantity)\b/i.test(lines[j])) break;
+        const v = priceOf(lines[j]); if (v != null && !/total|subtotal|tax|shipping|saved|was\s*\$/i.test(lines[j])) { price = v; each = /\/\s*ea|\beach\b|\bea\b|per item/i.test(lines[j]); break; }
+      }
+      // picture: alt text matches the name, else the nearest product picture just above the name
+      let image = '';
+      const alt = imgs.find(im => !im.used && im.alt && nameMatches(im.alt, name) && productImage(im, false));
+      if (alt) { image = alt.src; alt.used = true; }
+      else for (let j = at - 1; j >= Math.max(0, at - 6); j--) {
+        const mk = lines[j].match(IMG_MARK); if (!mk) { if (/\b(?:qty|quantity)\b/i.test(lines[j])) break; continue; }
+        const im = imgs[+mk[1]]; if (im && !im.used && productImage(im, true)) { image = im.src; im.used = true; break; }
+      }
+      if (items.some(x => x.name.toLowerCase() === name.toLowerCase())) continue;
+      items.push({ name, qty: qty || 1, price, each, image });
+    }
+    // Table layout (PlayStation Direct): a "Quantity" column header, then rows of name / number / ... / price
+    if (!items.length && lines.some(l => /^(?:qty|quantity)$/i.test(l))) {
+      const start = lines.findIndex(l => /^(?:qty|quantity)$/i.test(l));
+      for (let i = start + 1; i < lines.length - 1 && items.length < 40; i++) {
+        if (/^(subtotal|total|order summary|estimated)/i.test(lines[i])) break;
+        if (!okName(lines[i]) || !/^\d{1,3}$/.test(lines[i + 1])) continue;
+        let price = null; for (let j = i + 2; j <= Math.min(lines.length - 1, i + 4); j++) { const v = priceOf(lines[j]); if (v != null) { price = v; break; } }
+        items.push({ name: lines[i].slice(0, 160), qty: +lines[i + 1] || 1, price, each: false, image: '' });
+        i++;
+      }
+    }
+    // Walmart-style: names live only in picture alt text - "quantity 5 item Pokemon Trading Card Game ..."
+    for (const im of imgs) {
+      const m = String(im.alt || '').match(/^quantity\s+(\d{1,3})\s+items?\s+(.{4,})$/i);
+      if (!m || !productImage(im, false)) continue;
+      const name = m[2].trim().slice(0, 160);
+      const have = items.find(x => nameMatches(x.name, name));
+      if (have) { if (!have.image) have.image = im.src; continue; }
+      items.push({ name, qty: +m[1] || 1, price: null, each: false, image: im.src });
     }
     return items;
   }
+  // Prices next to an item are usually per-unit ("$69.99 / ea") but some stores show the line total.
+  // Use the order subtotal to tell which, then store a per-unit price.
+  function settlePrices(items, subtotal) {
+    const unknown = items.filter(i => i.price != null && !i.each && i.qty > 1);
+    if (unknown.length && subtotal != null) {
+      const asLine = items.reduce((a, i) => a + (i.price || 0) * (i.each || !unknown.includes(i) ? i.qty : 1), 0);
+      if (Math.abs(asLine - subtotal) < 0.05) unknown.forEach(i => { i.price = Math.round(i.price / i.qty * 100) / 100; });
+    }
+    return items.map(i => { const o = { name: i.name, qty: i.qty, price: i.price }; if (i.image) o.image = i.image; return o; });
+  }
 
   const ADDR_LABEL = /(?:delivers?\s*to|deliver(?:ing|ed)?\s*to|ship(?:ping|ped|s)?\s*to|shipping address|delivery address|ship-to|sending to|your order will be delivered to)\s*:?\s*/i;
+  const ST_ZIP = ',\\s*[A-Z]{2},?\\s+\\d{5}(?:-\\d{4})?(?![\\d])';
+  const HQ_ZIPS = /\b(98004|55423|98109|55403|72716|94043|98052|95014|10001)\b/; // store head offices in email footers
+  const okAddr = cap => /[a-z]/i.test(cap) && /\s/.test(cap) && cap.includes(',') && /\d/.test(cap.split(',').slice(0, -1).join(','));
   function extractAddress(text) {
     const f = flat(text);
-    const re = new RegExp(ADDR_LABEL.source + '([^\\n]{5,220}?,\\s*[A-Z]{2}\\s+\\d{5}(?:-\\d{4})?)', 'i');
+    const re = new RegExp(ADDR_LABEL.source + '([^\\n]{5,220}?' + ST_ZIP + ')', 'i');
     const m = f.match(re);
-    if (!m) return null;
-    let cap = m[1].trim().replace(/^[,\s]+/, '').replace(/\s{2,}/g, ' ');
-    if (!/[a-z]/i.test(cap) || !/\s/.test(cap) || !cap.includes(',')) return null;
-    if (!/\d/.test(cap.split(',').slice(0, -1).join(','))) return null; // needs a street number
-    return cap;
+    if (m) {
+      const cap = m[1].trim().replace(/^[,\s]+/, '').replace(/\s{2,}/g, ' ');
+      if (okAddr(cap)) return cap;
+    }
+    // No label (Walmart): a line that is a whole street address - "11662 S 2670 W, Riverton, UT, 84065, USA"
+    const lines = String(text || '').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i].trim();
+      if (/©|\(c\)\s*\d{4}|all rights reserved|inc\.|corporate|headquarters/i.test(L)) break;
+      const mm = L.match(new RegExp('^((?:[A-Za-z][A-Za-z.\'\\-]+(?:\\s+[A-Za-z][A-Za-z.\'\\-]+){0,3},\\s*)?\\d{1,6}\\s+[^,]{2,60},(?:\\s*[^,]{1,40},)?\\s*[A-Za-z .\'\\-]{2,30}' + ST_ZIP + ')(?:,\\s*(?:USA|US|United States))?$', 'i'));
+      if (mm && !HQ_ZIPS.test(mm[1]) && okAddr(mm[1])) return mm[1];
+    }
+    return null;
+  }
+  // Amazon only shows "evelyn - HERRIMAN, UT": a name and a town, no street.
+  function extractShortRecipient(text) {
+    const m = String(text || '').match(/^([A-Za-z][A-Za-z .'\-]{1,40}?)\s+-\s+([A-Za-z][A-Za-z .'\-]{1,40}),\s*([A-Z]{2})$/m);
+    return m ? { name: m[1].trim(), city: m[2].trim(), state: m[3] } : null;
   }
   const looksLikeName = s => /^[A-Za-z][A-Za-z'.\-]*(?:\s+[A-Za-z][A-Za-z'.\-]*){0,3}$/.test(s) && !/\d/.test(s);
   const UNIT_RE = /\b(apt\.?|apartment|unit|suite|ste\.?|#|rm\.?|room|bldg\.?|building|fl\.?|floor|lot|trlr|trailer|spc|space|dept|po box)\s*#?\s*[a-z0-9\-]+/i;
@@ -199,7 +310,8 @@
   function parseAddress(raw) {
     const out = { name: '', addr1: '', addr2: '', city: '', state: '', zip: '' };
     if (!raw) return out;
-    let parts = String(raw).split(',').map(p => p.trim()).filter(Boolean);
+    const norm = String(raw).replace(/,\s*(?:USA|US|United States)\s*$/i, '').replace(/,\s*([A-Za-z]{2}),\s*(\d{5}(?:-\d{4})?)\s*$/, ', $1 $2');
+    let parts = norm.split(',').map(p => p.trim()).filter(Boolean);
     const last = parts[parts.length - 1] || '';
     const sz = last.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
     if (sz) { out.state = sz[1].toUpperCase(); out.zip = sz[2]; parts = parts.slice(0, -1); }
@@ -225,7 +337,7 @@
   // Dates are parsed by hand (not new Date("Oct 21 2026")) because Safari can't read those strings.
   const MONTH_IDX = { jan: 0, january: 0, feb: 1, february: 1, mar: 2, march: 2, apr: 3, april: 3, may: 4, jun: 5, june: 5, jul: 6, july: 6, aug: 7, august: 7, sep: 8, sept: 8, september: 8, oct: 9, october: 9, nov: 10, november: 10, dec: 11, december: 11 };
   const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?';
-  const DATE_WORD = '\\b' + MONTH + '\\s+\\d{1,2}(?:st|nd|rd|th)?\\b(?:,?\\s+\\d{4})?';
+  const DATE_WORD = '\\b' + MONTH + '\\s+\\d{1,2}(?:st|nd|rd|th)?\\b(?:,?[ \\t]+(?:19|20)\\d{2}\\b)?(?!\\d)';
   const DAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const pad = n => String(n).padStart(2, '0');
   const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -257,7 +369,7 @@
   const ETA_TRIG = '(?:arriv(?:es|ing|al)?(?:\\s+(?:by|on))?|get it(?:\\s+by)?|estimated\\s+(?:delivery|arrival)(?:\\s+date)?|expected\\s+(?:delivery|arrival|by)|delivery\\s+(?:date|by|estimate|expected|window)|deliver(?:s|ing|ed)?\\s+(?:by|on)|will\\s+be\\s+delivered(?:\\s+(?:by|on))?|should\\s+arrive|ready\\s+(?:for\\s+pick\\s?up\\s+)?by|pick\\s?up\\s+by|eta|deliver(?:s|ing)?(?=\\s+(?:mon|tue|wed|thu|fri|sat|sun|' + MONTH.replace('\\.?', '') + '|\\d)))';
   function extractEta(text, refISO) {
     const t = String(text || '');
-    const gap = '\\b[^.\\n]{0,28}?';
+    const gap = '\\b[^.\\n]{0,28}?(?:\\n[^.\\n]{0,14}?)?';
     let m = t.match(new RegExp(ETA_TRIG + gap + '(' + DATE_WORD + ')', 'i')); if (m) { const v = isoFrom(m[1].replace(/\s+/g, ' '), refISO); if (v) return v; }
     m = t.match(new RegExp(ETA_TRIG + gap + '\\b(\\d{1,2}\\/\\d{1,2}(?:\\/\\d{2,4})?)\\b', 'i')); if (m) { const v = isoFrom(m[1], refISO); if (v) return v; }
     m = t.match(new RegExp(ETA_TRIG + '\\s+(?:by\\s+|on\\s+|this\\s+)?(today|tomorrow|mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\\b', 'i')); if (m) { const v = relDayIso(m[1], refISO); if (v) return v; }
@@ -301,8 +413,19 @@
     return found.filter(f => f.carrier || f.number.length >= 12).slice(0, 6);
   }
   function extractLast4(text) {
-    const m = String(text || '').match(/(?:ending in|ending with|ending|ends in|card\s*[*•x]{2,}|[*•]{3,}|x{3,})\s*[:#]?\s*(\d{4})\b/i);
+    const t = String(text || '');
+    const m = t.match(/(?:ending in|ending with|ending|ends in|card\s*[*•x]{2,}|[*•]{3,}|x{3,})\s*[:#]?\s*(\d{4})\b/i) ||
+      t.match(/\b(?:visa|master\s?card|amex|american express|discover|debit|credit|card)\b[^\d\n]{0,14}?[*•]+\s*(\d{4})\b/i);
     return m ? m[1] : '';
+  }
+  // "Delivered September 19, 2026" / "Delivered on Sat, Sep 19" / "Delivered today"
+  function extractDeliveredOn(text, refISO) {
+    const t = String(text || '');
+    let m = t.match(new RegExp('\\bdelivered\\s+(?:on\\s+)?(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\\s+)?(' + DATE_WORD + ')', 'i'));
+    if (m) { const v = isoFrom(m[1].replace(/\s+/g, ' '), refISO); if (v) return v; }
+    m = t.match(/\bdelivered\s+(today|yesterday)\b/i);
+    if (m) { const r = refDate(refISO); const d = new Date(r.getFullYear(), r.getMonth(), r.getDate() - (m[1].toLowerCase() === 'yesterday' ? 1 : 0)); return ymd(d); }
+    return '';
   }
 
   // ---------------------------------------------------------------- addresses / houses
@@ -319,19 +442,34 @@
   const unitKey = (addr1, addr2, zip) => { const h = houseKey(addr1, zip); return h ? h + '|' + normUnit([splitUnit(addr1).unit, addr2].filter(Boolean).join(' ')) : ''; };
 
   // ---------------------------------------------------------------- main
+  // Everything after these lines is store recommendations, not your order.
+  const RECS = /^(up next, just for you|check everything off your list|you may also like|recommended for you|customers (also|who) bought|more to explore|inspired by your|picked for you|explore everything|shop similar|related items|trending now|don.t miss today)/i;
+  const cutRecs = t => { const ls = String(t || '').split('\n'); const i = ls.findIndex(l => RECS.test(l.trim())); return (i > 0 ? ls.slice(0, i) : ls).join('\n'); };
   function parseOrderEmail(m) {
     const subject = String(m.subject || '');
     const status = classifyStatus(subject);
     if (!status) return null;
-    const A = m.text && (String(m.text).trim().length > 60 || !m.html) ? String(m.text) : '';
-    const B = m.html ? htmlToText(m.html) : '';
-    const sources = [A, B].filter(Boolean);
-    if (!sources.length) sources.push('');
-    const pick = fn => { for (const s of sources) { const v = fn(s); if (v && (!Array.isArray(v) || v.length)) return v; } return Array.isArray(fn('')) ? [] : (fn === extractTotal ? null : ''); };
-    const orderNumber = (() => { for (const s of sources) { const v = extractOrderNumber(subject, s); if (v) return v; } return ''; })();
-    const rawAddr = pick(extractAddress);
+    const imgs = [];
+    const H = m.html ? htmlToText(m.html, imgs) : '';            // keeps ⟦img:N⟧ markers for item pictures
+    const Hc = H.split('\n').filter(l => !IMG_MARK.test(l)).join('\n');
+    const P = m.text ? cleanPlain(m.text) : '';
+    let sources = [Hc, P].filter(x => x && x.length > 40);
+    if (!sources.length) sources = [Hc || P || ''];
+    const first = fn => { for (const s of sources) { const v = fn(s); if (v != null && v !== '' && (!Array.isArray(v) || v.length)) return v; } return null; };
+    const orderNumber = (() => { for (const s of sources) { const v = extractOrderNumber(subject, s); if (v) return v; } return extractOrderNumber(subject, ''); })();
+    const rawAddr = first(extractAddress);
     const addr = parseAddress(rawAddr || '');
+    const short = rawAddr ? null : first(extractShortRecipient);
+    if (short) Object.assign(addr, { name: short.name, city: short.city, state: short.state });
     const text = sources.join('\n');
+    let items = H ? extractItems(cutRecs(H), imgs) : [];
+    if (P) { const alt = extractItems(cutRecs(P), []); if (alt.length > items.length) items = alt; }
+    // Amazon: 'Shipped 2 items: Party Supplies' / 'Ordered: "Name..." and 2 more items'
+    if (!items.length) {
+      const am = subject.match(/^(?:ordered|shipped|delivered|arriving|out for delivery|now arriving)\s*(\d+)?\s*(?:items?)?\s*:\s*"?([^"]{3,140}?)"?(?:\s+and\s+\d+\s+more\s+items?)?\s*$/i);
+      if (am) items = [{ name: am[2].trim(), qty: +am[1] || 1, price: null, each: false, image: '' }];
+    }
+    const sub = first(extractSubtotal);
     return {
       status,
       store: detectStore(m.from, subject, text),
@@ -341,14 +479,15 @@
       to: (m.to || [])[0] || '',
       date: m.date || new Date().toISOString(),
       messageId: m.messageId || '',
-      name: addr.name || pick(extractName) || '',
+      name: addr.name || first(extractName) || '',
       address: addr,
       rawAddress: rawAddr || '',
       eta: (() => { for (const s of sources) { const v = extractEta(s, m.date); if (v) return v; } return ''; })(),
-      total: pick(extractTotal),
+      deliveredOn: status === 'delivered' ? first(s => extractDeliveredOn(s, m.date)) || '' : '',
+      total: first(extractTotal),
       tracking: (() => { for (const s of sources) { const v = extractTracking(s, orderNumber); if (v.length) return v; } return []; })(),
-      last4: pick(extractLast4),
-      items: pick(extractItems),
+      last4: first(extractLast4) || '',
+      items: settlePrices(items, sub),
     };
   }
 
@@ -370,7 +509,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

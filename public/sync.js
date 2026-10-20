@@ -1,5 +1,6 @@
 /* Crown - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
+const READER_VER = 3;
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -63,7 +64,7 @@ async function syncAccount(a, totals, opts) {
     if (out.created) { res.created++; totals.created++; }
     else if (out.changed) {
       res.updated++; totals.updated++;
-      const s = out.order.status; if (s === 'shipped' || s === 'ready') totals.shipped++; else if (s === 'delivered') totals.delivered++; else if (isDead(out.order)) totals.cancelled++;
+      const s = out.order.status; if (s === 'shipped' || s === 'ready' || s === 'out') totals.shipped++; else if (s === 'delivered') totals.delivered++; else if (isDead(out.order)) totals.cancelled++;
     }
   };
   try {
@@ -77,7 +78,7 @@ async function syncAccount(a, totals, opts) {
     // Decide from the subject + sender alone whether an email is worth downloading at all.
     const todo = scan.candidates.filter(c => {
       if (activeMids.has(c.mid)) return true;
-      if (skip.has(c.mid) || (opts.reapply && seenAll.has(c.mid))) return false;
+      if (!opts.full && (skip.has(c.mid) || (opts.reapply && seenAll.has(c.mid)))) return false;
       const junk = !Parser.classifyStatus(c.subject) || (c.from && isIgnoredSender(c.from)) || (c.from && !state.settings.trackUnknown && Parser.isNonStoreSender(c.from, c.subject));
       if (junk) { markSeen(c.mid); return false; }
       return true;
@@ -138,6 +139,7 @@ async function syncAll(manual, ids, opts) {
   const after = accs.map(a => JSON.stringify([a.lastResult && a.lastResult.error, a.uidValidity, a.lastSync ? 1 : 0])).join();
   if (foundAny || before !== after || pendingSave || manual) save(); // nothing new = nothing to save
   scheduleSync(); setSyncStat(); softRefresh();
+  if (state.settings.easypostKey) setTimeout(() => refreshStaleTracking(), 1500);
   const parts = [];
   if (totals.created) parts.push(plural(totals.created, 'new order'));
   if (totals.shipped) parts.push(totals.shipped + ' shipped');
@@ -160,6 +162,7 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { if (document.visibilityState === 'hidden') { scheduleSync(); return; } syncAll(false); }, m * 60000);
 }
 function onUnlocked() {
+  if (typeof maybeShowChangelog === 'function') maybeShowChangelog();
   // Drop anything in "couldn't read" that isn't a real-looking store order email (old builds listed promos there).
   const keepUn = state.unparsed.filter(u => Parser.looksLikeOrderMail(u.subject, Parser.detectStore(u.from, u.subject, '')) && !isIgnoredSender(u.from));
   if (keepUn.length !== state.unparsed.length) { state.unparsed = keepUn; save(); }
@@ -171,6 +174,21 @@ function onUnlocked() {
     if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
   }
   if (state.houseVer !== 2 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
+  // 0.4.0: the email reader was rebuilt against real store emails (totals, items + pictures, addresses, tracking,
+  // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
+  if (state.readerVer !== READER_VER) {
+    const accs = state.imapAccounts.filter(a => a.enabled !== false);
+    if (SERVER && accs.length) setTimeout(async () => {
+      if (syncing) return;
+      toast('Crown’s email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…');
+      const days = Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60);
+      await syncAll(false, null, { days: Math.min(days, 180), fresh: true, reapply: true, full: true });
+      if (!cryptoKey) return;
+      state.readerVer = READER_VER; regroupHouses(); autoLinkAll(); pruneHouses(); invalidateStats(); save(); refresh();
+      toast('Re-read finished — orders updated');
+    }, 3000);
+    else if (!accs.length) state.readerVer = READER_VER;
+  }
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
   if (SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);
@@ -193,13 +211,25 @@ async function liveTrack(orderId, idx, btn, quiet) {
     t.live = { status: r.status, est: r.est ? dayKey(new Date(r.est)) : '', events: r.events, publicUrl: r.publicUrl, checkedAt: Date.now() };
     if (r.carrier && !t.carrier) t.carrier = r.carrier;
     if (r.status === 'delivered' && o.status !== 'delivered' && !isDead(o)) { const last = (r.events || []).slice(-1)[0]; setStatus(o, 'delivered', last && last.date || new Date().toISOString(), 'tracking'); }
-    else if (['in_transit', 'out_for_delivery'].includes(r.status) && STATUS[o.status].r < STATUS.shipped.r) setStatus(o, 'shipped', new Date().toISOString(), 'tracking');
+    else if (r.status === 'out_for_delivery' && !isDead(o) && STATUS[o.status].r < STATUS.out.r) setStatus(o, 'out', new Date().toISOString(), 'tracking');
+    else if (r.status === 'in_transit' && !isDead(o) && STATUS[o.status].r < STATUS.shipped.r) setStatus(o, 'shipped', new Date().toISOString(), 'tracking');
     if (t.live.est && isActive(o)) o.eta = t.live.est;
     o.updatedAt = Date.now(); save();
     if ($('#dlgOrder').open && curOrder && curOrder.id === o.id) { curOrder = JSON.parse(JSON.stringify(o)); renderOrderDlg(); }
     if (!quiet) softRefresh();
     return true;
   } catch (e) { if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false; }
+}
+// After each sync, quietly re-check packages that haven't been checked for a few hours (needs an EasyPost key).
+let trackBusy = false;
+async function refreshStaleTracking() {
+  if (trackBusy || !state.settings.easypostKey || !SERVER) return; trackBusy = true;
+  try {
+    const jobs = []; const stale = Date.now() - 3 * 3600e3;
+    state.orders.filter(o => isActive(o) && o.tracking.length).forEach(o => o.tracking.forEach((t, i) => { if (!t.live || (t.live.checkedAt || 0) < stale) jobs.push([o.id, i]); }));
+    let n = 0; for (const [id, i] of jobs.slice(0, 25)) { if (!cryptoKey) return; if (await liveTrack(id, i, null, true)) n++; }
+    if (n) softRefresh();
+  } finally { trackBusy = false; }
 }
 async function refreshAllTracking() {
   const jobs = []; state.orders.filter(o => isActive(o) && o.tracking.length).slice(0, 60).forEach(o => o.tracking.forEach((t, i) => jobs.push([o.id, i])));

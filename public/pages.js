@@ -33,12 +33,12 @@ PAGES.dashboard = {
     const inLM = o => { const d = toDate(o.orderDate); return d && d >= lmStart && d < mStart && d.getDate() <= now.getDate(); };
     const thisM = state.orders.filter(inM), lastM = state.orders.filter(inLM);
     const spentM = sum(thisM, orderSpend), spentLM = sum(lastM, orderSpend);
-    const transit = state.orders.filter(o => o.status === 'shipped' || o.status === 'ready');
+    const transit = state.orders.filter(inTransit);
     const d30 = state.orders.filter(o => inRange(o.orderDate, '30'));
     const stick = d30.length ? Math.round(d30.filter(o => !isDead(o)).length / d30.length * 100) : null;
     const soon = state.orders.filter(o => isActive(o) && o.eta && o.eta <= dayKey(new Date(Date.now() + 1 * 864e5)) && o.eta >= tk);
     const upcoming = state.orders.filter(o => isActive(o) && o.eta && o.eta >= tk).sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 8);
-    const overdue = state.orders.filter(o => isActive(o) && o.eta && o.eta < tk && (o.status === 'shipped' || o.status === 'confirmed'));
+    const overdue = state.orders.filter(o => isActive(o) && o.eta && o.eta < tk && (inTransit(o) || o.status === 'confirmed'));
     const events = state.orders.flatMap(o => (o.history || []).map(h => ({ o, h }))).sort((a, b) => String(b.h.date).localeCompare(String(a.h.date))).slice(0, 9);
     const days = []; for (let i = 29; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); const k = dayKey(d); days.push({ k, label: (d.getMonth() + 1) + '/' + d.getDate(), value: 0 }); }
     const dIdx = Object.fromEntries(days.map((d, i) => [d.k, i]));

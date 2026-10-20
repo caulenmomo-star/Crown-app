@@ -249,3 +249,11 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
   .chip{padding:7px 12px}
   td.cb input,th.cb input{width:20px;height:20px}
 }
+
+/* item pictures */
+.thumb{width:44px;height:44px;flex:0 0 44px;border-radius:8px;background:#fff;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;overflow:hidden;vertical-align:middle}
+.thumb img{width:100%;height:100%;object-fit:contain;display:block}
+.thumb.sm{width:30px;height:30px;flex-basis:30px;border-radius:6px}
+.thumb.none,.thumb:empty{background:var(--panel2);border-style:dashed}
+.itemcell{display:flex;align-items:center;gap:8px;min-width:0}
+.itemcell .ellipsis{min-width:0;flex:1}

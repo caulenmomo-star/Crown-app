@@ -194,6 +194,12 @@
   <div class="dfoot"><button data-close>Done</button></div>
 </dialog>
 
+<dialog id="dlgNews" class="wide">
+  <div class="dhead">What’s new in Crown<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="small muted" style="margin-bottom:12px">Crown is in prerelease, so versions stay at 0.x until it’s finished.</div><div id="newsBody"></div></div>
+  <div class="dfoot"><button class="primary" data-close>Got it</button></div>
+</dialog>
+
 <dialog id="dlgAskPw" class="narrow">
   <div class="dhead"><span id="apTitle">Password</span><button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody"><div class="small muted" id="apText" style="margin-bottom:10px"></div><input type="password" id="apPw" autocomplete="off"><div class="err" id="apErr"></div></div>
@@ -205,6 +211,7 @@
 
 <script src="parser.js"></script>
 <script src="core.js"></script>
+<script src="changelog.js"></script>
 <script src="profiles.js"></script>
 <script src="orders.js"></script>
 <script src="pages.js"></script>

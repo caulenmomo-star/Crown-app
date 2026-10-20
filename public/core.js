@@ -1,6 +1,6 @@
 /* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '2.1.0';
+const VERSION = '0.4.0'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -38,6 +38,7 @@ const STATUSES = [
   { k: 'confirmed', l: 'Confirmed', c: '#7c8cff', r: 2 },
   { k: 'shipped', l: 'Shipped', c: '#f5a524', r: 3 },
   { k: 'ready', l: 'Ready for pickup', c: '#22c3c3', r: 3 },
+  { k: 'out', l: 'Out for delivery', c: '#ff7a45', r: 3.5 },
   { k: 'delivered', l: 'Delivered', c: '#3ecf8e', r: 4 },
   { k: 'cancelled', l: 'Cancelled', c: '#ef5b5b', r: 5 },
   { k: 'refunded', l: 'Refunded', c: '#b07cff', r: 5 },
@@ -46,7 +47,8 @@ const STATUS = Object.fromEntries(STATUSES.map(s => [s.k, s]));
 const statusBadge = k => { const s = STATUS[k] || STATUS.placed; return `<span class="badge"><i style="background:${s.c}"></i>${esc(s.l)}</span>`; };
 const storeBadge = k => { const s = Parser.storeInfo(k); return `<span class="badge"><i style="background:${s.color}"></i>${esc(s.label)}</span>`; };
 const isDead = o => o.status === 'cancelled' || o.status === 'refunded';
-const isActive = o => ['placed', 'confirmed', 'shipped', 'ready'].includes(o.status);
+const isActive = o => ['placed', 'confirmed', 'shipped', 'ready', 'out'].includes(o.status);
+const inTransit = o => o.status === 'shipped' || o.status === 'ready' || o.status === 'out';
 const orderSpend = o => isDead(o) ? 0 : (Number(o.total) || sum(o.items || [], i => (Number(i.price) || 0) * (Number(i.qty) || 1)));
 
 /* ---------- state ---------- */
@@ -70,6 +72,14 @@ let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
 let CLOUD = false, cloudInfo = {}, authKey = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
+// A newer Crown is running (or was deployed): this tab's code is old, so it must reload before it can save.
+function showOutdated() {
+  if (document.getElementById('outdatedBar')) return;
+  const d = document.createElement('div'); d.id = 'outdatedBar';
+  d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;background:#2a2112;border:1px solid #5a4520;color:#ecc87c;padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+  d.innerHTML = '<span>Crown was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
+  d.querySelector('button').onclick = () => location.reload(); document.body.appendChild(d);
+}
 async function api(path, body, method) {
   let res;
   const headers = { 'X-Crown': '1', 'X-Crown-App': VERSION };
@@ -79,6 +89,7 @@ async function api(path, body, method) {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Online — check your internet connection.' : 'Crown’s helper isn’t running. Open Crown with “Start Crown.command”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
+  if (j && j.outdated) showOutdated();
   if (!res.ok || !j || j.ok === false) { const err = new Error((j && j.error) || ('Request failed (' + res.status + ')')); err.data = j || {}; throw err; }
   return j;
 }
@@ -221,6 +232,7 @@ function mergeStates(base, local, remote) {
     for (const x of l) if (!rm.has(x.id)) { const bx = bm.get(x.id); if (bx && J(x) === J(bx)) continue; list.push(x); }
     out[k] = list;
   }
+  for (const k of ['readerVer', 'ordersVer', 'houseVer']) { const v = Math.max(Number(local[k]) || 0, Number(remote[k]) || 0); if (v) out[k] = v; }
   out.settings = Object.assign({}, remote.settings || {});
   for (const k of Object.keys(local.settings || {})) if (J(local.settings[k]) !== J((base.settings || {})[k])) out.settings[k] = local.settings[k];
   const seen = new Set(); out.seenIds = [];
@@ -473,7 +485,7 @@ async function restoreFromBlob(blob) {
 /* ---------- boot ---------- */
 const Crown = {
   async boot() {
-    $('#verLbl').textContent = 'v' + VERSION;
+    $('#verLbl').textContent = 'v' + VERSION; $('#verLbl').title = 'What’s new'; $('#verLbl').style.cursor = 'pointer'; $('#verLbl').onclick = e => { e.stopPropagation(); openChangelog(); };
     if (location.protocol.startsWith('http')) {
       try { const p = await api('/api/ping'); SERVER = true; CLOUD = !!p.cloud; cloudInfo = p; } catch (_) { SERVER = false; }
     }
