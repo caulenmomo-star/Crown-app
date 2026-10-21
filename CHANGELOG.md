@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.5.1 — Tell orders apart at a glance (2026-10-21)
+
+- Home: Upcoming deliveries and Recent activity now show each item’s picture, a name on up to two lines, the house it’s going to and the total.
+- Short lists drop the “Pokémon Trading Card Game:” part every item shares, so you see “30th Celebration Elite Trainer Box” instead of a cut-off name. The full name is still in the order.
+- Quantities over one show up front, like “2× Scarlet & Violet Booster Bundle”.
+- The status on those Home lists is now just a colored dot: orange shipped, green delivered, red cancelled.
+
 ## v0.5.0 — Crown Tools: made for phones, Windows and Mac (2026-10-21)
 
 - New name: Crown is now Crown Tools, with a new app icon.

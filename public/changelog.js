@@ -1,6 +1,12 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.5.1', date: '2026-10-21', title: 'Tell orders apart at a glance', items: [
+    'Home: Upcoming deliveries and Recent activity now show each item’s picture, a name on up to two lines, the house it’s going to and the total.',
+    'Short lists drop the “Pokémon Trading Card Game:” part every item shares, so you see “30th Celebration Elite Trainer Box” instead of a cut-off name. The full name is still in the order.',
+    'Quantities over one show up front, like “2× Scarlet & Violet Booster Bundle”.',
+    'The status on those Home lists is now just a colored dot: orange shipped, green delivered, red cancelled.',
+  ] },
   { v: '0.5.0', date: '2026-10-21', title: 'Crown Tools: made for phones, Windows and Mac', items: [
     'New name: Crown is now Crown Tools, with a new app icon.',
     'Phones: a bottom tab bar (Home, Orders, Calendar, Houses, More) and a slim top bar with Sync and Lock.',

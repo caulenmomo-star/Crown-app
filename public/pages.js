@@ -1,6 +1,10 @@
 /* Crown Tools - Dashboard, Calendar, Spending (+ share card), Inboxes, Settings. */
 'use strict';
 
+// second line for dashboard rows: store, where it's going, what it cost
+// just a colored dot for the status (name shows on hover / long-press)
+function statusDot(st) { const S = STATUS[st] || {}; return `<span class="stdot" style="background:${S.c || 'var(--faint)'}" title="${esc(S.l || st)}" aria-label="${esc(S.l || st)}"></span>`; }
+function dashSub(o) { const h = o.houseId && houseById(o.houseId); return [o.total != null ? fmtMoney(o.total) : '', h ? '→ ' + esc(houseLabel(h)) : '', esc(Parser.storeInfo(o.store).label)].filter(Boolean).join(' · '); }
 function svgBars(buckets, opts) {
   // buckets: [{label, value, title}]
   const ph = isPhone(), W = ph ? 380 : 900, H = ph ? 200 : 220, P = { l: ph ? 40 : 46, r: 6, t: 10, b: 24 };
@@ -83,9 +87,9 @@ PAGES.dashboard = {
       </div>
       <div class="cols2" style="margin-bottom:14px">
         <div class="card"><h3>Upcoming deliveries<span class="spacer"></span><button class="ghost sm" data-nav="calendar">Calendar ›</button></h3>
-          ${upcoming.length ? `<div class="list">${upcoming.map(o => `<div class="li click" data-order="${o.id}"><div style="width:92px"><b>${fmtDate(o.eta, { weekday: true })}</b><div class="small faint">${relDay(o.eta)}</div></div><div style="flex:1;min-width:0"><div class="ellipsis">${esc(orderTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${Parser.storeInfo(o.store).label}${o.houseId ? ' → ' + esc(houseLabel(houseById(o.houseId))) : ''}</div></div>${statusBadge(o.status)}</div>`).join('')}</div>` : '<div class="empty sm">Nothing on the way with a delivery date.</div>'}</div>
+          ${upcoming.length ? `<div class="list">${upcoming.map(o => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><b>${fmtDate(o.eta, { weekday: true })}</b><div class="small faint">${statusDot(o.status)}${relDay(o.eta)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">Nothing on the way with a delivery date.</div>'}</div>
         <div class="card"><h3>Recent activity</h3>
-          ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click" data-order="${o.id}"><div style="width:120px">${statusBadge(h.status)}</div><div style="flex:1;min-width:0"><div class="ellipsis">${esc(orderTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted">${Parser.storeInfo(o.store).label} · ${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
+          ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><div class="small faint nowrap">${statusDot(h.status)}${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
       </div>
       <div class="cols2">
         <div class="card"><h3>Spending · ${esc(dLabel)}<span class="spacer"></span><span class="muted" style="font-weight:400">${fmtMoney(sum(days, d => d.value))} · ${plural(dOrders, 'order')}</span><button class="ghost sm" data-nav="spending">Details ›</button></h3>

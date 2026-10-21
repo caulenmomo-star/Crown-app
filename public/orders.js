@@ -8,6 +8,9 @@ const houseOrders = id => state.orders.filter(o => o.houseId === id);
 const houseLabel = h => h ? (h.nickname || h.addr1 || 'Unknown house') : '—';
 const houseAddr = h => h ? [h.addr1, [h.city, [h.state, h.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')].filter(Boolean).join(', ') : '';
 const orderAddr = o => [o.addr1, o.addr2, o.city, [o.state, o.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+// For short lists: drop the brand prefix most items share ("Pokémon Trading Card Game: ...") so the part that tells them apart shows.
+const shortName = n => { const t = String(n || '').replace(/^\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]\s*/i, '').replace(/^\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s+(?=\S)/i, '').trim(); return t.length >= 6 ? t : String(n || ''); };
+const shortTitle = o => { if (!o.items || !o.items.length) return o.subject || ''; const q = o.items.length === 1 ? (Number(o.items[0].qty) || 1) : 0; return (q > 1 ? q + '× ' : '') + shortName(o.items[0].name) + (o.items.length > 1 ? ` +${o.items.length - 1} more` : ''); };
 const orderTitle = o => o.items && o.items.length ? o.items[0].name + (o.items.length > 1 ? ` +${o.items.length - 1} more` : '') : (o.subject || '');
 const orderImage = o => ((o.items || []).find(i => i.image) || {}).image || '';
 // Product picture in a fixed frame; if the store's image can't load, the empty frame stays (no broken-image icon).
@@ -385,7 +388,7 @@ function orderMiniList(orders, opts) {
   if (!orders.length) return `<div class="empty sm">${esc((opts && opts.empty) || 'No orders.')}</div>`;
   return `<div class="list">${orders.map(o => `<div class="li click mini" data-order="${o.id}">
     <div class="mdate small muted">${fmtDate(o.orderDate)}</div>${thumb(orderImage(o), 'sm')}
-    <div class="mmain"><div class="ellipsis">${esc(orderTitle(o)) || '<span class="muted">Order ' + esc(o.orderNumber) + '</span>'}</div><div class="small muted ellipsis"><span class="mdate2">${fmtDate(o.orderDate)} · </span>${Parser.storeInfo(o.store).label} · #${esc(o.orderNumber || '—')}${o.name ? ' · ' + esc(o.name) : ''}</div></div>
+    <div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '<span class="muted">Order ' + esc(o.orderNumber) + '</span>'}</div><div class="small muted ellipsis"><span class="mdate2">${fmtDate(o.orderDate)} · </span>${Parser.storeInfo(o.store).label} · #${esc(o.orderNumber || '—')}${o.name ? ' · ' + esc(o.name) : ''}</div></div>
     <div class="mend"><div class="mtot">${fmtMoney(o.total)}</div><div class="mst">${statusBadge(o.status)}</div></div></div>`).join('')}</div>`;
 }
 document.addEventListener('click', e => { const r = e.target.closest('[data-order]'); if (r && !r.closest('#profOrders') && !e.target.closest('input,button,a,select')) { const d = r.closest('dialog'); if (d && d.id !== 'dlgOrder') d.close(); openOrder(r.dataset.order); } });
@@ -473,7 +476,7 @@ PAGES.orders = {
       <tbody>${shown.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return `<tr data-oid="${o.id}" class="${oSelected.has(o.id) ? 'sel' : ''}">
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
         <td class="c-date">${fmtDate(o.orderDate)}</td><td class="c-store">${storeBadge(o.store)}</td><td class="mono small c-no">${esc(o.orderNumber || '—')}</td>
-        <td class="c-item" style="max-width:320px" title=""${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(orderTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
+        <td class="c-item" style="max-width:320px" title=""${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(shortTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
         <td class="right c-tot">${fmtMoney(orderSpend(o) || o.total)}</td><td class="c-st">${statusBadge(o.status)}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:#ef5b5b">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
         <td class="c-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint dash">—</span>'}</td>
         <td class="ellipsis c-house" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint dash">—</span>'}</td>
