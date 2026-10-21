@@ -1281,6 +1281,19 @@ class handler(BaseHTTPRequestHandler):
             def probe():
                 q = _parse_qs(_urlparse(self.path).query)
                 n = (q.get("n") or [""])[0]
+                if (q.get("dbg") or [""])[0]:
+                    import http.cookiejar
+                    jar = http.cookiejar.CookieJar(); out = {}
+                    for u in ["https://www.ups.com/track?loc=en_US&tracknum=%s&requester=ST/trackdetails" % n, "https://www.ups.com/track/api/Track/GetStatus?loc=en_US"]:
+                        try:
+                            st, raw, _ = _http(u, jar=jar, headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"})
+                            out[u[:60]] = [st, len(raw), raw[:200].decode("utf-8", "replace")]
+                        except urllib.error.HTTPError as e:
+                            out[u[:60]] = ["HTTP", e.code, e.read()[:200].decode("utf-8", "replace")]
+                        except Exception as e:
+                            out[u[:60]] = ["ERR", str(e)[:200]]
+                    out["cookies"] = [(c.name, c.domain, c.path) for c in jar]
+                    return {"ok": True, "dbg": out}
                 try:
                     t = free_track(n, "")
                     return {"ok": True, "status": t["status"], "est": t["est"], "text": t.get("statusText")}
