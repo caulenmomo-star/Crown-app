@@ -2,6 +2,12 @@
 
 Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.4.5 — Real delivery dates only (2026-10-20)
+
+- An order only gets an arrival date once a shipping email (shipped with tracking, out for delivery, or ready for pickup) gives one. That’s the date the calendar, Dashboard and Orders list use.
+- The date from the order confirmation is kept separately as “Original order said …”. Orders that haven’t shipped show “not shipped · est. …” instead of a fake arrival date.
+- Existing orders are fixed automatically: arrival dates that came from confirmation emails become the original estimate.
+
 ## v0.4.4 — Smarter houses, delivery windows (2026-10-20)
 
 - Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.

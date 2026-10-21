@@ -1,6 +1,11 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.5', date: '2026-10-20', title: 'Real delivery dates only', items: [
+    'An order only gets an arrival date once a shipping email (shipped with tracking, out for delivery, or ready for pickup) gives one. That’s the date the calendar, Dashboard and Orders list use.',
+    'The date from the order confirmation is kept separately as “Original order said …”. Orders that haven’t shipped show “not shipped · est. …” instead of a fake arrival date.',
+    'Existing orders are fixed automatically: arrival dates that came from confirmation emails become the original estimate.',
+  ] },
   { v: '0.4.4', date: '2026-10-20', title: 'Smarter houses, delivery windows', items: [
     'Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.',
     'Your existing houses are merged automatically when you open Crown. Nicknames and notes are kept, and each house shows the spelling most of its orders use.',

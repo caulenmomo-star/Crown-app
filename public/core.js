@@ -1,6 +1,6 @@
 /* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.4.4'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
+const VERSION = '0.4.5'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -242,7 +242,7 @@ function mergeStates(base, local, remote) {
     for (const x of l) if (!rm.has(x.id)) { const bx = bm.get(x.id); if (bx && J(x) === J(bx)) continue; list.push(x); }
     out[k] = list;
   }
-  for (const k of ['readerVer', 'ordersVer', 'houseVer']) { const v = Math.max(Number(local[k]) || 0, Number(remote[k]) || 0); if (v) out[k] = v; }
+  for (const k of ['readerVer', 'ordersVer', 'houseVer', 'etaVer']) { const v = Math.max(Number(local[k]) || 0, Number(remote[k]) || 0); if (v) out[k] = v; }
   out.settings = Object.assign({}, remote.settings || {});
   for (const k of Object.keys(local.settings || {})) if (J(local.settings[k]) !== J((base.settings || {})[k])) out.settings[k] = local.settings[k];
   const seen = new Set(); out.seenIds = [];

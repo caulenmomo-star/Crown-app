@@ -173,6 +173,15 @@ function onUnlocked() {
     const junk = state.orders.filter(isSuspicious).length, dup = suggestedDuplicates().length;
     if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
   }
+  // 0.4.5: arrival dates only come from shipping emails; confirmation dates become "original order said".
+  if (state.etaVer !== 2 && state.orders.length) {
+    for (const o of state.orders) {
+      if (!o.eta || o.etaLocked) continue;
+      const fromShip = o.etaFrom ? ['shipped', 'out', 'ready'].includes(Parser.classifyStatus(o.etaFrom)) : ['shipped', 'out', 'ready', 'delivered'].includes(o.status) && (o.tracking || []).length > 0;
+      if (!fromShip) { if (!o.estEta) { o.estEta = o.eta; o.estEtaEnd = o.etaEnd || ''; o.estFrom = o.etaFrom || ''; o.estAt = o.etaAt || ''; } o.eta = ''; o.etaEnd = ''; o.etaAt = ''; o.etaFrom = ''; }
+    }
+    state.etaVer = 2; invalidateStats(); save(); refresh();
+  }
   if (state.houseVer !== 3 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
   // 0.4.0: the email reader was rebuilt against real store emails (totals, items + pictures, addresses, tracking,
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
