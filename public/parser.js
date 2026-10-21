@@ -1,4 +1,4 @@
-/* Crown - order email parser (pure functions; no DOM, no state).
+/* Crown Tools - order email parser (pure functions; no DOM, no state).
    Turns a retailer email into a normalized order update. Best-effort and
    template-agnostic: it looks for the patterns that show up across almost
    every retailer's confirmation / shipping / delivery / cancellation email. */

@@ -1,4 +1,4 @@
-/* Crown - Orders & Houses: data model, email ingestion, profile linking, house grouping, pages, dialogs. */
+/* Crown Tools - Orders & Houses: data model, email ingestion, profile linking, house grouping, pages, dialogs. */
 'use strict';
 
 /* ================= data helpers ================= */
@@ -383,16 +383,16 @@ function applyEmail(r, accountLabel, opts) {
 /* ================= shared order list ================= */
 function orderMiniList(orders, opts) {
   if (!orders.length) return `<div class="empty sm">${esc((opts && opts.empty) || 'No orders.')}</div>`;
-  return `<div class="list">${orders.map(o => `<div class="li click" data-order="${o.id}">
-    <div style="width:64px" class="small muted">${fmtDate(o.orderDate)}</div>${thumb(orderImage(o), 'sm')}
-    <div style="flex:1;min-width:0"><div class="ellipsis">${esc(orderTitle(o)) || '<span class="muted">Order ' + esc(o.orderNumber) + '</span>'}</div><div class="small muted ellipsis">${Parser.storeInfo(o.store).label} · #${esc(o.orderNumber || '—')}${o.name ? ' · ' + esc(o.name) : ''}</div></div>
-    <div class="right" style="width:86px">${fmtMoney(o.total)}</div><div style="width:120px" class="right">${statusBadge(o.status)}</div></div>`).join('')}</div>`;
+  return `<div class="list">${orders.map(o => `<div class="li click mini" data-order="${o.id}">
+    <div class="mdate small muted">${fmtDate(o.orderDate)}</div>${thumb(orderImage(o), 'sm')}
+    <div class="mmain"><div class="ellipsis">${esc(orderTitle(o)) || '<span class="muted">Order ' + esc(o.orderNumber) + '</span>'}</div><div class="small muted ellipsis"><span class="mdate2">${fmtDate(o.orderDate)} · </span>${Parser.storeInfo(o.store).label} · #${esc(o.orderNumber || '—')}${o.name ? ' · ' + esc(o.name) : ''}</div></div>
+    <div class="mend"><div class="mtot">${fmtMoney(o.total)}</div><div class="mst">${statusBadge(o.status)}</div></div></div>`).join('')}</div>`;
 }
 document.addEventListener('click', e => { const r = e.target.closest('[data-order]'); if (r && !r.closest('#profOrders') && !e.target.closest('input,button,a,select')) { const d = r.closest('dialog'); if (d && d.id !== 'dlgOrder') d.close(); openOrder(r.dataset.order); } });
 
 /* ================= orders page ================= */
 const OF = { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', sort: 'date', dir: -1, page: 0 };
-let oSelected = new Set();
+let oSelected = new Set(), oSelMode = false;
 // The sidebar always opens the full, unfiltered list; filters only stick when you set them on the page itself.
 function resetPageFilters(page) {
   if (page === 'orders') { Object.assign(OF, { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', page: 0 }); oSelected.clear(); }
@@ -455,7 +455,7 @@ PAGES.orders = {
     pg.innerHTML = `<div class="pagehead"><h1>Orders</h1><span class="sub">${plural(list.length, 'order')} · ${fmtMoney(sum(list, orderSpend))} spent</span><div class="spacer"></div>
       ${(() => { const n = suggestedDuplicates().length + state.orders.filter(isSuspicious).length; return n ? `<button id="oClean" style="border-color:#5a4520;color:#ecc87c">Clean up (${n})</button>` : ''; })()}
       <button id="oBot">Paste bot checkout</button><button id="oImp">Import</button><button id="oExp">Export</button>${trackingReady() ? '<button id="oTrack">Refresh tracking</button>' : ''}${state.orders.length ? '<button class="danger" id="oClearAll">Clear all orders</button>' : ''}<button class="primary" id="oAdd">+ Add order</button></div>
-      <div class="toolbar"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}">
+      <div class="toolbar"><div class="searchrow"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}"><button class="phoneonly" id="oSelMode">${oSelMode || oSelected.size ? 'Done' : 'Select'}</button></div>
         <div class="chips">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
       <div class="toolbar">
         <select id="oStore"><option value="">All stores</option>${stores.map(s => `<option value="${s}" ${OF.store === s ? 'selected' : ''}>${esc(Parser.storeInfo(s).label)}</option>`).join('')}</select>
@@ -469,17 +469,17 @@ PAGES.orders = {
         <select id="oSetStatus"><option value="">Set status…</option>${STATUSES.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select>
         <select id="oSetProf"><option value="">Link to profile…</option><option value="__auto">Auto-match again</option><option value="__none">Unlink</option>${state.profiles.map(p => `<option value="${p.id}">${esc(p.name || 'Untitled')}</option>`).join('')}</select>
         <button class="sm danger" id="oDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="oClear">Clear selection</button></div>
-      <div class="tablewrap"><table><thead><tr><th class="cb"><input type="checkbox" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th>Tracking</th></tr></thead>
+      <div class="tablewrap ${oSelMode || oSelected.size ? 'selmode' : ''}"><table class="otable"><thead><tr><th class="cb"><input type="checkbox" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th>Tracking</th></tr></thead>
       <tbody>${shown.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return `<tr data-oid="${o.id}" class="${oSelected.has(o.id) ? 'sel' : ''}">
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
-        <td>${fmtDate(o.orderDate)}</td><td>${storeBadge(o.store)}</td><td class="mono small">${esc(o.orderNumber || '—')}</td>
-        <td style="max-width:320px" title="${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(orderTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
-        <td class="right">${fmtMoney(orderSpend(o) || o.total)}</td><td>${statusBadge(o.status)}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:#ef5b5b">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
-        <td>${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
-        <td class="ellipsis" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint">—</span>'}</td>
-        <td>${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : o.estEta ? `<span class="faint small" title="Not shipped yet — the order confirmation estimated this">not shipped · est. ${fmtDate(o.estEta)}</span>` : '<span class="faint">—</span>'}</td>
-        <td>${(o.tracking || []).slice(0, 1).map(t => `<a href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener" class="small">${esc(t.carrier || 'Track')}</a>`).join('')}${o.tracking.length > 1 ? ` <span class="faint small">+${o.tracking.length - 1}</span>` : ''}</td></tr>`; }).join('')}</tbody></table>
-      ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
+        <td class="c-date">${fmtDate(o.orderDate)}</td><td class="c-store">${storeBadge(o.store)}</td><td class="mono small c-no">${esc(o.orderNumber || '—')}</td>
+        <td class="c-item" style="max-width:320px" title=""${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(orderTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
+        <td class="right c-tot">${fmtMoney(orderSpend(o) || o.total)}</td><td class="c-st">${statusBadge(o.status)}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:#ef5b5b">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
+        <td class="c-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint dash">—</span>'}</td>
+        <td class="ellipsis c-house" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint dash">—</span>'}</td>
+        <td class="c-eta ${!o.eta && o.status !== 'delivered' ? 'est' : ''}">${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint dash">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : o.estEta ? `<span class="faint small" title="Not shipped yet — the order confirmation estimated this">not shipped · est. ${fmtDate(o.estEta)}</span>` : '<span class="faint dash">—</span>'}</td>
+        <td class="c-trk">${(o.tracking || []).slice(0, 1).map(t => `<a href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener" class="small">${esc(t.carrier || 'Track')}</a>`).join('')}${o.tracking.length > 1 ? ` <span class="faint small">+${o.tracking.length - 1}</span>` : ''}</td></tr>`; }).join('')}</tbody></table>
+      ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown Tools will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
       ${pages > 1 ? `<div class="pager">Page ${OF.page + 1} of ${pages}<button class="sm" id="oPrev" ${OF.page ? '' : 'disabled'}>‹ Prev</button><button class="sm" id="oNext" ${OF.page < pages - 1 ? '' : 'disabled'}>Next ›</button></div>` : ''}`;
     const rr = () => PAGES.orders.render();
     $('#oQ').oninput = debounce(e => { OF.q = e.target.value; OF.page = 0; rr(); setTimeout(() => { const i = $('#oQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 160);
@@ -494,8 +494,9 @@ PAGES.orders = {
     if ($('#oNext')) $('#oNext').onclick = () => { OF.page++; rr(); };
     $$('#pg-orders th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (OF.sort === k) OF.dir *= -1; else { OF.sort = k; OF.dir = ['date', 'total', 'eta', 'status'].includes(k) ? -1 : 1; } rr(); });
     $('#oAll').onchange = e => { shown.forEach(o => e.target.checked ? oSelected.add(o.id) : oSelected.delete(o.id)); rr(); };
-    pg.querySelector('tbody').onclick = e => { const cb = e.target.dataset.ocb; if (cb) { e.target.checked ? oSelected.add(cb) : oSelected.delete(cb); rr(); return; } if (e.target.closest('a')) return; const tr = e.target.closest('tr'); if (tr) openOrder(tr.dataset.oid); };
+    pg.querySelector('tbody').onclick = e => { const cb = e.target.dataset.ocb; if (cb) { e.target.checked ? oSelected.add(cb) : oSelected.delete(cb); rr(); return; } if (e.target.closest('a')) return; const tr = e.target.closest('tr'); if (!tr) return; if ((oSelMode || oSelected.size) && isCompact()) { const id = tr.dataset.oid; oSelected.has(id) ? oSelected.delete(id) : oSelected.add(id); rr(); return; } openOrder(tr.dataset.oid); };
     if ($('#oClear')) $('#oClear').onclick = () => { oSelected.clear(); rr(); };
+    $('#oSelMode').onclick = () => { if (oSelMode || oSelected.size) { oSelMode = false; oSelected.clear(); } else oSelMode = true; rr(); };
     if ($('#oSetStatus')) $('#oSetStatus').onchange = e => { const s = e.target.value; if (!s) return; snapshot('set status'); state.orders.forEach(o => { if (oSelected.has(o.id) && o.status !== s) { setStatus(o, s, null, 'manual'); o.updatedAt = Date.now(); } }); save(); refresh(); toast(`Marked ${plural(oSelected.size, 'order')} ${STATUS[s].l.toLowerCase()}`, { undo: true }); };
     if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } resolveHouse(o); }); pruneHouses(); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
     if ($('#oDel')) $('#oDel').onclick = () => { const n = oSelected.size; if (!confirm(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
@@ -515,7 +516,7 @@ function clearAllOrders() {
   oSelected.clear(); invalidateStats(); save(); refresh();
   toast(`Cleared ${plural(n, 'order')}`, { undo: true });
   const accs = state.imapAccounts.filter(a => a.enabled !== false);
-  if (SERVER && accs.length) setTimeout(() => { if (confirm('Rebuild your orders from your email now?\n\nCrown will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
+  if (SERVER && accs.length) setTimeout(() => { if (confirm('Rebuild your orders from your email now?\n\nCrown Tools will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
 }
 function exportOrders(list) {
   if (!list.length) { toast('Nothing to export'); return; }

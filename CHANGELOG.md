@@ -1,11 +1,23 @@
-# Crown changelog
+# Crown Tools changelog
 
-Crown is in prerelease, so versions stay at 0.x until it’s finished.
+Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
+
+## v0.5.0 — Crown Tools: made for phones, Windows and Mac (2026-10-21)
+
+- New name: Crown is now Crown Tools, with a new app icon.
+- Phones: a bottom tab bar (Home, Orders, Calendar, Houses, More) and a slim top bar with Sync and Lock.
+- Phones: orders and profiles show as easy-to-tap cards with the picture, total, status, arrival date and house. Tap Select to pick several at once.
+- Phones: every pop-up opens full screen, page buttons sit in one row you can swipe, and filters scroll sideways instead of piling up.
+- Phones: the calendar shows a count for each day. Tap a day to see its orders underneath.
+- Phones: add it to your home screen and it opens full screen like an app.
+- Windows: double-click “Start Crown Tools.bat”. If Python is missing it offers to install it. Mac keeps “Start Crown Tools.command”.
+- Windows: thin dark scrollbars, and saving waits a moment if antivirus is holding the data file.
+- Charts are redrawn to fit when you rotate a phone or resize a window.
 
 ## v0.4.8 — House names: successful orders only (2026-10-21)
 
 - Each house’s Names used, Units / line 2 used and Profiles now count only successful orders (shipped or delivered) by default.
-- A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Crown remembers your choice.
+- A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Crown Tools remembers your choice.
 
 ## v0.4.7 — Checked against your real orders (2026-10-20)
 
@@ -16,7 +28,7 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
 ## v0.4.6 — Live UPS & FedEx dates, fresh re-read (2026-10-20)
 
-- New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Crown asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Crown and after every sync.
+- New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Crown Tools asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Crown Tools and after every sync.
 - Fixed a time-zone bug that could put live-tracking dates one day early.
 - Your order emails are re-read once more with the current reader. An earlier version had marked them as done, so they never got the fixes. This fills in totals, addresses, houses and statuses, and repairs numbers like “…539ARE”.
 - The Dashboard has a day selector at the top (Today, 3–365 days, any number of days, or From–To dates). Spent, orders, items and stick rate follow it.
@@ -31,14 +43,14 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
 ## v0.4.4 — Smarter houses, delivery windows (2026-10-20)
 
-- Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.
-- Your existing houses are merged automatically when you open Crown. Nicknames and notes are kept, and each house shows the spelling most of its orders use.
+- Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown Tools matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.
+- Your existing houses are merged automatically when you open Crown Tools. Nicknames and notes are kept, and each house shows the spelling most of its orders use.
 - Profiles with jigged addresses still link to their orders.
 - Delivery windows like “Arrives Thu, Sep 17 – Tue, Sep 22” are kept as a window, and each order shows which email its arrival date came from.
 
 ## v0.4.3 — Correct numbers, clear all, recap range (2026-10-20)
 
-- New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown rebuild every order fresh from your email.
+- New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown Tools rebuild every order fresh from your email.
 - Stick rate is now correct: only orders that shipped, are out for delivery, are ready or were delivered count as stuck. Placed and confirmed orders show as “pending” until they ship or get cancelled.
 - Partial cancellations (“we had to cancel an item”) no longer cancel the whole order. Only those items are removed, and their share of the total comes off.
 - Item quantities count correctly. A fully cancelled item counts as 0, not 1.
@@ -52,7 +64,7 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 - The re-read only counts as done when every inbox read without errors. Otherwise it tries again next time.
 - New “Re-read all order emails” button on the Inboxes page, so you can refill everything whenever you want.
 - Old orders whose numbers had words stuck on the end (like “…099ARE”) are repaired and merged back into the right order.
-- When the re-read finishes, Crown tells you how many orders are in houses and how many have pictures.
+- When the re-read finishes, Crown Tools tells you how many orders are in houses and how many have pictures.
 
 ## v0.4.1 — Second pass (2026-10-20)
 
@@ -60,7 +72,7 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 - Orders whose emails have no street address (Amazon, PlayStation, cancellations) go into the house of the profile they’re linked to.
 - Stores that send no pictures (Pokémon Center) borrow the picture from another order of the same product.
 - Profile matching is about 18× faster with big lists, and details that don’t match now count against a profile.
-- After an update, an old open Crown tab can no longer save over your data. It shows a Reload button instead.
+- After an update, an old open Crown Tools tab can no longer save over your data. It shows a Reload button instead.
 - Editing an order keeps its item pictures and doesn’t lock the total unless you changed it.
 
 ## v0.4.0 — Real-email reader (2026-10-20)
@@ -76,7 +88,7 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 - Promo emails like “New Outerwear Has Arrived” are never read as orders.
 - Existing orders are re-read once automatically after this update so they fill in.
 - With an EasyPost key, packages are re-checked automatically after each sync.
-- Versions now use 0.x numbers while Crown is in prerelease, and this changelog was added.
+- Versions now use 0.x numbers while Crown Tools is in prerelease, and this changelog was added.
 
 ## v0.3.0 — Faster and cleaner (2026-10-19)
 
@@ -85,10 +97,10 @@ Crown is in prerelease, so versions stay at 0.x until it’s finished.
 - Duplicate and not-an-order cleanup, arrival date and delivered-status fixes.
 - Data carries over between updates automatically, and multiple devices stay in sync.
 
-## v0.2.0 — Order tracker and Crown Online (2026-10-18)
+## v0.2.0 — Order tracker and Crown Tools Online (2026-10-18)
 
 - Order tracker with IMAP email reading, delivery tracking, houses, a spending card and profile linking.
-- Crown Online runs on any device, including iPad, with end-to-end encryption.
+- Crown Tools Online runs on any device, including iPad, with end-to-end encryption.
 
 ## v0.1.0 — Profile manager (2026-10-17)
 

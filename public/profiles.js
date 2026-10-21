@@ -1,4 +1,4 @@
-/* Crown - Profiles: categories, table, edit, mass import, bulk edit, address line 2, quick tools, export. */
+/* Crown Tools - Profiles: categories, table, edit, mass import, bulk edit, address line 2, quick tools, export. */
 'use strict';
 const FIELDS = [
   { k: 'name', l: 'Profile name', g: 'General', w: 2 },
@@ -149,17 +149,18 @@ function renderTable() {
     const h = health(p); const s = st[p.id] || {};
     return `<tr data-id="${p.id}" class="${selected.has(p.id) ? 'sel' : ''}">
     <td class="cb"><input type="checkbox" data-cb="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="Select"></td>
-    <td><strong>${esc(p.name) || '<span class="muted">Untitled</span>'}</strong>${h.length ? ` <span class="warnicon" title="${esc(h.join('\n'))}">⚠</span>` : ''}</td>
-    <td>${esc(p.email)}</td><td>${esc(shipName(p))}</td>
-    <td>${esc(p.shipCity)}</td><td>${esc(p.shipState)}</td><td>${p.cardNumber ? `<span class="faint small">${cardBrand(p.cardNumber)}</span> ${cardMask(p.cardNumber)}` : ''}</td>
-    <td>${p.cardExpMonth || p.cardExpYear ? esc(`${p.cardExpMonth}/${String(p.cardExpYear).slice(-2)}`) : ''}</td>
-    <td class="right">${s.n || ''}</td><td class="right">${s.n ? fmtMoney(s.spent) : ''}</td>
-    ${showCat ? `<td><span class="badge">${esc(catName(p.categoryId))}</span></td>` : ''}</tr>`;
+    <td class="c-name"><strong>${esc(p.name) || '<span class="muted">Untitled</span>'}</strong>${h.length ? ` <span class="warnicon" title="${esc(h.join('\n'))}">⚠</span>` : ''}</td>
+    <td class="c-email">${esc(p.email)}</td><td class="c-ship">${esc(shipName(p))}</td>
+    <td class="c-city">${esc(p.shipCity)}</td><td class="c-state">${esc(p.shipState)}</td><td class="c-card">${p.cardNumber ? `<span class="faint small">${cardBrand(p.cardNumber)}</span> ${cardMask(p.cardNumber)}` : ''}</td>
+    <td class="c-exp">${p.cardExpMonth || p.cardExpYear ? esc(`${p.cardExpMonth}/${String(p.cardExpYear).slice(-2)}`) : ''}</td>
+    <td class="right c-n">${s.n ? `<span class="phoneonly-i">${plural(s.n, 'order')}</span><span class="deskonly-i">${s.n}</span>` : ''}</td><td class="right c-spent">${s.n ? fmtMoney(s.spent) : ''}</td>
+    ${showCat ? `<td class="c-cat"><span class="badge">${esc(catName(p.categoryId))}</span></td>` : ''}</tr>`;
   }).join('');
   const empty = $('#empty');
   if (!list.length) { empty.hidden = false; empty.innerHTML = search ? 'No profiles match your search.' : issuesOnly ? 'No profiles with issues. 👑' : 'No profiles here yet. Use <b>Mass import</b> to paste a batch, or <b>+ Add profile</b>.'; } else empty.hidden = true;
   $('#selAll').checked = list.length > 0 && list.every(p => selected.has(p.id));
   $('#selbar').hidden = selected.size === 0;
+  $('#pTableWrap').classList.toggle('selmode', !!(pSelMode || selected.size)); $('#pSelMode').textContent = pSelMode || selected.size ? 'Done' : 'Select';
   $('#selCount').textContent = `${selected.size} selected`;
   $('#moveSel').innerHTML = `<option value="">Move to…</option>` + catOptions('');
 }
@@ -181,8 +182,12 @@ $('#addCat').onclick = () => { const n = prompt('Category name (e.g. Target, Wal
 $('#rows').onclick = e => {
   const cb = e.target.dataset.cb;
   if (cb) { e.target.checked ? selected.add(cb) : selected.delete(cb); renderTable(); return; }
-  const tr = e.target.closest('tr'); if (tr) openProfile(tr.dataset.id);
+  const tr = e.target.closest('tr'); if (!tr) return;
+  if ((pSelMode || selected.size) && isCompact()) { const id = tr.dataset.id; selected.has(id) ? selected.delete(id) : selected.add(id); renderTable(); return; }
+  openProfile(tr.dataset.id);
 };
+let pSelMode = false;
+$('#pSelMode').onclick = () => { if (pSelMode || selected.size) { pSelMode = false; selected.clear(); } else pSelMode = true; renderTable(); };
 $('#selAll').onchange = e => { visibleProfiles().forEach(p => e.target.checked ? selected.add(p.id) : selected.delete(p.id)); renderTable(); };
 $('#search').oninput = debounce(e => { search = e.target.value; renderTable(); }, 120);
 $('#issuesChip').onclick = () => { issuesOnly = !issuesOnly; renderTable(); };

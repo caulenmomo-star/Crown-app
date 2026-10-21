@@ -1,13 +1,13 @@
-/* Crown - Dashboard, Calendar, Spending (+ share card), Inboxes, Settings. */
+/* Crown Tools - Dashboard, Calendar, Spending (+ share card), Inboxes, Settings. */
 'use strict';
 
 function svgBars(buckets, opts) {
   // buckets: [{label, value, title}]
-  const W = 900, H = 220, P = { l: 46, r: 8, t: 10, b: 26 };
+  const ph = isPhone(), W = ph ? 380 : 900, H = ph ? 200 : 220, P = { l: ph ? 40 : 46, r: 6, t: 10, b: 24 };
   const max = Math.max(1, ...buckets.map(b => b.value));
   const nice = (() => { const e = Math.pow(10, Math.floor(Math.log10(max))); const f = max / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; })();
   const iw = W - P.l - P.r, ih = H - P.t - P.b, bw = iw / Math.max(1, buckets.length);
-  const every = Math.max(1, Math.ceil(buckets.length / 12));
+  const every = Math.max(1, Math.ceil(buckets.length / (ph ? 6 : 12)));
   let g = '';
   for (let i = 0; i <= 4; i++) { const y = P.t + ih - ih * i / 4; g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${P.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--faint)">${esc(fmtMoney(nice * i / 4, true).replace('.00', ''))}</text>`; }
   buckets.forEach((b, i) => {
@@ -64,15 +64,15 @@ PAGES.dashboard = {
       noAddr && [`${plural(noAddr, 'order')} without a shipping address (no house)`, 'orders', () => { OF.house = '__none'; OF.status = 'all'; }],
       badProfiles && [`${plural(badProfiles, 'profile')} with issues (expired cards, typos, missing info)`, 'profiles', () => { issuesOnly = true; }],
       ...badInbox.map(a => [`Inbox ${a.label || a.user}: ${a.lastResult.error}`, 'inboxes', null]),
-      state.unparsed.length && [`${plural(state.unparsed.length, 'order email')} Crown couldn’t read`, 'inboxes', null],
+      state.unparsed.length && [`${plural(state.unparsed.length, 'order email')} Crown Tools couldn’t read`, 'inboxes', null],
       (() => { const n = suggestedDuplicates().length; return n && [`${plural(n, 'possible duplicate order')} to review`, 'orders', () => setTimeout(() => { cleanTab = 'dupes'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
       (() => { const n = state.orders.filter(isSuspicious).length; return n && [`${plural(n, 'order')} that don’t look like real store orders`, 'orders', () => setTimeout(() => { cleanTab = 'junk'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
     ].filter(Boolean);
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
-      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:#2b3863;background:linear-gradient(135deg,#161c33,#141821)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
-      <div class="hstack" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
-        <span class="hstack" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
+      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:#2b3863;background:linear-gradient(135deg,#161c33,#141821)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
+      <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
+        <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
       <div class="kpis">
         <div class="kpi"><div class="l">Spent · ${esc(dLabel)}</div><div class="v">${fmtMoney(sum(days, d => d.value))}</div><div class="d">This month ${fmtMoney(spentM)}${spentLM ? ' · ' + (spentM >= spentLM ? '▲ ' : '▼ ') + fmtMoney(Math.abs(spentM - spentLM)) + ' vs last' : ''}</div></div>
         <div class="kpi"><div class="l">Orders · ${esc(dLabel)}</div><div class="v">${dOrders}</div><div class="d">${dDead} cancelled · ${dItems} items</div></div>
@@ -119,12 +119,12 @@ PAGES.calendar = {
     const cells = []; for (let i = 0; i < 42; i++) cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
     const monthOrders = state.orders.filter(o => { const d = toDate(o.orderDate); return d && d.getFullYear() === CAL.y && d.getMonth() === CAL.m; });
     const sel = idx[CAL.sel] || { eta: [], del: [], plc: [] };
-    pg.innerHTML = `<div class="pagehead"><h1>Calendar</h1><span class="sub">${plural(monthOrders.filter(o => !isDead(o)).length, 'order')} · ${fmtMoney(sum(monthOrders, orderSpend))} this month</span><div class="spacer"></div>
-      <div class="chips"><button class="chip ${CAL.show.eta ? 'on' : ''}" data-cs="eta">Arriving</button><button class="chip ${CAL.show.del ? 'on' : ''}" data-cs="del">Delivered</button><button class="chip ${CAL.show.plc ? 'on' : ''}" data-cs="plc">Ordered</button></div>
-      <button id="cPrev">‹</button><b style="min-width:150px;text-align:center">${first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</b><button id="cNext">›</button><button id="cToday">Today</button></div>
+    pg.innerHTML = `<div class="pagehead"><h1>Calendar</h1><span class="sub">${plural(monthOrders.filter(o => !isDead(o)).length, 'order')} · ${fmtMoney(sum(monthOrders, orderSpend))} this month</span></div>
+      <div class="calnav"><button id="cPrev" aria-label="Previous month">‹</button><b class="calmonth">${first.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</b><button id="cNext" aria-label="Next month">›</button><button id="cToday">Today</button><div class="spacer"></div>
+      <div class="chips"><button class="chip ${CAL.show.eta ? 'on' : ''}" data-cs="eta">Arriving</button><button class="chip ${CAL.show.del ? 'on' : ''}" data-cs="del">Delivered</button><button class="chip ${CAL.show.plc ? 'on' : ''}" data-cs="plc">Ordered</button></div></div>
       <div class="calhead">${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<div>${d}</div>`).join('')}</div>
       <div class="calgrid">${cells.map(d => { const k = dayKey(d); const e = idx[k] || { eta: [], del: [], plc: [] }; return `<div class="day ${d.getMonth() !== CAL.m ? 'out' : ''} ${k === tk ? 'today' : ''} ${k === CAL.sel ? 'sel' : ''}" data-day="${k}"><div class="dn">${d.getDate()}</div>
-        ${CAL.show.eta && e.eta.length ? `<div class="ev eta">📦 ${e.eta.length} arriving</div>` : ''}${CAL.show.del && e.del.length ? `<div class="ev del">✓ ${e.del.length} delivered</div>` : ''}${CAL.show.plc && e.plc.length ? `<div class="ev plc">🛒 ${e.plc.length} · ${fmtMoney(sum(e.plc, orderSpend), true)}</div>` : ''}</div>`; }).join('')}</div>
+        ${CAL.show.eta && e.eta.length ? `<div class="ev eta" title="${e.eta.length} arriving"><span class="evi">📦</span> <b>${e.eta.length}</b><span class="evl"> arriving</span></div>` : ''}${CAL.show.del && e.del.length ? `<div class="ev del" title="${e.del.length} delivered"><span class="evi">✓</span> <b>${e.del.length}</b><span class="evl"> delivered</span></div>` : ''}${CAL.show.plc && e.plc.length ? `<div class="ev plc" title="${e.plc.length} ordered"><span class="evi">🛒</span> <b>${e.plc.length}</b><span class="evl"> · ${fmtMoney(sum(e.plc, orderSpend), true)}</span></div>` : ''}</div>`; }).join('')}</div>
       <div class="card" style="margin-top:14px"><h3>${fmtDate(CAL.sel, { weekday: true, year: true })} <span class="faint" style="font-weight:400">${relDay(CAL.sel)}</span></h3>
         ${[['Arriving', sel.eta], ['Delivered', sel.del], ['Ordered', sel.plc]].filter(([, l]) => l.length).map(([t, l]) => `<div class="section">${t} (${l.length})</div>${orderMiniList(l)}`).join('') || '<div class="empty sm">Nothing on this day.</div>'}</div>`;
     const mv = d => { const n = new Date(CAL.y, CAL.m + d, 1); CAL.y = n.getFullYear(); CAL.m = n.getMonth(); PAGES.calendar.render(); };
@@ -267,7 +267,7 @@ function drawShareCard(cv, s, label) {
   let y = 770;
   if (SHARE.store && s.byStore[0]) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `600 24px ${F}`; ctx.fillText('TOP STORE', 80, y); y += 56; ctx.fillStyle = Parser.storeInfo(s.byStore[0].k).color; ctx.beginPath(); ctx.arc(96, y - 14, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = `700 44px ${F}`; ctx.fillText(s.byStore[0].name + '  ·  ' + plural(s.byStore[0].n, 'order'), 128, y); y += 74; }
   if (SHARE.items && s.topItems.length) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `600 24px ${F}`; ctx.fillText('TOP ITEMS', 80, y); y += 50; s.topItems.slice(0, 4).forEach(it => { if (y > H - 150) return; ctx.fillStyle = T.accent; ctx.font = `700 34px ${F}`; ctx.fillText(it.qty + '×', 80, y); ctx.fillStyle = '#fff'; ctx.font = `500 34px ${F}`; ctx.fillText(fitText(ctx, it.name, W - 260), 160, y); y += 54; }); }
-  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = `500 24px ${F}`; ctx.fillText('Made with Crown · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), 80, H - 70);
+  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = `500 24px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), 80, H - 70);
 }
 
 /* ================= inboxes ================= */
@@ -303,7 +303,7 @@ function renderInboxDlg() {
     <div class="section">On the first sync, look back</div><div class="chips" id="ibLook">${LOOKBACKS.map(d => `<button class="chip ${a.lookback === d ? 'on' : ''}" data-d="${d}">${d} days</button>`).join('')}</div>
     <details style="margin-top:14px" ${a.provider === 'other' ? 'open' : ''}><summary class="small muted" style="cursor:pointer">Server settings</summary>
       <div class="fgrid" style="margin-top:10px"><div class="s2"><label>IMAP server</label><input id="ibHost" value="${esc(a.host)}" placeholder="imap.example.com"></div><div><label>Port</label><input id="ibPort" inputmode="numeric" value="${esc(a.port)}"></div><div><label>&nbsp;</label><label class="check"><input type="checkbox" id="ibSsl" ${a.ssl !== false ? 'checked' : ''}> Use SSL</label></div></div></details>
-    <div class="small faint" style="margin-top:12px">Crown only reads mail (it never marks anything read, moves or deletes it). Your password is stored encrypted with the rest of your data and is only ever sent to your mail provider.</div>`;
+    <div class="small faint" style="margin-top:12px">Crown Tools only reads mail (it never marks anything read, moves or deletes it). Your password is stored encrypted with the rest of your data and is only ever sent to your mail provider.</div>`;
   $('#ibProv').onclick = e => { const b = e.target.closest('[data-p]'); if (!b) return; collectInbox(); const p = PROVIDERS[b.dataset.p]; Object.assign(inboxEdit, { provider: b.dataset.p, host: p.host || inboxEdit.host, port: p.port, ssl: true, folder: p.folder }); inboxFolders = null; renderInboxDlg(); };
   $('#ibLook').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; collectInbox(); inboxEdit.lookback = +b.dataset.d; renderInboxDlg(); };
 }
@@ -315,7 +315,7 @@ function collectInbox() {
 const accPayload = a => ({ host: a.host, port: a.port, ssl: a.ssl !== false, user: a.user, pass: a.pass, folder: a.folder || 'INBOX', gmail: a.provider === 'gmail' });
 $('#inboxTest').onclick = async () => {
   const a = collectInbox(); const st = $('#inboxStatus');
-  if (!SERVER) { st.innerHTML = '<span style="color:var(--danger)">Open Crown with Start Crown.command to connect email.</span>'; return; }
+  if (!SERVER) { st.innerHTML = '<span style="color:var(--danger)">Open Crown Tools with Start Crown Tools to connect email.</span>'; return; }
   if (!a.user || !a.pass || !a.host) { st.innerHTML = '<span style="color:var(--danger)">Fill in the email, app password and server first.</span>'; return; }
   st.innerHTML = '<span class="muted">Connecting…</span>'; $('#inboxTest').disabled = true;
   try {
@@ -341,10 +341,10 @@ $('#inboxSave').onclick = () => {
 PAGES.inboxes = {
   render() {
     const pg = $('#pg-inboxes'); const S = state.settings;
-    pg.innerHTML = `<div class="pagehead"><h1>Inboxes</h1><span class="sub">Crown reads order emails from these and keeps your orders up to date</span><div class="spacer"></div>
+    pg.innerHTML = `<div class="pagehead"><h1>Inboxes</h1><span class="sub">Crown Tools reads order emails from these and keeps your orders up to date</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="ibReread" ${syncing || rereading || !SERVER ? 'disabled' : ''} title="Re-read every order email and refill totals, items, pictures, addresses and houses">${rereading ? 'Re-reading…' : 'Re-read all order emails'}</button><button id="ibSyncAll" ${syncing || !SERVER ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync all now'}</button>` : ''}<button class="primary" id="ibAdd">+ Add inbox</button></div>
-      ${!SERVER ? '<div class="note bad" style="margin:0 0 14px">Email sync needs Crown’s helper. Close this tab and open Crown with <b>Start Crown.command</b>.</div>' : ''}
-      <div class="card" style="margin-bottom:14px"><h3>Automatic sync</h3><div class="chips" id="ibAuto">${[[0, 'Off'], [1, 'Every minute'], [2, 'Every 2 min'], [5, 'Every 5 min'], [15, 'Every 15 min'], [30, 'Every 30 min']].map(([v, l]) => `<button class="chip ${S.autoSyncMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div><div class="small faint" style="margin-top:8px">Runs while Crown is open and unlocked.${syncNextAt && S.autoSyncMin ? ' Next sync ' + new Date(syncNextAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '.' : ''}</div></div>
+      ${!SERVER ? '<div class="note bad" style="margin:0 0 14px">Email sync needs Crown Tools’ helper. Close this tab and open Crown Tools with <b>Start Crown Tools</b>.</div>' : ''}
+      <div class="card" style="margin-bottom:14px"><h3>Automatic sync</h3><div class="chips" id="ibAuto">${[[0, 'Off'], [1, 'Every minute'], [2, 'Every 2 min'], [5, 'Every 5 min'], [15, 'Every 15 min'], [30, 'Every 30 min']].map(([v, l]) => `<button class="chip ${S.autoSyncMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div><div class="small faint" style="margin-top:8px">Runs while Crown Tools is open and unlocked.${syncNextAt && S.autoSyncMin ? ' Next sync ' + new Date(syncNextAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '.' : ''}</div></div>
       ${state.imapAccounts.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));margin-bottom:14px">${state.imapAccounts.map(a => { const r = a.lastResult; const busy = syncingIds.has(a.id); const P = PROVIDERS[a.provider] || PROVIDERS.other; return `<div class="card">
         <h3><span class="dot ${busy ? 'busy' : a.enabled === false ? '' : r && r.error ? 'bad' : a.lastSync ? 'ok' : 'warn'}"></span><span class="ellipsis">${esc(a.label || a.user)}</span><span class="spacer"></span><span class="badge">${esc(P.name)}</span></h3>
         <div class="small muted">${esc(a.user)} · ${esc(a.folder || 'INBOX')}</div>
@@ -352,8 +352,8 @@ PAGES.inboxes = {
         <div class="hstack" style="margin-top:12px"><button class="sm" data-ia="sync" data-id="${a.id}" ${busy || !SERVER ? 'disabled' : ''}>Sync now</button><select class="sm" data-ia="rescan" data-id="${a.id}" style="width:auto;padding:4px 8px;font-size:12px" ${busy || !SERVER ? 'disabled' : ''}><option value="">Rescan…</option>${LOOKBACKS.map(d => `<option value="${d}">Last ${d} days</option>`).join('')}</select><button class="sm" data-ia="edit" data-id="${a.id}">Edit</button><button class="sm" data-ia="toggle" data-id="${a.id}">${a.enabled === false ? 'Resume' : 'Pause'}</button><button class="sm danger" data-ia="del" data-id="${a.id}">Remove</button></div></div>`; }).join('')}</div>`
         : `<div class="card" style="margin-bottom:14px"><div class="empty">No inboxes yet. Add the inbox your order emails go to — Gmail, iCloud (including Hide My Email), Yahoo, catch-all domains and more.</div></div>`}
       <div class="cols2">
-        <div class="card"><h3>Emails Crown couldn’t read <span class="badge">${state.unparsed.length}</span><span class="spacer"></span>${state.unparsed.length ? '<button class="sm ghost" id="ibClearUn">Clear</button>' : ''}</h3>
-          ${state.unparsed.length ? `<div class="small muted" style="margin-bottom:8px">These looked like order emails but had no order number Crown could find. If a store’s emails keep landing here, send a sample to Claude so the reader can be tuned.</div><div class="list">${state.unparsed.slice(0, 40).map(u => `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(u.subject)}</div><div class="small faint ellipsis">${esc(u.from)} · ${fmtDT(u.date)}</div></div><button class="sm" data-unhide="${esc(u.messageId)}">Hide</button><button class="sm" data-unign="${esc(Parser.senderKey(u.from))}" ${Parser.senderKey(u.from) ? '' : 'disabled'}>Ignore sender</button></div>`).join('')}</div>` : '<div class="empty sm">Nothing here. 👑</div>'}</div>
+        <div class="card"><h3>Emails Crown Tools couldn’t read <span class="badge">${state.unparsed.length}</span><span class="spacer"></span>${state.unparsed.length ? '<button class="sm ghost" id="ibClearUn">Clear</button>' : ''}</h3>
+          ${state.unparsed.length ? `<div class="small muted" style="margin-bottom:8px">These looked like order emails but had no order number Crown Tools could find. If a store’s emails keep landing here, send a sample to Claude so the reader can be tuned.</div><div class="list">${state.unparsed.slice(0, 40).map(u => `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(u.subject)}</div><div class="small faint ellipsis">${esc(u.from)} · ${fmtDT(u.date)}</div></div><button class="sm" data-unhide="${esc(u.messageId)}">Hide</button><button class="sm" data-unign="${esc(Parser.senderKey(u.from))}" ${Parser.senderKey(u.from) ? '' : 'disabled'}>Ignore sender</button></div>`).join('')}</div>` : '<div class="empty sm">Nothing here. 👑</div>'}</div>
         <div class="card"><h3>Sync log</h3>${state.syncLog.length ? `<div class="list">${state.syncLog.slice(0, 25).map(l => `<div class="li"><span class="dot ${l.error ? 'bad' : 'ok'}"></span><div style="flex:1;min-width:0" class="small"><div class="ellipsis">${esc(l.label)}: ${l.error ? esc(l.error) : `${plural(l.found, 'email')} read · ${l.created} new · ${l.updated} updated`}</div><div class="faint">${fmtDT(l.at)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No syncs yet.</div>'}</div>
       </div>`;
     $('#ibAdd').onclick = () => openInbox(null);
@@ -370,7 +370,7 @@ PAGES.inboxes = {
         if (el.dataset.ia === 'sync') syncAll(true, [id]);
         else if (el.dataset.ia === 'edit') openInbox(id);
         else if (el.dataset.ia === 'toggle') { a.enabled = a.enabled === false; save(); refresh(); }
-        else if (el.dataset.ia === 'del') { if (!confirm(`Remove ${a.label || a.user}? Orders already found stay in Crown.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
+        else if (el.dataset.ia === 'del') { if (!confirm(`Remove ${a.label || a.user}? Orders already found stay in Crown Tools.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
       };
     });
   },
@@ -389,11 +389,11 @@ PAGES.settings = {
           <div class="chips" id="stLock">${[[0, 'Never'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([v, l]) => `<button class="chip ${S.autoLockMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
         <div class="card"><h3>Notifications</h3>
-          <div class="small muted" style="margin-bottom:8px">Show a Mac notification when email sync finds new orders, shipments, deliveries or cancellations.</div>
+          <div class="small muted" style="margin-bottom:8px">Show a notification on this device when email sync finds new orders, shipments, deliveries or cancellations.</div>
           <div class="chips"><button class="chip ${S.notify ? 'on' : ''}" id="stNotify">${S.notify ? 'On' : 'Off'}</button></div>
-          ${S.notify && typeof Notification !== 'undefined' && Notification.permission === 'denied' ? '<div class="note warn">Your browser is blocking notifications for Crown. Allow them in the browser’s site settings.</div>' : ''}</div>
+          ${S.notify && typeof Notification !== 'undefined' && Notification.permission === 'denied' ? '<div class="note warn">Your browser is blocking notifications for Crown Tools. Allow them in the browser’s site settings.</div>' : ''}</div>
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
-          <div class="small muted" style="margin-bottom:10px">With these free keys Crown asks UPS and FedEx directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown data.</div>
+          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS and FedEx directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown Tools data.</div>
           ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
              ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `
           <div class="section" style="margin-top:6px">${label} ${c.id ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
@@ -405,12 +405,12 @@ PAGES.settings = {
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
           <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
-          <div class="section">Stores Crown doesn’t recognize</div>
+          <div class="section">Stores Crown Tools doesn’t recognize</div>
           <div class="small muted" style="margin-bottom:8px">Off by default, so food delivery, app receipts and other non-store emails don’t become orders.</div>
           <div class="chips"><button class="chip ${S.trackUnknown ? '' : 'on'}" id="stUnkOff">Ignore them</button><button class="chip ${S.trackUnknown ? 'on' : ''}" id="stUnkOn">Track them too</button></div>
           ${(S.ignoredSenders || []).length ? `<div class="section">Ignored senders</div><div class="chips">${S.ignoredSenders.map(k => `<button class="chip" data-unign="${esc(k)}" title="Stop ignoring">${esc(k)} ✕</button>`).join('')}</div>` : ''}</div>
         <div class="card"><h3>Backups</h3>
-          <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Crown Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Crown saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Crown with Start Crown.command to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
+          <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Crown Tools Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Crown Tools saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Crown Tools with Start Crown Tools to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
           <div class="hstack"><button id="stBackup">Download backup</button><button id="stRestore">Restore from file…</button></div>
           <div id="stBackups" style="margin-top:12px"></div></div>
         <div class="card"><h3>Data tools</h3>
@@ -421,11 +421,11 @@ PAGES.settings = {
             <div class="li"><div style="flex:1"><div style="color:var(--danger)">Delete all orders</div><div class="small muted">Profiles and inboxes stay. Next sync re-reads emails from the inbox look-back window.</div></div><button class="sm danger" id="stWipe">Delete</button></div>
           </div></div>
       </div>
-      <div class="small faint" style="margin-top:16px">Crown v${VERSION}${CLOUD ? ' · Crown Online' : ''}</div>`;
+      <div class="small faint" style="margin-top:16px">Crown Tools v${VERSION}${CLOUD ? ' · Crown Tools Online' : ''}</div>`;
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();
-    $('#stNotify').onclick = async () => { if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } } S.notify = !S.notify; save(); PAGES.settings.render(); if (S.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('Crown', { body: 'Notifications are on 👑' }); };
+    $('#stNotify').onclick = async () => { if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } } S.notify = !S.notify; save(); PAGES.settings.render(); if (S.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('Crown Tools', { body: 'Notifications are on 👑' }); };
     $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
     pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });
@@ -457,7 +457,7 @@ PAGES.settings = {
         const box = $('#stBackups'); if (!box) return;
         box.innerHTML = b.length ? `<div class="small muted" style="margin-bottom:4px">Automatic backups</div><div class="list">${b.slice(0, 8).map(x => `<div class="li"><div style="flex:1" class="small">${fmtDT(x.mtime * 1000)} <span class="faint">· ${Math.max(1, Math.round(x.size / 1024))} KB</span></div><button class="sm" data-bk="${esc(x.name)}">Restore</button></div>`).join('')}</div>${b.length > 8 ? `<div class="small faint">+${b.length - 8} older${CLOUD ? '' : ' in the data/backups folder'}</div>` : ''}` : '<div class="small faint">No automatic backups yet — the first one is made 15 minutes after you start working.</div>';
         box.querySelectorAll('[data-bk]').forEach(el => el.onclick = async () => { try { const r = await api('/api/backups/' + encodeURIComponent(el.dataset.bk)); await restoreFromBlob(r.vault); } catch (e) { toast(e.message); } });
-        const foot = pg.lastElementChild; if (foot && serverInfo && serverInfo.dataDir) foot.innerHTML = `Crown v${VERSION} · data folder: ${esc(serverInfo.dataDir)}`;
+        const foot = pg.lastElementChild; if (foot && serverInfo && serverInfo.dataDir) foot.innerHTML = `Crown Tools v${VERSION} · data folder: ${esc(serverInfo.dataDir)}`;
       } catch (_) { }
     }
   },

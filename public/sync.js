@@ -1,4 +1,4 @@
-/* Crown - email sync engine, auto-sync, notifications, live tracking. */
+/* Crown Tools - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
 const READER_VER = 4;
 let syncing = false, syncTimer = null, syncNextAt = 0;
@@ -37,6 +37,8 @@ function setSyncStat() {
     else { kind = last ? 'ok' : 'warn'; text = last ? 'Email synced ' + ago(last) : 'Not synced yet'; }
   }
   el.innerHTML = `<span class="dot ${kind}"></span><span class="ellipsis">${esc(text)}</span>`;
+  const sd = $('#syncDot'); if (sd) { sd.className = 'sdot ' + kind; }
+  const sb = $('#syncNowNav'); if (sb) { sb.title = text; sb.classList.toggle('spin', kind === 'busy'); }
   el.style.cursor = 'pointer'; el.onclick = () => go('inboxes');
 }
 setInterval(() => { if (cryptoKey) setSyncStat(); }, 30000);
@@ -123,7 +125,7 @@ async function syncAccount(a, totals, opts) {
 }
 async function syncAll(manual, ids, opts) {
   if (!cryptoKey) return;
-  if (!SERVER) { if (manual) toast('Email sync needs Crown’s helper — open Crown with Start Crown.command'); return; }
+  if (!SERVER) { if (manual) toast('Email sync needs Crown Tools’ helper — open Crown Tools with Start Crown Tools'); return; }
   if (syncing) { if (manual) toast('Already syncing…'); return; }
   const accs = state.imapAccounts.filter(a => ids ? ids.includes(a.id) : a.enabled !== false);
   if (!accs.length) { if (manual) toast(state.imapAccounts.length ? 'All inboxes are paused' : 'Add an inbox first'); return; }
@@ -146,7 +148,7 @@ async function syncAll(manual, ids, opts) {
   if (totals.delivered) parts.push(totals.delivered + ' delivered');
   if (totals.cancelled) parts.push(totals.cancelled + ' cancelled');
   const otherUpd = totals.updated - totals.shipped - totals.delivered - totals.cancelled; if (otherUpd > 0) parts.push(plural(otherUpd, 'update'));
-  if (parts.length && state.settings.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') { try { new Notification('Crown', { body: parts.join(' · ') }); } catch (_) { } }
+  if (parts.length && state.settings.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') { try { new Notification('Crown Tools', { body: parts.join(' · ') }); } catch (_) { } }
   if (manual) toast(errors.length ? errors[0] : parts.length ? 'Sync done: ' + parts.join(', ') : 'Sync done — nothing new');
 }
 function rescan(id, days) {
@@ -211,7 +213,7 @@ async function rereadAll(auto) {
     for (let i = 0; i < 1200 && syncing; i++) await new Promise(r => setTimeout(r, 500)); // wait for a running sync to finish
     if (!cryptoKey) return;
     const fixed = fixOrderNumbers(), merged0 = mergeSameNumber(); if (fixed || merged0) { invalidateStats(); save(); refresh(); }
-    toast(auto ? 'Crown’s email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
+    toast(auto ? 'Crown Tools’ email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
     const days = Math.min(180, Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60));
     await syncAll(false, accs.map(a => a.id), { days, fresh: true, reapply: true, full: true });
     if (!cryptoKey) return;
@@ -224,7 +226,7 @@ async function rereadAll(auto) {
   } finally { rereading = false; }
 }
 function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
-// catch up right away when you come back to Crown
+// catch up right away when you come back to Crown Tools
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (m && accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
 $('#syncNowNav').onclick = () => syncAll(true);
 
@@ -253,7 +255,7 @@ function applyTracking(o) {
 }
 async function liveTrack(orderId, idx, btn, quiet) {
   const o = state.orders.find(x => x.id === orderId); if (!o || !o.tracking[idx]) return false;
-  if (!SERVER) { if (!quiet) toast('Live tracking needs Crown’s helper running'); return false; }
+  if (!SERVER) { if (!quiet) toast('Live tracking needs Crown Tools’ helper running'); return false; }
   const t = o.tracking[idx];
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
@@ -273,7 +275,7 @@ async function liveTrack(orderId, idx, btn, quiet) {
     if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false;
   }
 }
-// After each sync (and when you open Crown), quietly check packages that haven't been checked recently.
+// After each sync (and when you open Crown Tools), quietly check packages that haven't been checked recently.
 let trackBusy = false;
 async function refreshStaleTracking(force) {
   if (trackBusy || !SERVER || !trackingReady()) return; trackBusy = true;

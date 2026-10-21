@@ -1,6 +1,6 @@
-/* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
+/* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.4.8'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
+const VERSION = '0.5.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -82,12 +82,12 @@ let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
 let CLOUD = false, cloudInfo = {}, authKey = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
-// A newer Crown is running (or was deployed): this tab's code is old, so it must reload before it can save.
+// A newer Crown Tools is running (or was deployed): this tab's code is old, so it must reload before it can save.
 function showOutdated() {
   if (document.getElementById('outdatedBar')) return;
   const d = document.createElement('div'); d.id = 'outdatedBar';
   d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;background:#2a2112;border:1px solid #5a4520;color:#ecc87c;padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
-  d.innerHTML = '<span>Crown was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
+  d.innerHTML = '<span>Crown Tools was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
   d.querySelector('button').onclick = () => location.reload(); document.body.appendChild(d);
 }
 async function api(path, body, method) {
@@ -97,7 +97,7 @@ async function api(path, body, method) {
   if (CLOUD && authKey) headers['X-Crown-Auth'] = authKey;
   try {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Online — check your internet connection.' : 'Crown’s helper isn’t running. Open Crown with “Start Crown.command”.'); }
+  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Tools Online — check your internet connection.' : 'Crown Tools’ helper isn’t running. Open Crown Tools with “Start Crown Tools”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
   if (j && j.outdated) showOutdated();
   if (!res.ok || !j || j.ok === false) { const err = new Error((j && j.error) || ('Request failed (' + res.status + ')')); err.data = j || {}; throw err; }
@@ -108,8 +108,8 @@ async function api(path, body, method) {
 const enc = new TextEncoder(), dec = new TextDecoder();
 function b64e(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 function b64d(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
-// One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Crown / Profile Manager
-// vaults), the last 32 are an access key that proves the password to Crown Online without revealing it.
+// One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Crown Tools / Profile Manager
+// vaults), the last 32 are an access key that proves the password to Crown Tools Online without revealing it.
 async function deriveKeys(pw, saltBytes) {
   const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 250000, hash: 'SHA-256' }, base, 512));
@@ -164,14 +164,14 @@ async function saveNow(opts) {
       if (SERVER) { try { await api('/api/vault', blob, 'PUT'); diskOk = true; } catch (e) { diskOk = false; } }
       lastSaveOk = localOk && diskOk;
       if (lastSaveOk) setSaveStat('ok', 'Saved ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
-      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Crown’s window open?');
+      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Crown Tools’ window open?');
       else setSaveStat('warn', 'Saved to disk only (browser storage full)');
     }
   } catch (e) { lastSaveOk = false; pendingSave = true; setSaveStat('bad', 'Not saved: ' + e.message); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 15000); }
   finally { saving = false; }
 }
 
-/* ---------- Crown Online: saving, pulling and merging between devices ---------- */
+/* ---------- Crown Tools Online: saving, pulling and merging between devices ---------- */
 async function cloudSave(opts) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const json = JSON.stringify(state);
@@ -327,6 +327,10 @@ const csvCell = v => { v = v == null ? '' : String(v); return /[",\n\r]/.test(v)
 const toCSV = (cols, rows) => [cols.join(','), ...rows.map(r => cols.map(c => csvCell(r[c])).join(','))].join('\n');
 const stamp = () => dayKey(new Date());
 
+const isPhone = () => window.matchMedia('(max-width:760px)').matches;
+const isCompact = () => window.matchMedia('(max-width:1100px)').matches; // phones + tablets: lists are cards, tap selects in Select mode
+// re-draw when a window crosses between phone and desktop layouts (rotating an iPad, resizing a Windows/Mac window)
+window.matchMedia('(max-width:760px)').addEventListener('change', () => { if (typeof refresh === 'function') try { refresh(); } catch (_) { } });
 /* ---------- dialogs ---------- */
 function openDlg(id) { const d = document.getElementById(id); if (!d.open) d.showModal(); return d; }
 function closeDlg(id) { const d = document.getElementById(id); if (d.open) d.close(); }
@@ -343,6 +347,9 @@ const ICONS = {
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   spending: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   inboxes: '<path d="M3 13l2.5-8h13L21 13v6H3z M3 13h5l1.5 2.5h5L16 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  more: '<circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/>',
+  news: '<path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
 const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['houses', 'Houses'], ['calendar', 'Calendar'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
@@ -359,15 +366,43 @@ window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
 function renderNav() {
   const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length };
   $('#navlist').innerHTML = NAV.map(([k, l]) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
+  // phones: bottom tab bar with the four most-used pages + More
+  const inMore = MORE_PAGES.includes(route.page);
+  $('#tabbar').innerHTML = TAB_PAGES.map(([k, l]) => `<button class="tabitem ${route.page === k ? 'active' : ''}" data-nav="${k}" aria-label="${l}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${l}</span></button>`).join('')
+    + `<button class="tabitem ${inMore ? 'active' : ''}" id="tabMore" aria-label="More"><svg viewBox="0 0 24 24">${ICONS.more}</svg><span>${inMore ? (NAV.find(n => n[0] === route.page) || [, 'More'])[1] : 'More'}</span></button>`;
+  $('#tabMore').onclick = openMore;
 }
-function renderPage() { try { PAGES[route.page].render(route.arg); } catch (e) { console.error(e); $('#pg-' + route.page).innerHTML = `<div class="note bad">Something went wrong showing this page: ${esc(e.message)}</div>`; } }
+const TAB_PAGES = [['dashboard', 'Home'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses']];
+const MORE_PAGES = ['profiles', 'spending', 'inboxes', 'settings'];
+function openMore() {
+  const counts = { profiles: state.profiles.length, inboxes: state.imapAccounts.length };
+  $('#moreList').innerHTML = MORE_PAGES.map(k => `<button class="moreitem ${route.page === k ? 'active' : ''}" data-nav="${k}" data-close><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${NAV.find(n => n[0] === k)[1]}</span>${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}<span class="chev">›</span></button>`).join('')
+    + `<button class="moreitem" id="moreNews" data-close><svg viewBox="0 0 24 24">${ICONS.news}</svg><span>What’s new</span><span class="count">v${VERSION}</span><span class="chev">›</span></button>`
+    + `<button class="moreitem" id="moreLock" data-close><svg viewBox="0 0 24 24">${ICONS.lock}</svg><span>Lock Crown Tools</span><span class="chev">›</span></button>`;
+  $('#moreStat').innerHTML = [$('#syncStat'), $('#saveStat')].map(e => e ? e.outerHTML.replace(/ id="[^"]*"/, '') : '').join('');
+  $('#moreNews').onclick = () => typeof openChangelog === 'function' && openChangelog();
+  $('#moreLock').onclick = () => lock();
+  openDlg('dlgMore');
+}
+// Page action buttons sit after the header's spacer. Group them so phones can show them as one swipeable row.
+function wrapActs(root) {
+  (root || document).querySelectorAll('.pagehead').forEach(ph => {
+    if (ph.querySelector(':scope > .pacts')) return;
+    const sp = ph.querySelector(':scope > .spacer'); if (!sp) return;
+    const acts = []; for (let n = sp.nextElementSibling; n; n = n.nextElementSibling) acts.push(n);
+    if (!acts.length) return;
+    const box = document.createElement('div'); box.className = 'pacts'; acts.forEach(a => box.appendChild(a)); ph.appendChild(box);
+  });
+}
+new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && (n.matches('.pagehead') || n.querySelector('.pagehead'))) { wrapActs(m.target); return; } }).observe(document.getElementById('main') || document.body, { childList: true, subtree: true });
+function renderPage() { try { PAGES[route.page].render(route.arg); wrapActs($('#pg-' + route.page)); } catch (e) { console.error(e); $('#pg-' + route.page).innerHTML = `<div class="note bad">Something went wrong showing this page: ${esc(e.message)}</div>`; } }
 function refresh() { if (!cryptoKey) return; renderNav(); renderPage(); }
 document.addEventListener('click', e => { const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); if (n.classList.contains('navitem') && typeof resetPageFilters === 'function') resetPageFilters(p); go(p, a); } });
 
 /* ---------- lock / unlock ---------- */
 const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('crown') : null;
 const TAB_ID = uid();
-if (bc) bc.onmessage = e => { if (e.data && e.data.type === 'unlocked' && e.data.tab !== TAB_ID && cryptoKey && !CLOUD) { lock('Crown was unlocked in another tab, so this tab locked itself to keep your data in sync.'); } };
+if (bc) bc.onmessage = e => { if (e.data && e.data.type === 'unlocked' && e.data.tab !== TAB_ID && cryptoKey && !CLOUD) { lock('Crown Tools was unlocked in another tab, so this tab locked itself to keep your data in sync.'); } };
 async function loadBlob() {
   const local = readLocal(); let remote = null;
   if (SERVER && !CLOUD) { try { remote = (await api('/api/vault')).vault; } catch (_) { } }
@@ -386,15 +421,15 @@ function renderLockUI() {
   $('#lockCancelRestore').hidden = mode !== 'restore';
   $('#lockSub').textContent = mode === 'unlock' ? 'Enter your password to unlock.'
     : mode === 'restore' ? 'Enter the password this backup was made with' + (CLOUD ? ', plus your setup code.' : '.')
-      : CLOUD ? 'Welcome to Crown Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
-        : 'Create a password. Everything in Crown is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
+      : CLOUD ? 'Welcome to Crown Tools Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
+        : 'Create a password. Everything in Crown Tools is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
   $('#lockBtn').textContent = mode === 'unlock' ? 'Unlock' : mode === 'restore' ? 'Restore & open' : 'Create & open';
   $('#lockBtn').disabled = false;
 }
 async function setupLock(msg) {
   $('#app').hidden = true; $('#lock').hidden = false;
   $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = msg || '';
-  if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update Safari or Chrome.' : 'This browser can’t encrypt here. Open Crown in Chrome or Safari using Start Crown.command.'; return; }
+  if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update your browser (Safari, Chrome or Edge).' : 'This browser can’t encrypt here. Open Crown Tools in Chrome, Edge or Safari using Start Crown Tools.'; return; }
   if (CLOUD) {
     try { const s = await api('/api/salt'); cloudExists = !!s.exists; }
     catch (e) { $('#lockSub').textContent = e.message; $('#lockBtn').disabled = true; return; }
@@ -430,7 +465,7 @@ async function doUnlock() {
         authKey = ks.auth; rev = r.rev; baseJSON = json; cloudExists = true; cryptoKey = ks.key;
       } else { cryptoKey = ks.key; await saveNow(); }
     } else if (CLOUD) {
-      const s = await api('/api/salt'); if (!s.exists) { cloudExists = false; renderLockUI(); throw new Error('Crown Online has no data yet — set it up first.'); }
+      const s = await api('/api/salt'); if (!s.exists) { cloudExists = false; renderLockUI(); throw new Error('Crown Tools Online has no data yet — set it up first.'); }
       salt = b64d(s.salt); const ks = await deriveKeys(pw, salt);
       authKey = ks.auth;
       let r; try { r = await api('/api/vault'); } catch (e) { authKey = null; throw e; }
@@ -473,9 +508,9 @@ function askPassword(title, text) {
   });
 }
 async function restoreFromBlob(blob) {
-  if (!validBlob(blob)) throw new Error('That file isn’t a Crown or Profile Manager backup.');
+  if (!validBlob(blob)) throw new Error('That file isn’t a Crown Tools or Profile Manager backup.');
   if (CLOUD && !cryptoKey) { pendingRestore = blob; $('#lockErr').textContent = ''; renderLockUI(); return true; }
-  if (!confirm('Replace everything currently in Crown with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
+  if (!confirm('Replace everything currently in Crown Tools with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
   if (CLOUD) {
     const pw = await askPassword('Restore backup', 'Enter the password this backup was made with.');
     if (pw == null) return false;
@@ -504,13 +539,13 @@ const Crown = {
     ['#pw1', '#pw2', '#setupCode'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); }));
     $('#resetBtn').onclick = async () => {
       if (CLOUD) {
-        const code = prompt('Forgot your password?\n\nThis permanently erases ALL Crown Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
+        const code = prompt('Forgot your password?\n\nThis permanently erases ALL Crown Tools Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
         if (!code) return;
-        if (!confirm('Last chance — erase everything in Crown Online?')) return;
-        try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Crown up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
+        if (!confirm('Last chance — erase everything in Crown Tools Online?')) return;
+        try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Crown Tools up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
         return;
       }
-      if (!confirm('This permanently erases ALL Crown data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
+      if (!confirm('This permanently erases ALL Crown Tools data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
       if (!confirm('Last chance — erase everything?')) return;
       try { localStorage.removeItem(LS_KEY); } catch (_) { }
       if (SERVER) { try { await api('/api/vault', { app: 'crown', v: 2, salt: 'x', iv: 'x', ct: 'x', erased: true, savedAt: Date.now() }, 'PUT'); } catch (_) { } }
@@ -518,7 +553,7 @@ const Crown = {
     };
     $('#lockRestore').onclick = () => $('#lockRestoreFile').click();
     $('#lockCancelRestore').onclick = () => { pendingRestore = null; $('#lockErr').textContent = ''; renderLockUI(); };
-    $('#lockRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { $('#lockErr').textContent = err.message.includes('JSON') ? 'That file isn’t a Crown backup.' : err.message; } };
+    $('#lockRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { $('#lockErr').textContent = err.message.includes('JSON') ? 'That file isn’t a Crown Tools backup.' : err.message; } };
     $('#lockNow').onclick = () => lock();
     document.addEventListener('keydown', e => {
       if (!cryptoKey) return;

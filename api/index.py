@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Crown - local helper server.
+Crown Tools - local helper server.
 
 Runs only on this computer (127.0.0.1). It:
-  * serves the Crown app in your browser
+  * serves the Crown Tools app in your browser
   * saves your encrypted data to the "data" folder and keeps automatic backups
   * reads order emails from your inboxes over IMAP (read-only, never marks mail as read)
   * optionally asks EasyPost for live package tracking
@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.4.8"  # prerelease - stays 0.x until Crown is finished
+VERSION = "0.5.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -44,7 +44,7 @@ APP_DIR = os.path.join(ROOT, "app")
 
 
 def default_data_dir():
-    """A fixed home for your data, separate from the app folder, so updating Crown never touches it."""
+    """A fixed home for your data, separate from the app folder, so updating Crown Tools never touches it."""
     home = os.path.expanduser("~")
     if sys.platform == "darwin":
         return os.path.join(home, "Library", "Application Support", "Crown")
@@ -121,7 +121,7 @@ def read_vault():
 def write_vault(obj):
     for k in ("salt", "iv", "ct"):
         if not isinstance(obj.get(k), str) or not obj.get(k):
-            raise UserError("That doesn't look like a Crown vault.")
+            raise UserError("That doesn't look like a Crown Tools vault.")
     os.makedirs(BACKUP_DIR, exist_ok=True)
     with VAULT_LOCK:
         if os.path.exists(VAULT_PATH):
@@ -140,7 +140,14 @@ def write_vault(obj):
             json.dump(obj, f)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, VAULT_PATH)
+        for attempt in range(20):  # Windows: antivirus or a backup tool can hold the file open for a moment
+            try:
+                os.replace(tmp, VAULT_PATH)
+                break
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
 
 
 def vault_saved_at(path):
@@ -155,7 +162,7 @@ def vault_saved_at(path):
 
 
 def import_old_data():
-    """First run of a new version: find data from older Crown folders (which kept it in Crown/data) and bring the newest copy here."""
+    """First run of a new version: find data from older Crown Tools folders (which kept it in Crown/data) and bring the newest copy here."""
     if os.environ.get("CROWN_DATA") or os.path.exists(VAULT_PATH):
         return None
     import glob
@@ -179,7 +186,7 @@ def import_old_data():
             shutil.copy2(b, dest)
     try:
         with open(os.path.join(best, "MOVED - read me.txt"), "w") as f:
-            f.write("Crown %s copied the data in this folder to:\n%s\n\nThis copy is no longer used. You can delete this old Crown folder whenever you like.\n" % (VERSION, DATA_DIR))
+            f.write("Crown Tools %s copied the data in this folder to:\n%s\n\nThis copy is no longer used. You can delete this old Crown Tools folder whenever you like.\n" % (VERSION, DATA_DIR))
     except Exception:
         pass
     return best
@@ -1089,7 +1096,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/vault":
             if self.headers.get("X-Crown-App") != VERSION:
-                return self._send(200, {"ok": False, "outdated": True, "error": "Crown was updated. Reload this tab to keep going."})
+                return self._send(200, {"ok": False, "outdated": True, "error": "Crown Tools was updated. Reload this tab to keep going."})
 
             def fn():
                 write_vault(self._json())
@@ -1119,7 +1126,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
 
 
 def running_version(port):
-    """Version of a Crown already running on this port ("" if it's an old one that doesn't say), or None."""
+    """Version of a Crown Tools already running on this port ("" if it's an old one that doesn't say), or None."""
     try:
         req = urllib.request.Request("http://%s:%d/api/ping" % (HOST, port), headers={"X-Crown": "1"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -1131,7 +1138,7 @@ def running_version(port):
 
 
 def stop_old_crown(port):
-    """Close an older Crown that's still running, so the new version can take over."""
+    """Close an older Crown Tools that's still running, so the new version can take over."""
     try:
         req = urllib.request.Request("http://%s:%d/api/shutdown" % (HOST, port), data=b"{}", method="POST",
                                      headers={"X-Crown": "1", "Content-Type": "application/json"})
@@ -1162,12 +1169,25 @@ def already_running(port):
 
 def main():
     global PORT
+    if os.name == "nt":
+        # Windows consoles default to an old code page; never crash printing an accented name or an emoji
+        for stream in (sys.stdout, sys.stderr):
+            try:
+                stream.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+        # on Windows "reuse address" lets two programs share one port; we want the second to move to the next port
+        ThreadingHTTPServer.allow_reuse_address = False
+        try:
+            os.system("title Crown Tools")
+        except Exception:
+            pass
     os.makedirs(BACKUP_DIR, exist_ok=True)
     httpd = None
-    for port in range(BASE_PORT, BASE_PORT + 12):  # an old Crown may still be running from the previous version
+    for port in range(BASE_PORT, BASE_PORT + 12):  # an old Crown Tools may still be running from the previous version
         v = running_version(port)
         if v is not None and v != VERSION:
-            print("Closing the older Crown (%s) that's still running..." % (v or "1.x"))
+            print("Closing the older Crown Tools (%s) that's still running..." % (v or "1.x"))
             stop_old_crown(port)
     moved = import_old_data()
     if moved:
@@ -1175,11 +1195,11 @@ def main():
     for port in range(BASE_PORT, BASE_PORT + 12):
         v = running_version(port)
         if v is not None and v != VERSION:
-            print("Closing the older Crown (%s) that's still running..." % (v or "1.x"))
+            print("Closing the older Crown Tools (%s) that's still running..." % (v or "1.x"))
             stop_old_crown(port)
         if already_running(port):
             url = "http://%s:%d/" % (HOST, port)
-            print("Crown is already running - opening %s" % url)
+            print("Crown Tools is already running - opening %s" % url)
             if not os.environ.get("CROWN_NO_BROWSER"):
                 webbrowser.open(url)
             return
@@ -1196,21 +1216,21 @@ def main():
     threading.Thread(target=pool_sweeper, daemon=True).start()
     url = "http://%s:%d/" % (HOST, PORT)
     print("")
-    print("  Crown %s is running at %s" % (VERSION, url))
+    print("  Crown Tools %s is running at %s" % (VERSION, url))
     print("  Your data folder: %s" % DATA_DIR)
-    print("  Keep this window open while you use Crown. Close it (or press Ctrl+C) to stop.")
+    print("  Keep this window open while you use Crown Tools. Close it (or press Ctrl+C) to stop.")
     print("")
     if not os.environ.get("CROWN_NO_BROWSER"):
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nCrown stopped.")
+        print("\nCrown Tools stopped.")
 
 
 
 # =====================================================================
-# Crown Online - Vercel serverless handler (appended to server.py at build time).
+# Crown Tools Online - Vercel serverless handler (appended to server.py at build time).
 # Storage: Upstash Redis (REST). Everything stored is encrypted in the browser first;
 # the server only ever sees ciphertext plus a hash of a password-derived access key.
 # =====================================================================
@@ -1249,7 +1269,7 @@ class TooMany(Exception):
 
 def kv(*cmd):
     if not KV_URL or not KV_TOKEN:
-        raise UserError("Crown Online's storage isn't connected yet. Add the free Upstash Redis database to this project in Vercel (see the setup steps), then redeploy.")
+        raise UserError("Crown Tools Online's storage isn't connected yet. Add the free Upstash Redis database to this project in Vercel (see the setup steps), then redeploy.")
     req = urllib.request.Request(KV_URL, data=json.dumps([str(c) if not isinstance(c, str) else c for c in cmd]).encode("utf-8"),
                                  method="POST", headers={"Authorization": "Bearer " + KV_TOKEN, "Content-Type": "application/json"})
     try:
@@ -1300,7 +1320,7 @@ def require_auth(headers):
     meta = json.loads(vals[0]) if vals[0] else None
     key = headers.get("X-Crown-Auth") or ""
     if not meta:
-        raise UserError("Crown isn't set up yet.")
+        raise UserError("Crown Tools isn't set up yet.")
     if not key or not _hmac.compare_digest(hash_key(key), meta.get("authHash", "")):
         note_failure()
         raise PermissionError("Wrong password.")
@@ -1323,7 +1343,7 @@ def valid_vault(v):
 
 def save_vault(vault, base_rev, auth_hash):
     if not valid_vault(vault):
-        raise UserError("That doesn't look like a Crown vault.")
+        raise UserError("That doesn't look like a Crown Tools vault.")
     blob = json.dumps(vault, separators=(",", ":"))
     meta = json.dumps({"authHash": auth_hash, "salt": vault["salt"], "savedAt": time.time(), "size": len(blob)})
     res = kv("EVAL", SAVE_SCRIPT, "2", K_META, K_VAULT, "force" if base_rev == "force" else str(int(base_rev or 0)), blob, meta)
@@ -1401,7 +1421,7 @@ class handler(BaseHTTPRequestHandler):
         try:
             self._send(200, fn())
         except Conflict as c:
-            self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Crown was changed on another device."})
+            self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Crown Tools was changed on another device."})
         except TooMany:
             self._send(200, {"ok": False, "error": "Too many wrong tries. Wait 15 minutes and try again."})
         except PermissionError as e:
@@ -1467,7 +1487,7 @@ class handler(BaseHTTPRequestHandler):
         r = self._route()
         h = self.headers
         if r == "/vault" and h.get("X-Crown-App") != VERSION:
-            return self._send(200, {"ok": False, "outdated": True, "error": "Crown was updated. Reload this page to keep going."})
+            return self._send(200, {"ok": False, "outdated": True, "error": "Crown Tools was updated. Reload this page to keep going."})
         if r == "/vault":
             def put():
                 b = self._body()
@@ -1497,7 +1517,7 @@ class handler(BaseHTTPRequestHandler):
                 b = self._body()
                 check_code(b.get("code"))
                 if get_meta():
-                    raise UserError("Crown is already set up. Unlock it with your password, or use “Forgot password?” to start over.")
+                    raise UserError("Crown Tools is already set up. Unlock it with your password, or use “Forgot password?” to start over.")
                 if not b.get("authKey"):
                     raise UserError("Bad request.")
                 rev = save_vault(b.get("vault"), 0, hash_key(b["authKey"]))

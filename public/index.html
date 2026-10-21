@@ -6,12 +6,12 @@
 <meta name="theme-color" content="#0b0d12">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta name="apple-mobile-web-app-title" content="Crown">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Crown Tools">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon-180.png">
-<title>Crown</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f5c451' d='M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="ct-icon-180.png">
+<title>Crown Tools</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23f6bd52'/%3E%3Cg fill='%2314172a'%3E%3Cpath d='M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z'/%3E%3Crect x='120' y='340' width='272' height='44' rx='22'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
 <!-- ================= LOCK ================= -->
 <div id="lock" class="lock">
   <div class="lockbox">
-    <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#f5c451" d="M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z"/><rect x="3" y="19.5" width="18" height="2" rx="1" fill="#f5c451"/></svg>Crown</div>
+    <div class="logo"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z"/><rect x="120" y="340" width="272" height="44" rx="22"/></g><g fill="#f6bd52"><circle cx="256" cy="268" r="18"/><circle cx="184" cy="284" r="12"/><circle cx="328" cy="284" r="12"/></g></svg>Crown Tools</div>
     <div class="muted small" id="lockSub">Loading…</div>
     <div class="field"><label for="pw1">Password</label><input type="password" id="pw1" autocomplete="current-password"></div>
     <div class="field" id="pw2wrap" hidden><label for="pw2">Confirm password</label><input type="password" id="pw2" autocomplete="new-password"></div>
@@ -38,16 +38,16 @@
 <!-- ================= APP ================= -->
 <div id="app" hidden>
   <nav class="nav">
-    <div class="brand"><svg width="22" height="22" viewBox="0 0 24 24"><path fill="#f5c451" d="M3 18h18l1-11-5.5 4L12 4 7.5 11 2 7z"/><rect x="3" y="19.5" width="18" height="2" rx="1" fill="#f5c451"/></svg>Crown<span class="ver" id="verLbl"></span></div>
+    <div class="brand"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z"/><rect x="120" y="340" width="272" height="44" rx="22"/></g><g fill="#f6bd52"><circle cx="256" cy="268" r="18"/><circle cx="184" cy="284" r="12"/><circle cx="328" cy="284" r="12"/></g></svg><span class="bname">Crown Tools</span><span class="ver" id="verLbl"></span></div>
     <div class="navlist" id="navlist"></div>
     <div class="navfoot">
       <div class="pillstat" id="syncStat"><span class="dot"></span><span>Email sync off</span></div>
       <div class="pillstat" id="saveStat"><span class="dot ok"></span><span>Saved</span></div>
-      <div class="hstack"><button class="sm" id="syncNowNav">Sync email</button><button class="sm" id="lockNow">Lock</button></div>
+      <div class="hstack topbtns"><button class="sm ibtn" id="syncNowNav" aria-label="Sync email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 01-14.3 4.9M4 12a8 8 0 0114.3-4.9M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Sync email</span><span class="sdot" id="syncDot"></span></button><button class="sm ibtn" id="lockNow" aria-label="Lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Lock</span></button></div>
     </div>
   </nav>
   <main id="main">
-    <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown with <b>Start Crown.command</b> to turn them on.</div>
+    <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown Tools directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown Tools with <b>Start Crown Tools</b> to turn them on.</div>
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
     <section class="page" data-page="profiles" id="pg-profiles">
       <div class="pagehead"><h1>Profiles</h1><span class="sub" id="profSub"></span><div class="spacer"></div>
@@ -56,7 +56,7 @@
         <div class="catlist"><div id="cats"></div><button id="addCat" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New category</button></div>
         <div style="min-width:0">
           <div class="toolbar">
-            <input class="search" id="search" placeholder="Search name, email, city, last 4…  ( / )">
+            <div class="searchrow"><input class="search" id="search" placeholder="Search name, email, city, last 4…  ( / )"><button class="phoneonly" id="pSelMode">Select</button></div>
             <div class="chips"><button class="chip" id="issuesChip">⚠ Issues only</button></div>
             <div class="spacer"></div>
             <button id="bulkBtn">Bulk edit</button><button id="l2Btn">Address line 2</button><button id="quickBtn">Quick tools</button>
@@ -69,7 +69,7 @@
             <div class="spacer"></div>
             <button id="clearSel" class="sm ghost">Clear selection</button>
           </div>
-          <div class="tablewrap"><table>
+          <div class="tablewrap" id="pTableWrap"><table class="ptable">
             <thead><tr>
               <th class="cb"><input type="checkbox" id="selAll" aria-label="Select all"></th>
               <th class="sort" data-sort="name">Profile</th><th class="sort" data-sort="email">Email</th><th class="sort" data-sort="ship">Ship to</th><th class="sort" data-sort="city">City</th><th class="sort" data-sort="state">State</th><th>Card</th><th>Exp</th><th class="sort right" data-sort="orders">Orders</th><th class="sort right" data-sort="spent">Spent</th><th id="catCol">Category</th>
@@ -86,6 +86,7 @@
     <section class="page" data-page="inboxes" id="pg-inboxes"></section>
     <section class="page" data-page="settings" id="pg-settings"></section>
   </main>
+  <nav class="tabbar" id="tabbar" aria-label="Main"></nav>
 </div>
 
 <!-- ================= PROFILE DIALOGS ================= -->
@@ -195,8 +196,8 @@
 </dialog>
 
 <dialog id="dlgNews" class="wide">
-  <div class="dhead">What’s new in Crown<button class="ghost sm x" data-close>✕</button></div>
-  <div class="dbody"><div class="small muted" style="margin-bottom:12px">Crown is in prerelease, so versions stay at 0.x until it’s finished.</div><div id="newsBody"></div></div>
+  <div class="dhead">What’s new in Crown Tools<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="small muted" style="margin-bottom:12px">Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.</div><div id="newsBody"></div></div>
   <div class="dfoot"><button class="primary" data-close>Got it</button></div>
 </dialog>
 
@@ -204,6 +205,11 @@
   <div class="dhead"><span id="apTitle">Password</span><button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody"><div class="small muted" id="apText" style="margin-bottom:10px"></div><input type="password" id="apPw" autocomplete="off"><div class="err" id="apErr"></div></div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="apGo">Continue</button></div>
+</dialog>
+
+<dialog id="dlgMore" class="sheet">
+  <div class="dhead">More<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="morelist" id="moreList"></div><div class="morestat" id="moreStat"></div></div>
 </dialog>
 
 <div class="toast" id="toast"><span id="toastMsg"></span><button class="sm" id="toastBtn" hidden>Undo</button></div>
