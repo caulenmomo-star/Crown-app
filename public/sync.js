@@ -1,6 +1,6 @@
 /* Crown - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 3;
+const READER_VER = 4;
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -139,7 +139,7 @@ async function syncAll(manual, ids, opts) {
   const after = accs.map(a => JSON.stringify([a.lastResult && a.lastResult.error, a.uidValidity, a.lastSync ? 1 : 0])).join();
   if (foundAny || before !== after || pendingSave || manual) save(); // nothing new = nothing to save
   scheduleSync(); setSyncStat(); softRefresh();
-  if (state.settings.easypostKey) setTimeout(() => refreshStaleTracking(), 1500);
+  setTimeout(() => refreshStaleTracking(), 1500);
   const parts = [];
   if (totals.created) parts.push(plural(totals.created, 'new order'));
   if (totals.shipped) parts.push(totals.shipped + ' shipped');
@@ -187,6 +187,7 @@ function onUnlocked() {
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
   const needReread = state.readerVer !== READER_VER;
   if (needReread) { if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => rereadAll(true), 1500); else if (!state.imapAccounts.length) state.readerVer = READER_VER; }
+  setTimeout(() => refreshStaleTracking(), 4000);
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
   if (!needReread && SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);
@@ -236,41 +237,73 @@ $('#syncNowNav').onclick = () => syncAll(true);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
 const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress' };
+const carrierKeys = () => { const c = state.settings.carriers || {}; return { ups: c.ups && c.ups.id ? c.ups : null, fedex: c.fedex && c.fedex.id ? c.fedex : null }; };
+// Is there any way to look packages up? (UPS / FedEx developer keys, an EasyPost key, or the Mac helper trying ups.com)
+const trackingReady = () => { const k = carrierKeys(); return !!(k.ups || k.fedex || state.settings.easypostKey || (SERVER && !CLOUD)); };
+const ymdOnly = v => { const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : (v ? dayKey(new Date(v)) : ''); };
+// Apply what the carrier says to the order: the real arrival date, out for delivery, delivered (and on which day).
+function applyTracking(o) {
+  if (isDead(o)) return;
+  const live = (o.tracking || []).map(t => t.live).filter(Boolean); if (!live.length) return;
+  const pending = live.filter(l => l.status !== 'delivered');
+  if (!pending.length && live.length === o.tracking.length) {
+    const day = live.map(l => l.deliveredOn).filter(Boolean).sort().pop();
+    if (o.status !== 'delivered') setStatus(o, 'delivered', day ? day + 'T12:00:00' : new Date().toISOString(), 'tracking');
+    if (day && (!o.deliveredFromEmail || !o.deliveredAt)) o.deliveredAt = day + 'T12:00:00';
+    return;
+  }
+  if (pending.some(l => l.status === 'out_for_delivery') && STATUS[o.status].r < STATUS.out.r) setStatus(o, 'out', new Date().toISOString(), 'tracking');
+  else if (pending.some(l => ['in_transit', 'out_for_delivery'].includes(l.status)) && STATUS[o.status].r < STATUS.shipped.r) setStatus(o, 'shipped', new Date().toISOString(), 'tracking');
+  // the carrier's estimate is the truth for the arrival date (latest package wins); a date you typed in stays
+  const est = pending.map(l => l.est).filter(Boolean).sort().pop();
+  if (est && !o.etaLocked && isActive(o)) { o.eta = est; o.etaEnd = ''; o.etaFrom = (pending.find(l => l.est === est) || {}).carrier + ' tracking'; o.etaAt = new Date().toISOString(); }
+}
 async function liveTrack(orderId, idx, btn, quiet) {
   const o = state.orders.find(x => x.id === orderId); if (!o || !o.tracking[idx]) return false;
   if (!SERVER) { if (!quiet) toast('Live tracking needs Crown’s helper running'); return false; }
   const t = o.tracking[idx];
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
-    const r = await api('/api/track', { apiKey: state.settings.easypostKey, tracking: t.number, carrier: EP_CARRIER[t.carrier] || '' });
+    const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || t.carrier || '' });
     if (!cryptoKey) return false;
-    t.live = { status: r.status, est: r.est ? dayKey(new Date(r.est)) : '', events: r.events, publicUrl: r.publicUrl, checkedAt: Date.now() };
+    const evs = r.events || [];
+    const delDay = r.deliveredOn ? ymdOnly(r.deliveredOn) : r.status === 'delivered' ? ymdOnly((evs.slice(-1)[0] || {}).date) : '';
+    t.live = { status: r.status, est: ymdOnly(r.est), deliveredOn: delDay, carrier: r.carrier || t.carrier || '', text: r.statusText || '', events: evs, publicUrl: r.publicUrl, checkedAt: Date.now() };
     if (r.carrier && !t.carrier) t.carrier = r.carrier;
-    if (r.status === 'delivered' && o.status !== 'delivered' && !isDead(o)) { const last = (r.events || []).slice(-1)[0]; setStatus(o, 'delivered', last && last.date || new Date().toISOString(), 'tracking'); }
-    else if (r.status === 'out_for_delivery' && !isDead(o) && STATUS[o.status].r < STATUS.out.r) setStatus(o, 'out', new Date().toISOString(), 'tracking');
-    else if (r.status === 'in_transit' && !isDead(o) && STATUS[o.status].r < STATUS.shipped.r) setStatus(o, 'shipped', new Date().toISOString(), 'tracking');
-    if (t.live.est && isActive(o)) o.eta = t.live.est;
+    applyTracking(o);
     o.updatedAt = Date.now(); save();
     if ($('#dlgOrder').open && curOrder && curOrder.id === o.id) { curOrder = JSON.parse(JSON.stringify(o)); renderOrderDlg(); }
     if (!quiet) softRefresh();
     return true;
-  } catch (e) { if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false; }
+  } catch (e) {
+    t.liveError = { msg: e.message, at: Date.now() };
+    if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false;
+  }
 }
-// After each sync, quietly re-check packages that haven't been checked for a few hours (needs an EasyPost key).
+// After each sync (and when you open Crown), quietly check packages that haven't been checked recently.
 let trackBusy = false;
-async function refreshStaleTracking() {
-  if (trackBusy || !state.settings.easypostKey || !SERVER) return; trackBusy = true;
+async function refreshStaleTracking(force) {
+  if (trackBusy || !SERVER || !trackingReady()) return; trackBusy = true;
   try {
-    const jobs = []; const stale = Date.now() - 3 * 3600e3;
-    state.orders.filter(o => isActive(o) && o.tracking.length).forEach(o => o.tracking.forEach((t, i) => { if (!t.live || (t.live.checkedAt || 0) < stale) jobs.push([o.id, i]); }));
-    let n = 0; for (const [id, i] of jobs.slice(0, 25)) { if (!cryptoKey) return; if (await liveTrack(id, i, null, true)) n++; }
-    if (n) softRefresh();
+    const jobs = []; const stale = Date.now() - (force ? 0 : 2 * 3600e3);
+    state.orders.filter(o => isActive(o) && o.tracking.length).forEach(o => o.tracking.forEach((t, i) => {
+      if (t.live && t.live.status === 'delivered') return;
+      if (!force && t.liveError && Date.now() - t.liveError.at < 3600e3) return; // don't hammer a failing lookup
+      if (!t.live || (t.live.checkedAt || 0) < stale) jobs.push([o.id, i, t.live ? t.live.checkedAt || 0 : 0]);
+    }));
+    jobs.sort((a, b) => a[2] - b[2]);
+    let n = 0; const list = jobs.slice(0, force ? 150 : 60);
+    for (let i = 0; i < list.length; i += 4) { if (!cryptoKey) return; const r = await Promise.all(list.slice(i, i + 4).map(([id, k]) => liveTrack(id, k, null, true))); n += r.filter(Boolean).length; }
+    if (n) { invalidateStats(); softRefresh(); }
+    return n;
   } finally { trackBusy = false; }
 }
 async function refreshAllTracking() {
-  const jobs = []; state.orders.filter(o => isActive(o) && o.tracking.length).slice(0, 60).forEach(o => o.tracking.forEach((t, i) => jobs.push([o.id, i])));
-  if (!jobs.length) { toast('No active orders with tracking numbers'); return; }
-  toast(`Checking ${plural(jobs.length, 'package')}…`); let ok = 0;
-  for (const [id, i] of jobs) { if (!cryptoKey) return; if (await liveTrack(id, i, null, true)) ok++; }
-  softRefresh(); toast(`Updated ${ok} of ${plural(jobs.length, 'package')}${ok < jobs.length ? ' — check your EasyPost key if this keeps failing' : ''}`);
+  const total = state.orders.filter(o => isActive(o) && o.tracking.length).reduce((a, o) => a + o.tracking.length, 0);
+  if (!total) { toast('No active orders with tracking numbers'); return; }
+  if (!trackingReady()) { toast('Add your free UPS / FedEx keys in Settings → Carrier tracking first'); return; }
+  toast(`Checking ${plural(Math.min(total, 150), 'package')}…`);
+  const ok = await refreshStaleTracking(true) || 0;
+  softRefresh(); const errs = state.orders.flatMap(o => o.tracking).filter(t => t.liveError && Date.now() - t.liveError.at < 120000);
+  toast(`Updated ${plural(ok, 'package')}${errs.length ? ' · ' + errs.length + ' failed: ' + errs[0].liveError.msg : ''}`);
 }

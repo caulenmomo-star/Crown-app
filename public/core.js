@@ -1,6 +1,6 @@
 /* Crown - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.4.5'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
+const VERSION = '0.4.6'; // prerelease: stays 0.x until Crown is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -62,7 +62,7 @@ function stickInfo(list) {
 }
 
 /* ---------- state ---------- */
-const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', firstLookback: 60, trackedStores: [] };
+const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [] };
 function blankState() {
   return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }

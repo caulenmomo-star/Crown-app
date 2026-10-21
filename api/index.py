@@ -14,6 +14,7 @@ Your data is encrypted in the browser before it ever reaches this server.
 import base64
 import datetime
 import email
+import hashlib
 import imaplib
 import json
 import os
@@ -35,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.4.5"  # prerelease - stays 0.x until Crown is finished
+VERSION = "0.4.6"  # prerelease - stays 0.x until Crown is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -792,6 +793,148 @@ def ups_track(code):
             "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "events": events, "source": "ups", "statusText": text}
 
 
+# ---- official carrier APIs (free developer accounts). Tokens are cached while the server stays warm.
+_TOKENS = {}
+UPS_BASE = os.environ.get("CROWN_UPS_URL", "https://onlinetools.ups.com")
+FEDEX_BASE = os.environ.get("CROWN_FEDEX_URL", "https://apis.fedex.com")
+
+
+def _api_json(url, data=None, headers=None, form=False, timeout=25):
+    body = None
+    h = {"Accept": "application/json"}
+    if data is not None:
+        body = urllib.parse.urlencode(data).encode() if form else json.dumps(data).encode()
+        h["Content-Type"] = "application/x-www-form-urlencoded" if form else "application/json"
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=body, headers=h, method="POST" if body is not None else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=ssl_context()) as r:
+            return json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        msg = ""
+        try:
+            j = json.loads(raw)
+            errs = (j.get("response") or {}).get("errors") or j.get("errors") or []
+            if errs and isinstance(errs, list):
+                msg = errs[0].get("message") or errs[0].get("code") or ""
+            msg = msg or j.get("error_description") or j.get("error") or ""
+        except Exception:
+            msg = raw[:120]
+        raise CarrierError(e.code, str(msg)[:200])
+
+
+class CarrierError(Exception):
+    def __init__(self, code, msg):
+        Exception.__init__(self, "%s %s" % (code, msg))
+        self.code, self.msg = code, msg
+
+
+def _token(kind, cid, secret):
+    k = (kind, cid, hashlib.sha256((secret or "").encode()).hexdigest())
+    t = _TOKENS.get(k)
+    if t and t[1] > time.time() + 60:
+        return t[0]
+    try:
+        if kind == "ups":
+            j = _api_json(UPS_BASE + "/security/v1/oauth/token", {"grant_type": "client_credentials"}, form=True,
+                          headers={"Authorization": "Basic " + base64.b64encode(("%s:%s" % (cid, secret)).encode()).decode(), "x-merchant-id": cid})
+        else:
+            j = _api_json(FEDEX_BASE + "/oauth/token", {"grant_type": "client_credentials", "client_id": cid, "client_secret": secret}, form=True)
+    except CarrierError as e:
+        if e.code in (400, 401, 403):
+            raise UserError("%s rejected the Client ID / Secret. Check them in Settings → Carrier tracking." % ("UPS" if kind == "ups" else "FedEx"))
+        raise UserError("%s sign-in failed (%s)." % ("UPS" if kind == "ups" else "FedEx", e))
+    tok = j.get("access_token")
+    if not tok:
+        raise UserError("%s didn't return an access token." % ("UPS" if kind == "ups" else "FedEx"))
+    _TOKENS[k] = (tok, time.time() + int(j.get("expires_in") or 3000))
+    return tok
+
+
+def _ymd(s):
+    s = str(s or "")
+    m = re.match(r"(\d{4})-?(\d{2})-?(\d{2})", s)
+    return "%s-%s-%s" % m.groups() if m else ""
+
+
+def ups_api_track(code, cid, secret):
+    tok = _token("ups", cid, secret)
+    try:
+        j = _api_json(UPS_BASE + "/api/track/v1/details/%s?locale=en_US&returnSignature=false&returnMilestones=false&returnPOD=false" % urllib.parse.quote(code),
+                      headers={"Authorization": "Bearer " + tok, "transId": "crown%d" % int(time.time() * 1000), "transactionSrc": "Crown"})
+    except CarrierError as e:
+        if e.code == 404:
+            raise UserError("UPS doesn't know this tracking number yet.")
+        raise UserError("UPS tracking error (%s)." % e)
+    ship = ((j.get("trackResponse") or {}).get("shipment") or [{}])[0] or {}
+    if ship.get("warnings") and not ship.get("package"):
+        raise UserError("UPS: %s" % ship["warnings"][0].get("message", "no information yet"))
+    pkg = (ship.get("package") or [{}])[0] or {}
+    dates = {d.get("type"): _ymd(d.get("date")) for d in pkg.get("deliveryDate") or []}
+    cur = pkg.get("currentStatus") or {}
+    desc = str(cur.get("description") or cur.get("simplifiedTextDescription") or "")
+    ctype = str(cur.get("type") or "").upper()
+    delivered = ctype == "D" or bool(dates.get("DEL")) or re.search(r"\bdelivered\b", desc, re.I) is not None
+    status = "delivered" if delivered else "out_for_delivery" if re.search(r"out for delivery", desc, re.I) else \
+        "exception" if ctype == "X" else "pre_transit" if ctype in ("M", "P") and not pkg.get("activity", [])[1:] else "in_transit"
+    events = []
+    for a in (pkg.get("activity") or [])[:20]:
+        d, t = str(a.get("date") or ""), str(a.get("time") or "000000")
+        iso = "%s-%s-%sT%s:%s:%s" % (d[:4], d[4:6], d[6:8], t[:2], t[2:4], t[4:6]) if len(d) == 8 else ""
+        ad = ((a.get("location") or {}).get("address") or {})
+        events.append({"date": iso, "message": (a.get("status") or {}).get("description") or "", "status": "",
+                       "location": ", ".join(x for x in [ad.get("city"), ad.get("stateProvince")] if x)})
+    events.reverse()
+    dt = pkg.get("deliveryTime") or {}
+    return {"ok": True, "status": status, "carrier": "UPS", "est": dates.get("RDD") or dates.get("SDD") or "", "deliveredOn": dates.get("DEL") or "",
+            "window": [dt.get("startTime") or "", dt.get("endTime") or ""], "statusText": desc, "events": events,
+            "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "source": "ups-api"}
+
+
+def fedex_api_track(code, cid, secret):
+    tok = _token("fedex", cid, secret)
+    try:
+        j = _api_json(FEDEX_BASE + "/track/v1/trackingnumbers", {"includeDetailedScans": True, "trackingInfo": [{"trackingNumberInfo": {"trackingNumber": code}}]},
+                      headers={"Authorization": "Bearer " + tok, "X-locale": "en_US"})
+    except CarrierError as e:
+        raise UserError("FedEx tracking error (%s)." % e)
+    res = ((((j.get("output") or {}).get("completeTrackResults") or [{}])[0] or {}).get("trackResults") or [{}])[0] or {}
+    if res.get("error") and not res.get("latestStatusDetail"):
+        raise UserError("FedEx: %s" % (res["error"].get("message") or "no information yet"))
+    lsd = res.get("latestStatusDetail") or {}
+    code2 = str(lsd.get("code") or "").upper()
+    desc = str(lsd.get("statusByLocale") or lsd.get("description") or "")
+    dts = {d.get("type"): d.get("dateTime") for d in res.get("dateAndTimes") or []}
+    est = _ymd(dts.get("ESTIMATED_DELIVERY")) or _ymd(((res.get("estimatedDeliveryTimeWindow") or {}).get("window") or {}).get("ends")) or \
+        _ymd(((res.get("standardTransitTimeWindow") or {}).get("window") or {}).get("ends"))
+    delivered = code2 == "DL" or bool(dts.get("ACTUAL_DELIVERY"))
+    status = "delivered" if delivered else "out_for_delivery" if code2 == "OD" else "exception" if code2 in ("DE", "SE", "CA") else \
+        "pre_transit" if code2 in ("OC", "IN") else "in_transit"
+    events = []
+    for ev in (res.get("scanEvents") or [])[:20]:
+        loc = ev.get("scanLocation") or {}
+        events.append({"date": ev.get("date") or "", "message": ev.get("eventDescription") or "", "status": "",
+                       "location": ", ".join(x for x in [loc.get("city"), loc.get("stateOrProvinceCode")] if x)})
+    events.reverse()
+    w = (res.get("estimatedDeliveryTimeWindow") or {}).get("window") or {}
+    return {"ok": True, "status": status, "carrier": "FedEx", "est": "" if delivered else est, "deliveredOn": _ymd(dts.get("ACTUAL_DELIVERY")),
+            "window": [w.get("begins") or "", w.get("ends") or ""], "statusText": desc, "events": events,
+            "publicUrl": "https://www.fedex.com/fedextrack/?trknbr=" + code, "source": "fedex-api"}
+
+
+def carrier_test(req):
+    kind = str(req.get("carrier") or "").lower()
+    if kind not in ("ups", "fedex"):
+        raise UserError("Unknown carrier.")
+    cid, sec = str(req.get("id") or "").strip(), str(req.get("secret") or "").strip()
+    if not cid or not sec:
+        raise UserError("Paste both the Client ID and the Client Secret.")
+    _TOKENS.pop((kind, cid, hashlib.sha256(sec.encode()).hexdigest()), None)
+    _token(kind, cid, sec)
+    return {"ok": True}
+
+
 def free_track(code, carrier):
     carrier = (carrier or "").upper()
     if carrier == "UPS" or code.upper().startswith("1Z"):
@@ -800,18 +943,29 @@ def free_track(code, carrier):
 
 
 def track(req):
+    """Live tracking. Order: the carrier's official API (free UPS / FedEx developer keys) -> EasyPost -> UPS's website."""
     key = str(req.get("apiKey") or "").strip()
-    code0 = re.sub(r"\s+", "", str(req.get("tracking") or ""))
-    if not key or req.get("free"):
-        if not code0:
-            raise UserError("No tracking number.")
-        try:
-            return free_track(code0, req.get("carrier"))
-        except UserError:
-            raise
-        except Exception as e:
-            if not key:
-                raise UserError("Couldn't get tracking from the carrier right now (%s)." % (str(e)[:80] or type(e).__name__))
+    code0 = re.sub(r"\s+", "", str(req.get("tracking") or "")).upper()
+    if not code0:
+        raise UserError("No tracking number.")
+    carrier = str(req.get("carrier") or "").upper()
+    is_ups = carrier == "UPS" or code0.startswith("1Z")
+    is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
+    keys = req.get("carriers") or {}
+    ups, fx = keys.get("ups") or {}, keys.get("fedex") or {}
+    if is_ups and ups.get("id") and ups.get("secret"):
+        return ups_api_track(code0, ups["id"], ups["secret"])
+    if is_fedex and fx.get("id") and fx.get("secret"):
+        return fedex_api_track(code0, fx["id"], fx["secret"])
+    if not key:
+        if is_ups:
+            try:
+                return ups_track(code0)
+            except UserError:
+                raise
+            except Exception:
+                raise UserError("Add your free UPS developer keys in Settings → Carrier tracking to get UPS delivery dates.")
+        raise UserError("Add your free %s developer keys in Settings → Carrier tracking to get delivery dates." % ("FedEx" if is_fedex else "carrier"))
     key = str(req.get("apiKey") or "").strip()
     code = re.sub(r"\s+", "", str(req.get("tracking") or ""))
     if not key:
@@ -956,6 +1110,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/imap/scan": imap_scan,
             "/api/imap/bodies": imap_bodies,
             "/api/track": track,
+            "/api/carriertest": carrier_test,
         }
         fn = routes.get(self.path)
         if not fn:
@@ -1265,7 +1420,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         r = self._route()
-        if r not in ("/ping", "/trackprobe") and not self._guard():  # the status check is read-only and safe to leave open
+        if r != "/ping" and not self._guard():  # the status check is read-only and safe to leave open
             return
         h = self.headers
         if r == "/ping":
@@ -1277,29 +1432,6 @@ class handler(BaseHTTPRequestHandler):
                     pass
                 return {"ok": True, "version": VERSION, "cloud": True, "storage": bool(KV_URL and KV_TOKEN), "exists": exists}
             return self._run(ping)
-        if r == "/trackprobe":  # TEMP: checks whether carrier lookups work from Vercel (no user data involved)
-            def probe():
-                q = _parse_qs(_urlparse(self.path).query)
-                n = (q.get("n") or [""])[0]
-                if (q.get("dbg") or [""])[0]:
-                    import http.cookiejar
-                    jar = http.cookiejar.CookieJar(); out = {}
-                    for u in ["https://www.ups.com/track?loc=en_US&tracknum=%s&requester=ST/trackdetails" % n, "https://www.ups.com/track/api/Track/GetStatus?loc=en_US"]:
-                        try:
-                            st, raw, _ = _http(u, jar=jar, headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"})
-                            out[u[:60]] = [st, len(raw), raw[:200].decode("utf-8", "replace")]
-                        except urllib.error.HTTPError as e:
-                            out[u[:60]] = ["HTTP", e.code, e.read()[:200].decode("utf-8", "replace")]
-                        except Exception as e:
-                            out[u[:60]] = ["ERR", str(e)[:200]]
-                    out["cookies"] = [(c.name, c.domain, c.path) for c in jar]
-                    return {"ok": True, "dbg": out}
-                try:
-                    t = free_track(n, "")
-                    return {"ok": True, "status": t["status"], "est": t["est"], "text": t.get("statusText")}
-                except Exception as e:
-                    return {"ok": False, "error": "%s: %s" % (type(e).__name__, str(e)[:300])}
-            return self._run(probe)
         if r == "/salt":
             def salt():
                 m = get_meta()
@@ -1396,6 +1528,7 @@ class handler(BaseHTTPRequestHandler):
             "/imap/scan": imap_scan,
             "/imap/bodies": imap_bodies,
             "/track": track,
+            "/carriertest": carrier_test,
         }
         fn = routes.get(r)
         if not fn:

@@ -52,6 +52,8 @@ PAGES.dashboard = {
     let bars = days; if (days.length > 120) { bars = []; for (let i = 0; i < days.length; i += 7) { const w = days.slice(i, i + 7); bars.push({ label: w[0].label, value: sum(w, d => d.value), n: sum(w, d => d.n), title: `Week of ${w[0].label}: ${fmtMoney(sum(w, d => d.value))} · ${plural(sum(w, d => d.n), 'order')}` }); } }
     const dLabel = DASH.from || DASH.to ? `${fmtDate(dayKey(dFrom))} – ${fmtDate(dayKey(dTo))}` : DASH.days === 1 ? 'Today' : `Last ${DASH.days} days`;
     const dOrders = sum(days, d => d.n);
+    const inSel = state.orders.filter(o => { const d = toDate(o.orderDate); return d && dIdx[dayKey(d)] != null; });
+    const dDead = inSel.filter(isDead).length, dItems = sum(inSel.filter(o => !isDead(o)), itemCount);
     const unlinked = state.orders.filter(o => !o.profileId && !isDead(o)).length;
     const noAddr = state.orders.filter(o => !o.houseId && !isDead(o)).length;
     buildDupIndex(); const badProfiles = state.profiles.filter(p => health(p).length).length;
@@ -69,11 +71,13 @@ PAGES.dashboard = {
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:#2b3863;background:linear-gradient(135deg,#161c33,#141821)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
+      <div class="hstack" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
+        <span class="hstack" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
       <div class="kpis">
-        <div class="kpi"><div class="l">Spent this month</div><div class="v">${fmtMoney(spentM)}</div><div class="d">${spentLM ? (spentM >= spentLM ? '▲ ' : '▼ ') + fmtMoney(Math.abs(spentM - spentLM)) + ' vs same point last month' : '&nbsp;'}</div></div>
-        <div class="kpi"><div class="l">Orders this month</div><div class="v">${thisM.filter(o => !isDead(o)).length}</div><div class="d">${thisM.filter(isDead).length} cancelled</div></div>
+        <div class="kpi"><div class="l">Spent · ${esc(dLabel)}</div><div class="v">${fmtMoney(sum(days, d => d.value))}</div><div class="d">This month ${fmtMoney(spentM)}${spentLM ? ' · ' + (spentM >= spentLM ? '▲ ' : '▼ ') + fmtMoney(Math.abs(spentM - spentLM)) + ' vs last' : ''}</div></div>
+        <div class="kpi"><div class="l">Orders · ${esc(dLabel)}</div><div class="v">${dOrders}</div><div class="d">${dDead} cancelled · ${dItems} items</div></div>
         <div class="kpi"><div class="l">In transit</div><div class="v">${transit.length}</div><div class="d">${soon.length ? soon.length + ' arriving by tomorrow' : '&nbsp;'}</div></div>
-        <div class="kpi"><div class="l">Stick rate (30d)</div><div class="v">${stick == null ? '—' : stick + '%'}</div><div class="d">${d30.length ? `${si30.stuck} shipped · ${si30.dead} cancelled${si30.pending ? ' · ' + si30.pending + ' pending' : ''}` : '&nbsp;'}</div></div>
+        ${(() => { const si = stickInfo(inSel); return `<div class="kpi"><div class="l">Stick rate · ${esc(dLabel)}</div><div class="v">${si.rate == null ? '—' : si.rate + '%'}</div><div class="d">${inSel.length ? `${si.stuck} shipped · ${si.dead} cancelled${si.pending ? ' · ' + si.pending + ' pending' : ''}` : '&nbsp;'}</div></div>`; })()}
         <div class="kpi"><div class="l">Profiles</div><div class="v">${state.profiles.length}</div><div class="d">${state.categories.length} categories</div></div>
         <div class="kpi"><div class="l">Houses</div><div class="v">${state.houses.filter(h => houseOrders(h.id).length).length}</div><div class="d">&nbsp;</div></div>
       </div>
@@ -85,8 +89,6 @@ PAGES.dashboard = {
       </div>
       <div class="cols2">
         <div class="card"><h3>Spending · ${esc(dLabel)}<span class="spacer"></span><span class="muted" style="font-weight:400">${fmtMoney(sum(days, d => d.value))} · ${plural(dOrders, 'order')}</span><button class="ghost sm" data-nav="spending">Details ›</button></h3>
-          <div class="hstack" style="flex-wrap:wrap;gap:6px;margin-bottom:10px"><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
-          <span class="hstack" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
           ${svgBars(bars)}</div>
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
@@ -390,9 +392,16 @@ PAGES.settings = {
           <div class="small muted" style="margin-bottom:8px">Show a Mac notification when email sync finds new orders, shipments, deliveries or cancellations.</div>
           <div class="chips"><button class="chip ${S.notify ? 'on' : ''}" id="stNotify">${S.notify ? 'On' : 'Off'}</button></div>
           ${S.notify && typeof Notification !== 'undefined' && Notification.permission === 'denied' ? '<div class="note warn">Your browser is blocking notifications for Crown. Allow them in the browser’s site settings.</div>' : ''}</div>
-        <div class="card"><h3>Live package tracking</h3>
-          <div class="small muted" style="margin-bottom:8px">Optional. Paste an <a href="https://www.easypost.com" target="_blank" rel="noopener">EasyPost</a> API key to see live UPS / USPS / FedEx status and scans right inside each order. Without it, tracking numbers still link to the carrier’s site. EasyPost may charge per tracked package beyond its free allowance — check their pricing.</div>
-          <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div></div>
+        <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
+          <div class="small muted" style="margin-bottom:10px">With these free keys Crown asks UPS and FedEx directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown data.</div>
+          ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
+             ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `
+          <div class="section" style="margin-top:6px">${label} ${c.id ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
+          <div class="small faint" style="margin-bottom:6px">${how} <a href="${url}" target="_blank" rel="noopener">Open ${label} developer site ↗</a></div>
+          <div class="hstack" style="flex-wrap:wrap"><input id="c_${k}_id" autocomplete="off" placeholder="${label} Client ID / API key" value="${esc(c.id || '')}" style="flex:1;min-width:180px"><input id="c_${k}_sec" type="password" autocomplete="off" placeholder="Client Secret" value="${esc(c.secret || '')}" style="flex:1;min-width:160px"><button data-csave="${k}">Save &amp; test</button>${c.id ? `<button class="ghost" data-cdel="${k}">Remove</button>` : ''}</div>`; }).join('')}
+          <div class="section">EasyPost (optional, any carrier)</div>
+          <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div>
+          <div class="hstack" style="margin-top:12px"><button id="stTrackNow">Check all packages now</button></div></div>
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
           <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
@@ -421,6 +430,15 @@ PAGES.settings = {
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
     pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });
     $('#stEpSave').onclick = () => { S.easypostKey = $('#stEp').value.trim(); save(); toast(S.easypostKey ? 'EasyPost key saved' : 'EasyPost key removed'); };
+    $$('#carrierCard [data-csave]').forEach(b => b.onclick = async () => {
+      const k = b.dataset.csave, id = $('#c_' + k + '_id').value.trim(), secret = $('#c_' + k + '_sec').value.trim();
+      if (!id || !secret) { toast('Paste both the Client ID and the Client Secret'); return; }
+      b.disabled = true; b.textContent = 'Testing…';
+      try { await api('/api/carriertest', { carrier: k, id, secret }); S.carriers = Object.assign({}, S.carriers, { [k]: { id, secret } }); save(); toast((k === 'ups' ? 'UPS' : 'FedEx') + ' connected — checking your packages…'); PAGES.settings.render(); refreshStaleTracking(true); }
+      catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save & test'; }
+    });
+    $$('#carrierCard [data-cdel]').forEach(b => b.onclick = () => { const c = Object.assign({}, S.carriers); delete c[b.dataset.cdel]; S.carriers = c; save(); PAGES.settings.render(); });
+    $('#stTrackNow').onclick = () => refreshAllTracking();
     $('#stStores').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s; if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; } save(); PAGES.settings.render(); };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
     $('#stRestore').onclick = () => $('#restoreFile').click();

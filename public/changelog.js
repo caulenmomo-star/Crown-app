@@ -1,6 +1,14 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.6', date: '2026-10-20', title: 'Live UPS & FedEx dates, fresh re-read', items: [
+    'New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Crown asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Crown and after every sync.',
+    'Fixed a time-zone bug that could put live-tracking dates one day early.',
+    'Your order emails are re-read once more with the current reader. An earlier version had marked them as done, so they never got the fixes. This fills in totals, addresses, houses and statuses, and repairs numbers like “…539ARE”.',
+    'The Dashboard has a day selector at the top (Today, 3–365 days, any number of days, or From–To dates). Spent, orders, items and stick rate follow it.',
+    'Item pictures are bigger in the Orders list and order details.',
+    'Order details show where the arrival date came from: the live carrier status or the shipping email.',
+  ] },
   { v: '0.4.5', date: '2026-10-20', title: 'Real delivery dates only', items: [
     'An order only gets an arrival date once a shipping email (shipped with tracking, out for delivery, or ready for pickup) gives one. That’s the date the calendar, Dashboard and Orders list use.',
     'The date from the order confirmation is kept separately as “Original order said …”. Orders that haven’t shipped show “not shipped · est. …” instead of a fake arrival date.',
