@@ -1,6 +1,11 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.5.2', date: '2026-10-21', title: 'Email is checked every time you open the app', items: [
+    'Fixed: with automatic sync set to Off, new emails were never read on their own, so delivered and “arrives today” emails didn’t show and the calendar kept old dates. Crown Tools now checks your email every time you open it or come back to it.',
+    'Automatic sync that was Off is switched to every 5 minutes. You can change it on the Inboxes page; “Only when I open it” replaces Off.',
+    'Home shows a warning under Needs attention when email hasn’t been checked for more than 3 hours. Tap it to check now.',
+  ] },
   { v: '0.5.1', date: '2026-10-21', title: 'Tell orders apart at a glance', items: [
     'Home: Upcoming deliveries and Recent activity now show each item’s picture, a name on up to two lines, the house it’s going to and the total.',
     'Short lists drop the “Pokémon Trading Card Game:” part every item shares, so you see “30th Celebration Elite Trainer Box” instead of a cut-off name. The full name is still in the order.',

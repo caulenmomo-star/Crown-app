@@ -182,10 +182,12 @@ function onUnlocked() {
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
   const needReread = state.readerVer !== READER_VER;
   if (needReread) { if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => rereadAll(true), 1500); else if (!state.imapAccounts.length) state.readerVer = READER_VER; }
+  if (state.syncVer !== 1) { if (!state.settings.autoSyncMin) state.settings.autoSyncMin = 5; state.syncVer = 1; save(); }
   setTimeout(() => refreshStaleTracking(), 4000);
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
-  if (!needReread && SERVER && m && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > m * 60000)) setTimeout(() => syncAll(false), 2500);
+  // always catch up when Crown Tools is opened (the schedule only controls checks while it stays open)
+  if (!needReread && SERVER && accs.length && accs.some(a => !a.lastSync || Date.now() - a.lastSync > Math.max(1, m || 2) * 60000)) setTimeout(() => syncAll(false), 2500);
 }
 // Re-read every order email in the lookback window with the current reader and refresh every order, house and link.
 // Runs once automatically after a reader upgrade (it waits for any sync already running, never skips), and from the
@@ -227,7 +229,7 @@ async function rereadAll(auto) {
 }
 function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 // catch up right away when you come back to Crown Tools
-document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (m && accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
 $('#syncNowNav').onclick = () => syncAll(true);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
