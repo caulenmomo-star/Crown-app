@@ -164,13 +164,13 @@ function renderTable() {
   $('#selCount').textContent = `${selected.size} selected`;
   $('#moveSel').innerHTML = `<option value="">Move to…</option>` + catOptions('');
 }
-$('#cats').onclick = e => {
+$('#cats').onclick = async e => {
   const ren = e.target.dataset.ren, del = e.target.dataset.del;
-  if (ren) { const c = state.categories.find(c => c.id === ren); const n = prompt('Rename category', c.name); if (n && n.trim()) { c.name = n.trim(); save(); refresh(); } return; }
+  if (ren) { const c = state.categories.find(c => c.id === ren); const n = await askText('Rename category', c.name); if (n && n.trim()) { c.name = n.trim(); save(); refresh(); } return; }
   if (del) {
     const n = state.profiles.filter(p => p.categoryId === del).length;
     if (state.categories.length === 1) { toast('You need at least one category'); return; }
-    if (!confirm(`Delete category "${catName(del)}"${n ? ` and its ${plural(n, 'profile')}` : ''}?`)) return;
+    if (!await ask(`Delete category "${catName(del)}"${n ? ` and its ${plural(n, 'profile')}` : ''}?`)) return;
     snapshot('delete category'); const gone = new Set(state.profiles.filter(p => p.categoryId === del).map(p => p.id));
     state.profiles = state.profiles.filter(p => p.categoryId !== del); state.categories = state.categories.filter(c => c.id !== del);
     state.orders.forEach(o => { if (gone.has(o.profileId)) { o.profileId = ''; o.profileLink = ''; } });
@@ -178,7 +178,7 @@ $('#cats').onclick = e => {
   }
   const row = e.target.closest('.cat'); if (row) { view = row.dataset.id; selected.clear(); renderCats(); renderTable(); }
 };
-$('#addCat').onclick = () => { const n = prompt('Category name (e.g. Target, Walmart, Pokémon drops)'); if (n && n.trim()) { const id = ensureCategory(n); view = id; save(); refresh(); } };
+$('#addCat').onclick = async () => { const n = await askText('New category', '', { placeholder: 'e.g. Target, Walmart, Pokémon drops', ok: 'Add category' }); if (n && n.trim()) { const id = ensureCategory(n); view = id; save(); refresh(); } };
 $('#rows').onclick = e => {
   const cb = e.target.dataset.cb;
   if (cb) { e.target.checked ? selected.add(cb) : selected.delete(cb); renderTable(); return; }
@@ -195,8 +195,8 @@ $('#clearSel').onclick = () => { selected.clear(); renderTable(); };
 $$('#pg-profiles th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (psort.key === k) { if (psort.dir === -1) psort = { key: '', dir: 1 }; else psort.dir = -1; } else psort = { key: k, dir: ['orders', 'spent'].includes(k) ? -1 : 1 }; renderTable(); });
 $('#moveSel').onchange = e => { const to = e.target.value; if (!to) return; snapshot('move profiles'); const n = selected.size; state.profiles.forEach(p => { if (selected.has(p.id)) p.categoryId = to; }); save(); refresh(); toast(`Moved ${plural(n, 'profile')} to ${catName(to)}`, { undo: true }); };
 $('#dupBtn').onclick = () => { snapshot('duplicate'); const copies = state.profiles.filter(p => selected.has(p.id)).map(p => Object.assign({}, p, { id: uid(), name: (p.name || 'Profile') + ' copy', createdAt: Date.now() })); state.profiles.push(...copies); selected = new Set(copies.map(c => c.id)); save(); refresh(); toast(`Duplicated ${plural(copies.length, 'profile')}`, { undo: true }); };
-$('#delBtn').onclick = () => {
-  const n = selected.size; if (!confirm(`Delete ${plural(n, 'profile')}?`)) return;
+$('#delBtn').onclick = async () => {
+  const n = selected.size; if (!await ask(`Delete ${plural(n, 'profile')}?`)) return;
   snapshot('delete profiles'); state.profiles = state.profiles.filter(p => !selected.has(p.id));
   state.orders.forEach(o => { if (selected.has(o.profileId)) { o.profileId = ''; o.profileLink = ''; } });
   selected.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'profile')}`, { undo: true });
@@ -249,8 +249,8 @@ $('#profSave').onclick = () => {
   if (i >= 0) state.profiles[i] = editing; else state.profiles.push(editing);
   autoLinkAll(); closeDlg('dlgProfile'); save(); refresh(); toast('Saved', { undo: true });
 };
-$('#profDelete').onclick = () => {
-  if (!confirm('Delete this profile?')) return;
+$('#profDelete').onclick = async () => {
+  if (!await ask('Delete this profile?')) return;
   snapshot('delete profile'); const id = editing.id;
   state.profiles = state.profiles.filter(p => p.id !== id); selected.delete(id);
   state.orders.forEach(o => { if (o.profileId === id) { o.profileId = ''; o.profileLink = ''; } });
@@ -283,7 +283,7 @@ $('#importBtn').onclick = () => {
   $('#impCat').innerHTML = catOptions(view !== 'all' ? view : state.categories[0].id) + '<option value="__new">+ New category…</option>';
   $('#impText').value = ''; impAnalyze(); openDlg('dlgImport');
 };
-$('#impCat').onchange = e => { if (e.target.value === '__new') { const n = prompt('New category name'); const id = n && ensureCategory(n); $('#impCat').innerHTML = catOptions(id || state.categories[0].id) + '<option value="__new">+ New category…</option>'; renderCats(); } };
+$('#impCat').onchange = async e => { if (e.target.value === '__new') { const n = await askText('New category', '', { placeholder: 'e.g. Target, Walmart, Pokémon drops', ok: 'Add category' }); const id = n && ensureCategory(n); $('#impCat').innerHTML = catOptions(id || state.categories[0].id) + '<option value="__new">+ New category…</option>'; renderCats(); } };
 $('#impGo').onclick = () => {
   if (!impParsed) return;
   snapshot('import profiles');

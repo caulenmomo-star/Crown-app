@@ -207,6 +207,12 @@
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="apGo">Continue</button></div>
 </dialog>
 
+<dialog id="dlgAsk" class="narrow ask">
+  <div class="dhead"><span id="askTitle"></span></div>
+  <div class="dbody"><div id="askText" class="asktext"></div><input id="askInput" autocomplete="off" autocapitalize="words" hidden></div>
+  <div class="dfoot"><button id="askCancel">Cancel</button><button class="primary" id="askOk">OK</button></div>
+</dialog>
+
 <dialog id="dlgMore" class="sheet">
   <div class="dhead">More<button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody"><div class="morelist" id="moreList"></div><div class="morestat" id="moreStat"></div></div>

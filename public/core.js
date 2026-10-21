@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.5.2'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.5.3'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -332,6 +332,28 @@ const isCompact = () => window.matchMedia('(max-width:1100px)').matches; // phon
 // re-draw when a window crosses between phone and desktop layouts (rotating an iPad, resizing a Windows/Mac window)
 window.matchMedia('(max-width:760px)').addEventListener('change', () => { if (typeof refresh === 'function') try { refresh(); } catch (_) { } });
 /* ---------- dialogs ---------- */
+// Crown Tools' own yes/no and type-a-name boxes. The browser's built-in confirm()/prompt() pop-ups are blocked or
+// skipped in some places (iPhone home-screen apps, in-app browsers), which made buttons silently do nothing.
+let askQueue = Promise.resolve();
+function ask(text, opts) { return askBox(Object.assign({ text }, opts || {})).then(v => v !== null); }
+function askText(text, value, opts) { return askBox(Object.assign({ text, input: true, value: value || '' }, opts || {})).then(v => v === null ? null : v); }
+function askBox(o) {
+  const run = () => new Promise(resolve => {
+    const d = document.getElementById('dlgAsk'); let result = null;
+    const lines = String(o.text || '').split('\n\n'); const title = o.title || (lines.length > 1 ? lines.shift() : (o.input ? '' : 'Are you sure?'));
+    $('#askTitle').textContent = title || (o.input ? lines.shift() : '');
+    $('#askText').innerHTML = lines.filter(Boolean).map(l => `<p>${esc(l).replace(/\n/g, '<br>')}</p>`).join('');
+    const inp = $('#askInput'); inp.hidden = !o.input; inp.value = o.value || ''; inp.placeholder = o.placeholder || '';
+    const ok = $('#askOk'); ok.textContent = o.ok || (o.input ? 'Save' : 'OK'); ok.className = 'primary' + (o.danger || /delete|remove|erase/i.test(o.text) && !o.input ? ' dangerbtn' : '');
+    const done = v => { result = v; d.close(); };
+    ok.onclick = () => done(o.input ? inp.value : true);
+    $('#askCancel').onclick = () => done(null);
+    inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(inp.value); } };
+    d.onclose = () => resolve(result);
+    d.showModal(); setTimeout(() => (o.input ? inp : ok).focus(), 30);
+  });
+  const p = askQueue.then(run); askQueue = p.catch(() => { }); return p;
+}
 function openDlg(id) { const d = document.getElementById(id); if (!d.open) d.showModal(); return d; }
 function closeDlg(id) { const d = document.getElementById(id); if (d.open) d.close(); }
 document.addEventListener('click', e => { const b = e.target.closest('[data-close]'); if (b) b.closest('dialog').close(); });
@@ -510,7 +532,7 @@ function askPassword(title, text) {
 async function restoreFromBlob(blob) {
   if (!validBlob(blob)) throw new Error('That file isn’t a Crown Tools or Profile Manager backup.');
   if (CLOUD && !cryptoKey) { pendingRestore = blob; $('#lockErr').textContent = ''; renderLockUI(); return true; }
-  if (!confirm('Replace everything currently in Crown Tools with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
+  if (!await ask('Replace everything currently in Crown Tools with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
   if (CLOUD) {
     const pw = await askPassword('Restore backup', 'Enter the password this backup was made with.');
     if (pw == null) return false;
@@ -539,14 +561,14 @@ const Crown = {
     ['#pw1', '#pw2', '#setupCode'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); }));
     $('#resetBtn').onclick = async () => {
       if (CLOUD) {
-        const code = prompt('Forgot your password?\n\nThis permanently erases ALL Crown Tools Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
+        const code = await askText('Forgot your password?\n\nThis permanently erases ALL Crown Tools Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
         if (!code) return;
-        if (!confirm('Last chance — erase everything in Crown Tools Online?')) return;
+        if (!await ask('Last chance — erase everything in Crown Tools Online?', { ok: 'Erase everything', danger: true })) return;
         try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Crown Tools up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
         return;
       }
-      if (!confirm('This permanently erases ALL Crown Tools data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
-      if (!confirm('Last chance — erase everything?')) return;
+      if (!await ask('This permanently erases ALL Crown Tools data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
+      if (!await ask('Last chance — erase everything?', { ok: 'Erase everything', danger: true })) return;
       try { localStorage.removeItem(LS_KEY); } catch (_) { }
       if (SERVER) { try { await api('/api/vault', { app: 'crown', v: 2, salt: 'x', iv: 'x', ct: 'x', erased: true, savedAt: Date.now() }, 'PUT'); } catch (_) { } }
       vaultBlob = null; setupLock();

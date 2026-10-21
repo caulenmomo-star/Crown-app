@@ -363,7 +363,7 @@ PAGES.inboxes = {
       </div>`;
     $('#ibAdd').onclick = () => openInbox(null);
     if ($('#ibSyncAll')) $('#ibSyncAll').onclick = () => syncAll(true);
-    if ($('#ibReread')) $('#ibReread').onclick = () => { if (confirm('Re-read every order email from your inboxes?\n\nThis refills totals, items, pictures, addresses and houses for all your orders. It can take a few minutes.')) { rereadAll(false); setTimeout(() => PAGES.inboxes.render(), 300); } };
+    if ($('#ibReread')) $('#ibReread').onclick = async () => { if (await ask('Re-read every order email from your inboxes?\n\nThis refills totals, items, pictures, addresses and houses for all your orders. It can take a few minutes.')) { rereadAll(false); setTimeout(() => PAGES.inboxes.render(), 300); } };
     $('#ibAuto').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; state.settings.autoSyncMin = +b.dataset.v; save(); scheduleSync(); PAGES.inboxes.render(); };
     if ($('#ibClearUn')) $('#ibClearUn').onclick = () => { state.unparsed = []; save(); refresh(); };
     pg.querySelectorAll('[data-unhide]').forEach(b => b.onclick = () => { state.unparsed = state.unparsed.filter(u => u.messageId !== b.dataset.unhide); save(); refresh(); });
@@ -371,11 +371,11 @@ PAGES.inboxes = {
     pg.querySelectorAll('[data-ia]').forEach(el => {
       const id = el.dataset.id, a = state.imapAccounts.find(x => x.id === id);
       if (el.dataset.ia === 'rescan') { el.onchange = () => { const d = +el.value; if (!d) return; rescan(id, d); }; return; }
-      el.onclick = () => {
+      el.onclick = async () => {
         if (el.dataset.ia === 'sync') syncAll(true, [id]);
         else if (el.dataset.ia === 'edit') openInbox(id);
         else if (el.dataset.ia === 'toggle') { a.enabled = a.enabled === false; save(); refresh(); }
-        else if (el.dataset.ia === 'del') { if (!confirm(`Remove ${a.label || a.user}? Orders already found stay in Crown Tools.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
+        else if (el.dataset.ia === 'del') { if (!await ask(`Remove ${a.label || a.user}? Orders already found stay in Crown Tools.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
       };
     });
   },
@@ -454,7 +454,7 @@ PAGES.settings = {
       if (state.orders.length) setTimeout(() => exportOrders(state.orders), 400);
       if (!state.profiles.length && !state.orders.length) toast('Nothing to export yet');
     };
-    $('#stWipe').onclick = () => { if (!confirm(`Delete all ${plural(state.orders.length, 'order')}?`)) return; snapshot('delete all orders'); state.orders = []; state.houses = state.houses.filter(h => h.nickname || h.notes); state.seenIds = []; state.unparsed = []; state.imapAccounts.forEach(a => { a.lastSync = 0; a.lastUid = 0; a.uidValidity = ''; }); save(); refresh(); toast('All orders deleted', { undo: true }); };
+    $('#stWipe').onclick = async () => { if (!await ask(`Delete all ${plural(state.orders.length, 'order')}?`)) return; snapshot('delete all orders'); state.orders = []; state.houses = state.houses.filter(h => h.nickname || h.notes); state.seenIds = []; state.unparsed = []; state.imapAccounts.forEach(a => { a.lastSync = 0; a.lastUid = 0; a.uidValidity = ''; }); save(); refresh(); toast('All orders deleted', { undo: true }); };
     if (SERVER) {
       try {
         if (!serverInfo) serverInfo = await api('/api/ping');

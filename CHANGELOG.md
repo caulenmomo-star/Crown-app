@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.5.3 — Adding categories works on phones (2026-10-21)
+
+- Fixed: “+ New category” did nothing on iPhone. Phones (especially home-screen apps) can block the browser’s built-in pop-ups, so Crown Tools now uses its own box to type a name or confirm.
+- Same fix for renaming and deleting categories, house nicknames, deleting orders and profiles, merging houses, removing inboxes, re-reading email and resetting a forgotten password.
+- Buttons no longer stay highlighted after you tap them.
+
 ## v0.5.2 — Email is checked every time you open the app (2026-10-21)
 
 - Fixed: with automatic sync set to Off, new emails were never read on their own, so delivered and “arrives today” emails didn’t show and the calendar kept old dates. Crown Tools now checks your email every time you open it or come back to it.

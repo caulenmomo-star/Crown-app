@@ -151,9 +151,9 @@ async function syncAll(manual, ids, opts) {
   if (parts.length && state.settings.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') { try { new Notification('Crown Tools', { body: parts.join(' · ') }); } catch (_) { } }
   if (manual) toast(errors.length ? errors[0] : parts.length ? 'Sync done: ' + parts.join(', ') : 'Sync done — nothing new');
 }
-function rescan(id, days) {
+async function rescan(id, days) {
   const a = state.imapAccounts.find(x => x.id === id); if (!a) return;
-  if (!confirm(`Re-read every order email from the last ${days} days of ${a.label || a.user}?\n\nThis refills totals, items, pictures, addresses and tracking. Nothing is duplicated, but orders you deleted from that period will come back.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
+  if (!await ask(`Re-read every order email from the last ${days} days of ${a.label || a.user}?\n\nThis refills totals, items, pictures, addresses and tracking. Nothing is duplicated, but orders you deleted from that period will come back.`)) { if (route.page === 'inboxes') PAGES.inboxes.render(); return; }
   syncAll(true, [id], { days, fresh: true, reapply: true, full: true }).then(() => { if (!cryptoKey) return; regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); invalidateStats(); save(); refresh(); });
 }
 function scheduleSync() {

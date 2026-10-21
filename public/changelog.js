@@ -1,6 +1,11 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.5.3', date: '2026-10-21', title: 'Adding categories works on phones', items: [
+    'Fixed: “+ New category” did nothing on iPhone. Phones (especially home-screen apps) can block the browser’s built-in pop-ups, so Crown Tools now uses its own box to type a name or confirm.',
+    'Same fix for renaming and deleting categories, house nicknames, deleting orders and profiles, merging houses, removing inboxes, re-reading email and resetting a forgotten password.',
+    'Buttons no longer stay highlighted after you tap them.',
+  ] },
   { v: '0.5.2', date: '2026-10-21', title: 'Email is checked every time you open the app', items: [
     'Fixed: with automatic sync set to Off, new emails were never read on their own, so delivered and “arrives today” emails didn’t show and the calendar kept old dates. Crown Tools now checks your email every time you open it or come back to it.',
     'Automatic sync that was Off is switched to every 5 minutes. You can change it on the Inboxes page; “Only when I open it” replaces Off.',

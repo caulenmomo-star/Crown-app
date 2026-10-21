@@ -143,7 +143,7 @@ function renderCleanup() {
   }
 }
 $('#cleanTabs').onclick = e => { const b = e.target.closest('[data-ct]'); if (b) { cleanTab = b.dataset.ct; renderCleanup(); } };
-$('#cleanBody').onclick = e => {
+$('#cleanBody').onclick = async e => {
   const d = e.target.closest('button'); if (!d) return; const ds = d.dataset;
   const dup = suggestedDuplicates();
   if (ds.merge != null) { snapshot('merge orders'); const [a, b] = dup[+ds.merge]; mergeOrderInto(a, b); autoLink(a); resolveHouse(a); }
@@ -151,7 +151,7 @@ $('#cleanBody').onclick = e => {
   else if (d.id === 'mergeAll') { snapshot('merge orders'); dup.forEach(([a, b]) => { mergeOrderInto(a, b); autoLink(a); resolveHouse(a); }); }
   else if (ds.keep) { const o = state.orders.find(x => x.id === ds.keep); if (o) o.keepAnyway = true; }
   else if (ds.del) { snapshot('remove order'); state.orders = state.orders.filter(x => x.id !== ds.del); }
-  else if (d.id === 'delJunk') { if (!confirm('Remove all of these?')) return; snapshot('remove non-orders'); state.orders = state.orders.filter(o => !isSuspicious(o)); }
+  else if (d.id === 'delJunk') { if (!await ask('Remove all of these?')) return; snapshot('remove non-orders'); state.orders = state.orders.filter(o => !isSuspicious(o)); }
   else if (ds.ign) { const s = state.settings; s.ignoredSenders = Array.from(new Set([...(s.ignoredSenders || []), ds.ign])); toast('Emails from ' + ds.ign + ' will be ignored'); }
   else return;
   pruneHouses(); invalidateStats(); save(); renderCleanup(); refresh(); if (lastUndo && !ds.ign && !ds.keep && !ds.notdup) toast('Done', { undo: true });
@@ -502,7 +502,7 @@ PAGES.orders = {
     $('#oSelMode').onclick = () => { if (oSelMode || oSelected.size) { oSelMode = false; oSelected.clear(); } else oSelMode = true; rr(); };
     if ($('#oSetStatus')) $('#oSetStatus').onchange = e => { const s = e.target.value; if (!s) return; snapshot('set status'); state.orders.forEach(o => { if (oSelected.has(o.id) && o.status !== s) { setStatus(o, s, null, 'manual'); o.updatedAt = Date.now(); } }); save(); refresh(); toast(`Marked ${plural(oSelected.size, 'order')} ${STATUS[s].l.toLowerCase()}`, { undo: true }); };
     if ($('#oSetProf')) $('#oSetProf').onchange = e => { const v = e.target.value; if (!v) return; snapshot('link profile'); state.orders.forEach(o => { if (!oSelected.has(o.id)) return; if (v === '__auto') { o.profileLink = ''; autoLink(o); } else if (v === '__none') { o.profileId = ''; o.profileLink = ''; } else { o.profileId = v; o.profileLink = 'manual'; } resolveHouse(o); }); pruneHouses(); invalidateStats(); save(); refresh(); toast('Updated profile links', { undo: true }); };
-    if ($('#oDel')) $('#oDel').onclick = () => { const n = oSelected.size; if (!confirm(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
+    if ($('#oDel')) $('#oDel').onclick = async () => { const n = oSelected.size; if (!await ask(`Delete ${plural(n, 'order')}? If they came from email they won’t come back on the next sync.`)) return; snapshot('delete orders'); state.orders = state.orders.filter(o => !oSelected.has(o.id)); oSelected.clear(); pruneHouses(); save(); refresh(); toast(`Deleted ${plural(n, 'order')}`, { undo: true }); };
     $('#oAdd').onclick = () => openOrder(null);
     if ($('#oClearAll')) $('#oClearAll').onclick = clearAllOrders;
     if ($('#oClean')) $('#oClean').onclick = openCleanup;
@@ -511,15 +511,15 @@ PAGES.orders = {
   },
 };
 // Wipe every order (and the houses they made) so they can be rebuilt cleanly from email. Undo-able right after.
-function clearAllOrders() {
+async function clearAllOrders() {
   const n = state.orders.length; if (!n) return;
-  if (!confirm(`Delete all ${plural(n, 'order')}?\n\nThis also clears houses that only came from orders (houses you nicknamed or wrote notes on are kept). Profiles, inboxes and settings stay.\n\nYou can undo right after.`)) return;
+  if (!await ask(`Delete all ${plural(n, 'order')}?\n\nThis also clears houses that only came from orders (houses you nicknamed or wrote notes on are kept). Profiles, inboxes and settings stay.\n\nYou can undo right after.`)) return;
   snapshot('clear all orders');
   state.orders = []; state.houses = state.houses.filter(h => h.nickname || h.notes); state.unparsed = [];
   oSelected.clear(); invalidateStats(); save(); refresh();
   toast(`Cleared ${plural(n, 'order')}`, { undo: true });
   const accs = state.imapAccounts.filter(a => a.enabled !== false);
-  if (SERVER && accs.length) setTimeout(() => { if (confirm('Rebuild your orders from your email now?\n\nCrown Tools will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
+  if (SERVER && accs.length) setTimeout(async () => { if (await ask('Rebuild your orders from your email now?\n\nCrown Tools will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
 }
 function exportOrders(list) {
   if (!list.length) { toast('Nothing to export'); return; }
@@ -615,11 +615,11 @@ function parseItemsText(t) {
     return { qty: 1, name: m2[1].trim(), price: m2[2] != null ? Number(m2[2].replace(/,/g, '')) : null };
   });
 }
-$('#ordSave').onclick = () => {
+$('#ordSave').onclick = async () => {
   const o = curOrder; const g = id => $('#' + id).value.trim();
   const no = g('oeNo');
   const dupe = no && state.orders.find(x => x.id !== o.id && Parser.normOrderNo(x.orderNumber) === Parser.normOrderNo(no));
-  if (dupe && !confirm(`Another order already has #${no}. Save anyway?`)) return;
+  if (dupe && !await ask(`Another order already has #${no}. Save anyway?`)) return;
   snapshot(ordIsNew ? 'add order' : 'edit order');
   const real = ordIsNew ? o : state.orders.find(x => x.id === o.id);
   const tot = g('oeTotal').replace(/[$,]/g, '');
@@ -641,7 +641,7 @@ $('#ordSave').onclick = () => {
   save(); refresh(); toast(ordIsNew ? 'Order added' : 'Order saved', { undo: true });
   ordIsNew = false; curOrder = JSON.parse(JSON.stringify(real)); ordTab = 'overview'; renderOrderDlg();
 };
-$('#ordDelete').onclick = () => { if (!confirm('Delete this order?')) return; snapshot('delete order'); state.orders = state.orders.filter(x => x.id !== curOrder.id); oSelected.delete(curOrder.id); pruneHouses(); closeDlg('dlgOrder'); save(); refresh(); toast('Order deleted', { undo: true }); };
+$('#ordDelete').onclick = async () => { if (!await ask('Delete this order?')) return; snapshot('delete order'); state.orders = state.orders.filter(x => x.id !== curOrder.id); oSelected.delete(curOrder.id); pruneHouses(); closeDlg('dlgOrder'); save(); refresh(); toast('Order deleted', { undo: true }); };
 
 /* ================= order import (CSV) ================= */
 const O_ALIASES = {
@@ -821,11 +821,11 @@ function renderHouse(id) {
     </div>
     <div class="card" style="margin-bottom:14px"><h3>Notes</h3><textarea id="hNotes" style="min-height:60px;font-family:inherit;font-size:13px" placeholder="Gate code, who lives here, drop-off notes…">${esc(h.notes || '')}</textarea></div>
     ${groups.map(([l, os]) => `<div class="card" style="margin-bottom:14px"><h3>${l} <span class="badge">${os.length}</span><span class="spacer"></span>${os.length ? fmtMoney(sum(os, o => isDead(o) ? Number(o.total) || 0 : orderSpend(o))) : ''}</h3>${orderMiniList(os.sort((a, b) => String(b.orderDate).localeCompare(String(a.orderDate))), { empty: 'None' })}</div>`).join('')}`;
-  $('#hNick').onclick = () => { const n = prompt('Nickname for this house (leave empty to use the address)', h.nickname || ''); if (n === null) return; h.nickname = n.trim(); save(); refresh(); };
+  $('#hNick').onclick = async () => { const n = await askText('Nickname for this house', h.nickname || '', { placeholder: 'Leave empty to use the address' }); if (n === null) return; h.nickname = n.trim(); save(); refresh(); };
   $('#hNotes').onchange = e => { h.notes = e.target.value; save(); };
-  $('#hMerge').onchange = e => {
+  $('#hMerge').onchange = async e => {
     const to = houseById(e.target.value); if (!to) return;
-    if (!confirm(`Move all ${plural(s.n, 'order')} from “${houseLabel(h)}” into “${houseLabel(to)}”? Future emails for this address will go there too.`)) { e.target.value = ''; return; }
+    if (!await ask(`Move all ${plural(s.n, 'order')} from “${houseLabel(h)}” into “${houseLabel(to)}”? Future emails for this address will go there too.`)) { e.target.value = ''; return; }
     snapshot('merge houses'); s.os.forEach(o => o.houseId = to.id); to.keys = Array.from(new Set([...(to.keys || []), ...(h.keys || [])]));
     if (h.notes) to.notes = [to.notes, h.notes].filter(Boolean).join('\n');
     state.houses = state.houses.filter(x => x.id !== h.id); save(); go('houses', to.id); toast('Houses merged', { undo: true });
