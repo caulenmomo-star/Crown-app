@@ -1,6 +1,12 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.4', date: '2026-10-20', title: 'Smarter houses, delivery windows', items: [
+    'Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.',
+    'Your existing houses are merged automatically when you open Crown. Nicknames and notes are kept, and each house shows the spelling most of its orders use.',
+    'Profiles with jigged addresses still link to their orders.',
+    'Delivery windows like “Arrives Thu, Sep 17 – Tue, Sep 22” are kept as a window, and each order shows which email its arrival date came from.',
+  ] },
   { v: '0.4.3', date: '2026-10-20', title: 'Correct numbers, clear all, recap range', items: [
     'New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown rebuild every order fresh from your email.',
     'Stick rate is now correct: only orders that shipped, are out for delivery, are ready or were delivered count as stuck. Placed and confirmed orders show as “pending” until they ship or get cancelled.',

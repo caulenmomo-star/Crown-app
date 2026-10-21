@@ -2,6 +2,13 @@
 
 Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.4.4 — Smarter houses, delivery windows (2026-10-20)
+
+- Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.
+- Your existing houses are merged automatically when you open Crown. Nicknames and notes are kept, and each house shows the spelling most of its orders use.
+- Profiles with jigged addresses still link to their orders.
+- Delivery windows like “Arrives Thu, Sep 17 – Tue, Sep 22” are kept as a window, and each order shows which email its arrival date came from.
+
 ## v0.4.3 — Correct numbers, clear all, recap range (2026-10-20)
 
 - New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown rebuild every order fresh from your email.

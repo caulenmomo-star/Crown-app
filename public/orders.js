@@ -35,23 +35,28 @@ function setStatus(o, status, date, source, note) {
 
 /* ---------- houses ---------- */
 function titleAddr(s) { return String(s || '').replace(/\b([a-z])([a-z]*)/gi, (m, a, b) => /^(ne|nw|se|sw|n|s|e|w|po)$/i.test(m) ? m.toUpperCase() : a.toUpperCase() + b.toLowerCase()); }
+const HSIG = new WeakMap();
+function houseSigOf(h) { const st = h.addr1 + '|' + h.zip; let c = HSIG.get(h); if (!c || c.st !== st) { c = { st, sig: Parser.houseSig(h.addr1, h.zip) }; HSIG.set(h, c); } return c.sig; }
+// Find the house for an address: an exact earlier match (incl. houses you merged by hand), else the same house
+// number + ZIP with a close street - so jigged ("XQZ 11662 S 2670 W"), misspelled ("Suoth") and unit variants all land together.
+function findHouse(sig, key, prefer) {
+  if (prefer && ((prefer.keys || []).includes(key) || Parser.sameHouse(houseSigOf(prefer), sig))) return prefer;
+  return state.houses.find(h => (h.keys || []).includes(key)) || state.houses.find(h => Parser.sameHouse(houseSigOf(h), sig)) || null;
+}
 function resolveHouse(o) {
   // No address in the emails (Amazon, PlayStation, cancellations)? Use the linked profile's shipping address.
   let src = o; o.houseVia = '';
-  if (!Parser.houseKey(o.addr1, o.zip) && o.profileId) {
+  if (!Parser.houseSig(o.addr1, o.zip) && o.profileId) {
     const p = profileById(o.profileId);
-    if (p && Parser.houseKey(p.shipAddr1, p.shipZip)) { src = { addr1: p.shipAddr1, zip: p.shipZip, city: p.shipCity, state: p.shipState }; o.houseVia = 'profile'; }
+    if (p && Parser.houseSig(p.shipAddr1, p.shipZip)) { src = { addr1: p.shipAddr1, zip: p.shipZip, city: p.shipCity, state: p.shipState }; o.houseVia = 'profile'; }
   }
+  const sig = Parser.houseSig(src.addr1, src.zip);
+  if (!sig) { o.houseId = ''; return null; }
   const key = Parser.houseKey(src.addr1, src.zip);
-  if (!key) { o.houseId = ''; return null; }
-  let h = state.houses.find(h => (h.keys || []).includes(key));
-  if (!h) {
-    // tolerate a missing ZIP on one side
-    const street = key.split('|')[0];
-    h = state.houses.find(h => (h.keys || []).some(k => k.split('|')[0] === street && (!k.split('|')[1] || !key.split('|')[1])));
-  }
-  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(Parser.splitUnit(src.addr1).street), city: titleAddr(src.city), state: String(src.state || '').toUpperCase(), zip: Parser.zip5(src.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
-  else if (!h.keys.includes(key)) h.keys.push(key);
+  let h = findHouse(sig, key, houseById(o.houseId));
+  if (!h) { h = { id: uid(), keys: [key], addr1: titleAddr(Parser.cleanStreet(src.addr1)), city: titleAddr(src.city), state: String(src.state || '').toUpperCase(), zip: Parser.zip5(src.zip), nickname: '', notes: '', createdAt: Date.now() }; state.houses.push(h); }
+  else if (!(h.keys || []).includes(key)) (h.keys = h.keys || []).push(key);
+  if (h.keys.length > 40) h.keys = h.keys.slice(-40);
   if (!h.zip && src.zip) h.zip = Parser.zip5(src.zip);
   if (!h.city && src.city) h.city = titleAddr(src.city);
   if (!h.state && src.state) h.state = String(src.state).toUpperCase();
@@ -150,22 +155,29 @@ function regroupHouses() {
     const su = Parser.splitUnit(o.addr1);
     if (su.unit) { o.addr1 = su.street; o.addr2 = [su.unit, o.addr2].filter(Boolean).join(', '); }
   }
-  const byKey = new Map(), merged = new Map();
+  // fold together houses that are really the same address (jigs, typos, unit variants)
+  const merged = new Map(), kept = [];
   for (const h of state.houses) {
-    h.addr1 = titleAddr(Parser.splitUnit(h.addr1).street);
-    const key = Parser.houseKey(h.addr1, h.zip);
-    h.keys = key ? [key] : [];
-    const keep = key && byKey.get(key);
+    h.addr1 = titleAddr(Parser.cleanStreet(h.addr1) || h.addr1);
+    const sig = houseSigOf(h);
+    const keep = sig && kept.find(k => Parser.sameHouse(houseSigOf(k), sig));
     if (keep) {
       merged.set(h.id, keep.id);
+      keep.keys = Array.from(new Set([...(keep.keys || []), ...(h.keys || [])]));
       if (!keep.nickname && h.nickname) keep.nickname = h.nickname;
-      if (h.notes) keep.notes = [keep.notes, h.notes].filter(Boolean).join('\n');
-    } else if (key) byKey.set(key, h);
+      if (h.notes && !(keep.notes || '').includes(h.notes)) keep.notes = [keep.notes, h.notes].filter(Boolean).join('\n');
+    } else kept.push(h);
   }
-  state.houses = state.houses.filter(h => !merged.has(h.id));
+  state.houses = kept;
   for (const o of state.orders) { if (merged.has(o.houseId)) o.houseId = merged.get(o.houseId); resolveHouse(o); }
+  // show each house under the spelling most of its orders use
+  for (const h of state.houses) {
+    const n = {}; houseOrders(h.id).forEach(o => { if (o.houseVia) return; const c = titleAddr(Parser.cleanStreet(o.addr1)); if (c) n[c] = (n[c] || 0) + 1; });
+    const best = Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].length - b[0].length)[0];
+    if (best && Parser.sameHouse(Parser.houseSig(best[0], h.zip), houseSigOf(h))) h.addr1 = best[0];
+  }
   pruneHouses();
-  state.houseVer = 2;
+  state.houseVer = 3;
 }
 function pruneHouses() { const used = new Set(state.orders.map(o => o.houseId)); state.houses = state.houses.filter(h => used.has(h.id) || h.nickname || h.notes); }
 
@@ -184,14 +196,14 @@ function profSig(p) {
   const stamp = [p.email, p.shipAddr1, p.shipAddr2, p.shipZip, p.shipFirst, p.shipLast, p.shipName, p.cardNumber, p.shipCity].join('\u0001');
   let c = PSIG.get(p); if (c && c.stamp === stamp) return c;
   const nm = String(p.shipName || '').trim().split(/\s+/);
-  c = { stamp, email: normEmail(p.email), house: Parser.houseKey(p.shipAddr1, p.shipZip), unit: Parser.unitKey(p.shipAddr1, p.shipAddr2, p.shipZip),
+  c = { stamp, email: normEmail(p.email), house: Parser.houseSig(p.shipAddr1, p.shipZip), unit: Parser.normUnit([Parser.splitUnit(p.shipAddr1).unit, p.shipAddr2].filter(Boolean).join(' ')),
     first: lc(p.shipFirst || nm[0]), last: lc(p.shipLast || nm.slice(1).join('')), card: String(p.cardNumber || '').replace(/\D/g, ''), zip: Parser.zip5(p.shipZip), city: lc(p.shipCity) };
   PSIG.set(p, c); return c;
 }
 function linkScore(p, o, sig) {
   const q = profSig(p); let sc = 0; const how = [];
   if (sig.email && q.email === sig.email) { sc += 4; how.push('email'); }
-  if (sig.house && q.house === sig.house) { sc += 3; how.push('address'); if (sig.unit && q.unit === sig.unit) sc += 2; }
+  if (sig.house && q.house && Parser.sameHouse(q.house, sig.house)) { sc += 3; how.push('address'); if (sig.unit && q.unit === sig.unit) sc += 2; }
   else if (sig.house && q.house) sc -= 3; // shipped somewhere else
   if (sig.first && sig.last && q.first === sig.first && q.last === sig.last) { sc += 4; how.push('name'); }
   else {
@@ -207,7 +219,7 @@ function linkScore(p, o, sig) {
 function buildLinkIndex() {
   const ix = { email: new Map(), house: new Map(), card: new Map(), last: new Map(), first: new Map() };
   const put = (m, k, p) => { if (!k) return; let a = m.get(k); if (!a) m.set(k, a = []); a.push(p); };
-  for (const p of state.profiles) { const q = profSig(p); put(ix.email, q.email, p); put(ix.house, q.house, p); put(ix.card, q.card.slice(-4), p); put(ix.last, q.last, p); put(ix.first, q.first, p); }
+  for (const p of state.profiles) { const q = profSig(p); put(ix.email, q.email, p); put(ix.house, q.house && q.house.num, p); put(ix.card, q.card.slice(-4), p); put(ix.last, q.last, p); put(ix.first, q.first, p); }
   return ix;
 }
 function autoLink(o, ix) {
@@ -215,12 +227,12 @@ function autoLink(o, ix) {
   ix = ix || buildLinkIndex();
   const parts = String(o.name || '').trim().split(/\s+/).filter(Boolean);
   const sig = {
-    email: o.recipientEmail ? normEmail(o.recipientEmail) : '', house: Parser.houseKey(o.addr1, o.zip), unit: o.addr1 ? Parser.unitKey(o.addr1, o.addr2, o.zip) : '',
+    email: o.recipientEmail ? normEmail(o.recipientEmail) : '', house: Parser.houseSig(o.addr1, o.zip), unit: o.addr1 ? Parser.normUnit([Parser.splitUnit(o.addr1).unit, o.addr2].filter(Boolean).join(' ')) : '',
     first: lc(parts[0]), last: parts.length > 1 ? lc(parts[parts.length - 1]) : '', last4: o.last4 || '', zip: Parser.zip5(o.zip), city: lc(o.city),
   };
   // an email address shared by lots of profiles (one main inbox) says nothing on its own
   if (sig.email && (ix.email.get(sig.email) || []).length > 3) sig.email = '';
-  const cands = new Set([].concat(ix.email.get(sig.email) || [], ix.house.get(sig.house) || [], ix.card.get(sig.last4) || [], ix.last.get(sig.last) || [], sig.last ? [] : (ix.first.get(sig.first) || [])));
+  const cands = new Set([].concat(ix.email.get(sig.email) || [], ix.house.get(sig.house && sig.house.num) || [], ix.card.get(sig.last4) || [], ix.last.get(sig.last) || [], sig.last ? [] : (ix.first.get(sig.first) || [])));
   let best = null, second = 0;
   for (const p of cands) {
     const r = linkScore(p, o, sig); if (r.sc <= 0) continue;
@@ -334,7 +346,7 @@ function applyEmail(r, accountLabel, opts) {
   if (r.address && r.address.name && !o.name) o.name = r.address.name;
   if (r.address && !o.addr1 && !o.city && r.address.city) Object.assign(o, { city: r.address.city, state: r.address.state || o.state });
   // The newest email wins for the arrival date (a shipping email beats the original estimate, even if read out of order).
-  if (r.eta && !['delivered', 'cancelled', 'refunded'].includes(r.status) && !o.etaLocked && (!o.etaAt || r.date >= o.etaAt)) { o.eta = r.eta; o.etaAt = r.date; }
+  if (r.eta && !['delivered', 'cancelled', 'refunded'].includes(r.status) && !o.etaLocked && (!o.etaAt || r.date >= o.etaAt)) { o.eta = r.eta; o.etaEnd = r.etaEnd || ''; o.etaAt = r.date; o.etaFrom = r.subject; }
   if (r.status === 'delivered') {
     const when = r.deliveredOn && r.deliveredOn !== dayKey(new Date(r.date)) ? r.deliveredOn + 'T12:00:00' : r.date;
     if (!o.deliveredAt || o.deliveredAt === o.eta || when < o.deliveredAt || !o.deliveredFromEmail) { o.deliveredAt = when; o.deliveredFromEmail = true; }
@@ -514,7 +526,7 @@ function renderOrderDlg() {
         <div class="k">Placed</div><div>${fmtDT(o.orderDate)}</div>
         <div class="k">Total</div><div><b>${fmtMoney(o.total)}</b>${isDead(o) ? ' <span class="faint small">(not counted — ' + STATUS[o.status].l.toLowerCase() + ')</span>' : ''}</div>
         <div class="k">Status</div><div><select id="ovStatus" style="width:auto">${STATUSES.map(s => `<option value="${s.k}" ${o.status === s.k ? 'selected' : ''}>${s.l}</option>`).join('')}</select></div>
-        <div class="k">${o.status === 'delivered' ? 'Delivered' : 'Arrives'}</div><div>${o.status === 'delivered' ? fmtDate(o.deliveredAt || o.eta, { weekday: true }) : o.eta ? fmtDate(o.eta, { weekday: true }) + ` <span class="faint">${relDay(o.eta)}</span>` : '—'}</div>
+        <div class="k">${o.status === 'delivered' ? 'Delivered' : 'Arrives'}</div><div>${o.status === 'delivered' ? fmtDate(o.deliveredAt || o.eta, { weekday: true }) + (o.deliveredFromEmail ? '' : ' <span class="faint small">(estimated)</span>') : o.eta ? fmtDate(o.eta, { weekday: true }) + (o.etaEnd ? ' – ' + fmtDate(o.etaEnd, { weekday: true }) : '') + ` <span class="faint">${relDay(o.eta)}</span>` + (o.etaFrom ? `<div class="small faint ellipsis" title="${esc(o.etaFrom)}">from “${esc(o.etaFrom)}”</div>` : o.etaLocked ? '<div class="small faint">set by you</div>' : '') : '—'}</div>
         <div class="k">Profile</div><div><select id="ovProf"><option value="">— Not linked —</option>${state.profiles.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })).map(x => `<option value="${x.id}" ${x.id === o.profileId ? 'selected' : ''}>${esc(x.name || 'Untitled')}</option>`).join('')}</select>
           <div class="small faint" style="margin-top:3px">${o.profileId ? esc(LINK_LABEL[o.profileLink] || '') : 'Pick the profile that checked this out.'}${o.profileLink === 'manual' ? ' · <button class="linkbtn" id="ovAuto">auto-match instead</button>' : ''}</div></div>
         <div class="k">House</div><div>${h ? `<a href="#houses/${h.id}" data-closeorder>${esc(houseLabel(h))}</a>${o.houseVia === 'profile' ? ' <span class="faint small">(from the linked profile)</span>' : ''}` : '<span class="faint">No address yet</span>'}</div>

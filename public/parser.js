@@ -372,6 +372,14 @@
   }
   // Phrases that introduce an arrival date. Not "Delivers to:" / "Delivery address" (those are addresses).
   const ETA_TRIG = '(?:arriv(?:es|ing|al)?(?:\\s+(?:by|on))?|get it(?:\\s+by)?|estimated\\s+(?:delivery|arrival)(?:\\s+date)?|expected\\s+(?:delivery|arrival|by)|delivery\\s+(?:date|by|estimate|expected|window)|deliver(?:s|ing|ed)?\\s+(?:by|on)|will\\s+be\\s+delivered(?:\\s+(?:by|on))?|should\\s+arrive|ready\\s+(?:for\\s+pick\\s?up\\s+)?by|pick\\s?up\\s+by|eta|deliver(?:s|ing)?(?=\\s+(?:mon|tue|wed|thu|fri|sat|sun|' + MONTH.replace('\\.?', '') + '|\\d)))';
+  // "Arrives Thu, Sep 17 – Tue, Sep 22": the end of a delivery window, when the email gives one.
+  function extractEtaEnd(text, refISO, eta) {
+    if (!eta) return '';
+    const m = String(text || '').match(new RegExp(ETA_TRIG + '\\b[^.\\n]{0,28}?' + DATE_WORD + '\\s*(?:–|—|-|to|through|and)\\s*(?:(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,?\\s*)?(' + DATE_WORD + '|\\d{1,2}\\b)', 'i'));
+    if (!m) return '';
+    let v = /^\d{1,2}$/.test(m[1]) ? eta.slice(0, 8) + String(m[1]).padStart(2, '0') : isoFrom(m[1].replace(/\s+/g, ' '), refISO);
+    return v && v > eta ? v : '';
+  }
   function extractEta(text, refISO) {
     const t = String(text || '');
     const gap = '\\b[^.\\n]{0,28}?(?:\\n[^.\\n]{0,14}?)?';
@@ -441,9 +449,70 @@
     s = s.replace(/[.,#]/g, ' ').replace(/\s+/g, ' ').trim();
     return s.split(' ').map(w => WORDS[w] || w).join(' ');
   }
+  // ---- fuzzy house matching: bots "jig" addresses (3 random letters before/after, typos like "Suoth"),
+  // so a house is identified by house number + ZIP, then the street compared loosely.
+  const DIRS = { n: 1, s: 1, e: 1, w: 1, ne: 1, nw: 1, se: 1, sw: 1 };
+  const SUFFIXES = { st: 1, ave: 1, rd: 1, dr: 1, ln: 1, ct: 1, blvd: 1, pl: 1, cir: 1, pkwy: 1, hwy: 1, ter: 1, sq: 1, trl: 1, way: 1, loop: 1, cv: 1, cove: 1, run: 1, row: 1, pass: 1, pike: 1, xing: 1, expy: 1, fwy: 1, aly: 1, bnd: 1, path: 1, walk: 1 };
+  const FULL = Object.keys(WORDS).filter(w => w.length >= 4 && (DIRS[WORDS[w]] || SUFFIXES[WORDS[w]]));
+  function dl(a, b) { // Damerau-Levenshtein (a swapped pair of letters counts as one typo)
+    const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+    const d = Array.from({ length: m + 1 }, (_, i) => [i].concat(Array(n).fill(0))); for (let j = 1; j <= n; j++) d[0][j] = j;
+    for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+      const c = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + c);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+    return d[m][n];
+  }
+  const KNOWN_TOK = t => !!(DIRS[t] || SUFFIXES[t]);
+  // "Suoth" -> "s", "Stret" -> "st": a near-miss of a direction / street-type word becomes that word
+  function fixTok(t) {
+    if (WORDS[t]) return WORDS[t];
+    if (t.length >= 4 && /^[a-z]+$/.test(t)) { for (const w of FULL) if (Math.abs(w.length - t.length) <= 1 && dl(w, t) <= 1) return WORDS[w]; }
+    return t;
+  }
+  function houseSig(addr1, zip) {
+    let raw = splitUnit(addr1).street.toLowerCase().replace(/[.,#()\[\]\-_/\\|*'"]/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!raw) return null;
+    let toks = raw.split(' ');
+    // house number: the first token with digits; letters glued on ("xqz11662", "11662abc") are jig
+    let i = toks.findIndex(t => /\d/.test(t));
+    if (i < 0) return null;
+    if (i > 2) i = -1; // a number far into the line is part of the street name, not the house number
+    let num = '';
+    if (i >= 0) { const m = toks[i].match(/^[a-z]{0,4}(\d+)([a-z]{0,4})$/); if (m) { num = m[1]; toks = toks.slice(i + 1); } }
+    if (!num) return null;
+    toks = toks.map(fixTok);
+    // a trailing 2-4 letter token that isn't a street word is a jig ("11662 S 2670 W XQZ"), if a street remains
+    if (toks.length > 1) { const last = toks[toks.length - 1]; if (/^[a-z]{2,4}$/.test(last) && !KNOWN_TOK(last)) { const rest = toks.slice(0, -1); if (rest.some(t => /\d/.test(t) || !KNOWN_TOK(t))) toks = rest; } }
+    const nums = toks.filter(t => /\d/.test(t)).map(t => t.replace(/\D/g, ''));
+    const core = toks.filter(t => !/\d/.test(t) && !KNOWN_TOK(t)).join('');
+    const dirs = toks.filter(t => DIRS[t]).join('');
+    return { num, zip: zip5(zip), nums: nums.join(','), core, dirs, key: num + '|' + zip5(zip) };
+  }
+  // Same house: same number, compatible ZIP, same street numbers (Utah grid "2670 W") and a close street name.
+  function sameHouse(a, b) {
+    if (!a || !b || a.num !== b.num) return false;
+    if (a.zip && b.zip && a.zip !== b.zip) return false;
+    if (a.nums !== b.nums && a.nums && b.nums) return false;
+    if (a.core === b.core) return a.nums === b.nums || !a.nums || !b.nums || !!a.core;
+    if (!a.core || !b.core) return !!(a.nums && a.nums === b.nums); // grid address with/without a stray word
+    if (a.core.startsWith(b.core) || b.core.startsWith(a.core)) return Math.min(a.core.length, b.core.length) >= 4;
+    const d = dl(a.core, b.core), L = Math.max(a.core.length, b.core.length);
+    return d <= (L >= 10 ? 3 : L >= 6 ? 2 : 1);
+  }
+  // Street with jigs and unit removed, in the original letters, for showing on the Houses page.
+  function cleanStreet(addr1) {
+    const st = splitUnit(addr1).street.replace(/\s+/g, ' ').trim(); let toks = st.split(' ');
+    const i = toks.findIndex(t => /\d/.test(t));
+    if (i > 0 && i <= 2) toks = toks.slice(i);
+    if (toks.length) toks[0] = toks[0].replace(/^[A-Za-z]{1,4}(?=\d)/, '').replace(/(\d)[A-Za-z]{2,4}$/, '$1');
+    if (toks.length > 2) { const last = toks[toks.length - 1].toLowerCase().replace(/[^a-z]/g, ''); if (/^[a-z]{2,4}$/.test(last) && !KNOWN_TOK(fixTok(last))) toks = toks.slice(0, -1); }
+    return toks.join(' ').replace(/[\s,\-]+$/, '');
+  }
   const normUnit = a => String(a || '').toLowerCase().replace(/\b(apartment|apt|unit|suite|ste|#|room|rm|no|number|bldg|building|fl|floor|lot|trlr|spc|space)\b/g, '').replace(/[^a-z0-9]/g, '');
   const zip5 = z => String(z || '').slice(0, 5);
-  const houseKey = (addr1, zip) => { const s = normStreet(addr1); return s ? s + '|' + zip5(zip) : ''; };
+  const houseKey = (addr1, zip) => { const h = houseSig(addr1, zip); return h ? h.key + '|' + h.nums + '|' + h.core : ''; };
   const unitKey = (addr1, addr2, zip) => { const h = houseKey(addr1, zip); return h ? h + '|' + normUnit([splitUnit(addr1).unit, addr2].filter(Boolean).join(' ')) : ''; };
 
   // ---------------------------------------------------------------- main
@@ -488,6 +557,7 @@
       address: addr,
       rawAddress: rawAddr || '',
       eta: (() => { for (const s of sources) { const v = extractEta(s, m.date); if (v) return v; } return ''; })(),
+      etaEnd: (() => { for (const s of sources) { const e = extractEta(s, m.date); if (e) return extractEtaEnd(s, m.date, e); } return ''; })(),
       deliveredOn: status === 'delivered' ? first(s => extractDeliveredOn(s, m.date)) || '' : '',
       total: first(extractTotal) ?? first(extractPayment),
       totalKind: first(extractTotal) != null ? 'order' : first(extractPayment) != null ? 'payment' : '',
@@ -517,7 +587,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

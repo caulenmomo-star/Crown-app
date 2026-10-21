@@ -173,7 +173,7 @@ function onUnlocked() {
     const junk = state.orders.filter(isSuspicious).length, dup = suggestedDuplicates().length;
     if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
   }
-  if (state.houseVer !== 2 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
+  if (state.houseVer !== 3 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
   // 0.4.0: the email reader was rebuilt against real store emails (totals, items + pictures, addresses, tracking,
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
   const needReread = state.readerVer !== READER_VER;
