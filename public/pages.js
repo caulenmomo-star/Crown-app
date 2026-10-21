@@ -25,6 +25,7 @@ function hbars(rows, opts) {
 function greet() { const h = new Date().getHours(); return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
 
 /* ================= dashboard ================= */
+const DASH = (() => { try { return Object.assign({ days: 30, from: '', to: '' }, JSON.parse(localStorage.getItem('crown.dash') || '{}')); } catch (_) { return { days: 30, from: '', to: '' }; } })();
 PAGES.dashboard = {
   render() {
     const pg = $('#pg-dashboard'); const now = new Date(); const tk = todayKey();
@@ -40,9 +41,17 @@ PAGES.dashboard = {
     const upcoming = state.orders.filter(o => isActive(o) && o.eta && o.eta >= tk).sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 8);
     const overdue = state.orders.filter(o => isActive(o) && o.eta && o.eta < tk && (inTransit(o) || o.status === 'confirmed'));
     const events = state.orders.flatMap(o => (o.history || []).map(h => ({ o, h }))).sort((a, b) => String(b.h.date).localeCompare(String(a.h.date))).slice(0, 9);
-    const days = []; for (let i = 29; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i); const k = dayKey(d); days.push({ k, label: (d.getMonth() + 1) + '/' + d.getDate(), value: 0 }); }
+    // spending chart: any number of days, or a custom From–To
+    let dFrom, dTo;
+    if (DASH.from || DASH.to) { dFrom = parseDay(DASH.from) || parseDay(DASH.to); dTo = parseDay(DASH.to) || new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (dFrom > dTo) [dFrom, dTo] = [dTo, dFrom]; }
+    else { dTo = new Date(now.getFullYear(), now.getMonth(), now.getDate()); dFrom = new Date(dTo.getFullYear(), dTo.getMonth(), dTo.getDate() - (DASH.days - 1)); }
+    const days = []; for (let d = new Date(dFrom); d <= dTo && days.length < 400; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) days.push({ k: dayKey(d), label: (d.getMonth() + 1) + '/' + d.getDate(), value: 0, n: 0 });
     const dIdx = Object.fromEntries(days.map((d, i) => [d.k, i]));
-    state.orders.forEach(o => { const d = toDate(o.orderDate); if (!d) return; const i = dIdx[dayKey(d)]; if (i != null) days[i].value += orderSpend(o); });
+    state.orders.forEach(o => { const d = toDate(o.orderDate); if (!d) return; const i = dIdx[dayKey(d)]; if (i != null) { days[i].value += orderSpend(o); if (!isDead(o)) days[i].n++; } });
+    days.forEach(d => d.title = `${d.label}: ${fmtMoney(d.value)} · ${plural(d.n, 'order')}`);
+    let bars = days; if (days.length > 120) { bars = []; for (let i = 0; i < days.length; i += 7) { const w = days.slice(i, i + 7); bars.push({ label: w[0].label, value: sum(w, d => d.value), n: sum(w, d => d.n), title: `Week of ${w[0].label}: ${fmtMoney(sum(w, d => d.value))} · ${plural(sum(w, d => d.n), 'order')}` }); } }
+    const dLabel = DASH.from || DASH.to ? `${fmtDate(dayKey(dFrom))} – ${fmtDate(dayKey(dTo))}` : DASH.days === 1 ? 'Today' : `Last ${DASH.days} days`;
+    const dOrders = sum(days, d => d.n);
     const unlinked = state.orders.filter(o => !o.profileId && !isDead(o)).length;
     const noAddr = state.orders.filter(o => !o.houseId && !isDead(o)).length;
     buildDupIndex(); const badProfiles = state.profiles.filter(p => health(p).length).length;
@@ -75,10 +84,17 @@ PAGES.dashboard = {
           ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click" data-order="${o.id}"><div style="width:120px">${statusBadge(h.status)}</div><div style="flex:1;min-width:0"><div class="ellipsis">${esc(orderTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted">${Parser.storeInfo(o.store).label} · ${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
       </div>
       <div class="cols2">
-        <div class="card"><h3>Spending, last 30 days<span class="spacer"></span><span class="muted" style="font-weight:400">${fmtMoney(sum(days, d => d.value))}</span><button class="ghost sm" data-nav="spending">Details ›</button></h3>${svgBars(days)}</div>
+        <div class="card"><h3>Spending · ${esc(dLabel)}<span class="spacer"></span><span class="muted" style="font-weight:400">${fmtMoney(sum(days, d => d.value))} · ${plural(dOrders, 'order')}</span><button class="ghost sm" data-nav="spending">Details ›</button></h3>
+          <div class="hstack" style="flex-wrap:wrap;gap:6px;margin-bottom:10px"><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
+          <span class="hstack" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
+          ${svgBars(bars)}</div>
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
     if ($('#dSync')) $('#dSync').onclick = () => syncAll(true);
+    const dsave = () => { try { localStorage.setItem('crown.dash', JSON.stringify(DASH)); } catch (_) { } PAGES.dashboard.render(); };
+    $('#dDays').onclick = e => { const b = e.target.closest('[data-dd]'); if (b) { DASH.days = +b.dataset.dd; DASH.from = DASH.to = ''; dsave(); } };
+    $('#dN').onchange = e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 400) { DASH.days = n; DASH.from = DASH.to = ''; dsave(); } };
+    $('#dFrom').onchange = $('#dTo').onchange = () => { DASH.from = $('#dFrom').value; DASH.to = $('#dTo').value; dsave(); };
     pg.querySelectorAll('[data-att]').forEach(el => el.onclick = () => { const a = attention[+el.dataset.att]; if (a[2]) a[2](); go(a[1]); });
   },
 };

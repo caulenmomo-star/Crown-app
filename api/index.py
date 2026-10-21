@@ -27,6 +27,7 @@ import threading
 import time
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
 import webbrowser
 from email import policy
@@ -739,7 +740,78 @@ def imap_test(acc):
 
 # ---------------------------------------------------------------- live tracking (EasyPost)
 
+UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+
+
+def _http(url, data=None, headers=None, jar=None, timeout=20):
+    """Small HTTP helper with a cookie jar (carrier sites hand out session cookies first)."""
+    import http.cookiejar
+    jar = jar if jar is not None else http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), urllib.request.HTTPSHandler(context=ssl_context()))
+    h = {"User-Agent": UA, "Accept-Language": "en-US,en;q=0.9", "Accept": "*/*"}
+    h.update(headers or {})
+    req = urllib.request.Request(url, data=data, headers=h, method="POST" if data is not None else "GET")
+    with opener.open(req, timeout=timeout) as r:
+        return r.status, r.read(), jar
+
+
+def ups_track(code):
+    """UPS's own tracking data (the same the ups.com tracking page shows) - no API key needed."""
+    import http.cookiejar
+    jar = http.cookiejar.CookieJar()
+    _http("https://www.ups.com/track?loc=en_US&tracknum=%s&requester=ST/trackdetails" % urllib.parse.quote(code), jar=jar,
+          headers={"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"})
+    tok = next((c.value for c in jar if c.name == "X-XSRF-TOKEN-ST"), "")
+    body = json.dumps({"Locale": "en_US", "TrackingNumber": [code], "Requester": "st/trackdetails"}).encode()
+    st, raw, _ = _http("https://webapis.ups.com/track/api/Track/GetStatus?loc=en_US", data=body, jar=jar, headers={
+        "Content-Type": "application/json", "Accept": "application/json, text/plain, */*", "X-XSRF-TOKEN": tok,
+        "Origin": "https://www.ups.com", "Referer": "https://www.ups.com/track?loc=en_US&tracknum=" + code})
+    j = json.loads(raw.decode("utf-8"))
+    d = (j.get("trackDetails") or [{}])[0] or {}
+    if d.get("errorCode") and not d.get("packageStatus"):
+        raise UserError("UPS: %s" % (d.get("errorText") or "tracking number not found"))
+    ymd = lambda s: ("%s-%s-%s" % (s[:4], s[4:6], s[6:8])) if s and len(s) >= 8 and s[:8].isdigit() else ""
+    delivered = bool(d.get("isDelivered")) or str(d.get("packageStatusType") or "").upper() == "D"
+    ddd = d.get("deliveredDateDetail") or {}
+    del_date = ""
+    for m in d.get("milestones") or []:
+        if m.get("isCompleted") and m.get("date") and re.search(r"deliver", str(m.get("nameKey") or m.get("name") or ""), re.I) and not re.search(r"out", str(m.get("name") or ""), re.I):
+            mm = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", m["date"])
+            if mm:
+                del_date = "%s-%02d-%02d" % (mm.group(3), int(mm.group(1)), int(mm.group(2)))
+    text = str(d.get("packageStatus") or "")
+    status = "delivered" if delivered else "out_for_delivery" if re.search(r"out for delivery", text, re.I) or str(d.get("progressBarType") or "") == "OutForDelivery" else \
+        "in_transit" if text else "unknown"
+    events = []
+    for m in d.get("milestones") or []:
+        if m.get("isCompleted") and m.get("date"):
+            mm = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", m["date"])
+            iso = "%s-%02d-%02dT12:00:00" % (mm.group(3), int(mm.group(1)), int(mm.group(2))) if mm else ""
+            events.append({"date": iso, "message": m.get("name") or "", "status": "", "location": m.get("location") or ""})
+    return {"ok": True, "status": status, "carrier": "UPS", "est": ymd(str(d.get("sdd") or "")), "deliveredOn": del_date if delivered else "",
+            "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "events": events, "source": "ups", "statusText": text}
+
+
+def free_track(code, carrier):
+    carrier = (carrier or "").upper()
+    if carrier == "UPS" or code.upper().startswith("1Z"):
+        return ups_track(code)
+    raise UserError("Live tracking for %s needs an EasyPost key (Settings)." % (carrier or "this carrier"))
+
+
 def track(req):
+    key = str(req.get("apiKey") or "").strip()
+    code0 = re.sub(r"\s+", "", str(req.get("tracking") or ""))
+    if not key or req.get("free"):
+        if not code0:
+            raise UserError("No tracking number.")
+        try:
+            return free_track(code0, req.get("carrier"))
+        except UserError:
+            raise
+        except Exception as e:
+            if not key:
+                raise UserError("Couldn't get tracking from the carrier right now (%s)." % (str(e)[:80] or type(e).__name__))
     key = str(req.get("apiKey") or "").strip()
     code = re.sub(r"\s+", "", str(req.get("tracking") or ""))
     if not key:
@@ -1193,7 +1265,7 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         r = self._route()
-        if r != "/ping" and not self._guard():  # the status check is read-only and safe to leave open
+        if r not in ("/ping", "/trackprobe") and not self._guard():  # the status check is read-only and safe to leave open
             return
         h = self.headers
         if r == "/ping":
@@ -1205,6 +1277,16 @@ class handler(BaseHTTPRequestHandler):
                     pass
                 return {"ok": True, "version": VERSION, "cloud": True, "storage": bool(KV_URL and KV_TOKEN), "exists": exists}
             return self._run(ping)
+        if r == "/trackprobe":  # TEMP: checks whether carrier lookups work from Vercel (no user data involved)
+            def probe():
+                q = _parse_qs(_urlparse(self.path).query)
+                n = (q.get("n") or [""])[0]
+                try:
+                    t = free_track(n, "")
+                    return {"ok": True, "status": t["status"], "est": t["est"], "text": t.get("statusText")}
+                except Exception as e:
+                    return {"ok": False, "error": "%s: %s" % (type(e).__name__, str(e)[:300])}
+            return self._run(probe)
         if r == "/salt":
             def salt():
                 m = get_meta()
