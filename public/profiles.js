@@ -4,6 +4,8 @@ const FIELDS = [
   { k: 'name', l: 'Profile name', g: 'General', w: 2 },
   { k: 'email', l: 'Email', g: 'General', w: 1 },
   { k: 'phone', l: 'Phone', g: 'General', w: 1 },
+  { k: 'emailPassword', l: 'Email password', g: 'General', w: 2 },
+  { k: 'oneCheckout', l: 'Only one checkout per profile', g: 'General', bool: true, def: false },
   { k: 'shipFirst', l: 'First name', g: 'Shipping', w: 2 },
   { k: 'shipLast', l: 'Last name', g: 'Shipping', w: 2 },
   { k: 'shipAddr1', l: 'Address 1', g: 'Shipping', w: 2 },
@@ -32,6 +34,8 @@ const fullLabel = f => (f.g === 'Shipping' || f.g === 'Billing') && !f.bool ? `$
 const ALIASES = {
   name: ['profile', 'profilename', 'title', 'profiletitle'],
   email: ['emailaddress', 'mail', 'useremail'],
+  emailPassword: ['emailpassword', 'emailpass', 'mailpassword', 'imappassword'],
+  oneCheckout: ['onecheckout', 'onecheckoutperprofile', 'onlycheckoutonce', 'singlecheckout'],
   phone: ['phonenumber', 'tel', 'telephone', 'mobile', 'shippingphone'],
   shipFirst: ['first', 'firstname', 'fname', 'shippingfirstname', 'shipfirstname', 'shippingfirst'],
   shipLast: ['last', 'lastname', 'lname', 'shippinglastname', 'shiplastname', 'shippinglast'],
@@ -62,7 +66,7 @@ let view = 'all', selected = new Set(), search = '', issuesOnly = false, psort =
 const catName = id => (state.categories.find(c => c.id === id) || {}).name || '—';
 const catOptions = sel => state.categories.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 function ensureCategory(name) { name = String(name).trim(); if (!name) return null; let c = state.categories.find(c => c.name.toLowerCase() === name.toLowerCase()); if (!c) { c = { id: uid(), name }; state.categories.push(c); } return c.id; }
-function blankProfile(catId) { const p = { id: uid(), categoryId: catId, notes: '', createdAt: Date.now() }; FIELDS.forEach(f => p[f.k] = f.bool ? true : ''); p.shipCountry = 'US'; p.billCountry = 'US'; return p; }
+function blankProfile(catId) { const p = { id: uid(), categoryId: catId, notes: '', createdAt: Date.now() }; FIELDS.forEach(f => p[f.k] = f.bool ? (f.def ?? true) : ''); p.shipCountry = 'US'; p.billCountry = 'US'; return p; }
 const fixState = v => { v = String(v || '').trim(); return (typeof STATE_ABBR !== 'undefined' && STATE_ABBR[v.toLowerCase()]) || v.toUpperCase(); };
 const cardDigits = n => String(n || '').replace(/\D/g, '');
 const cardMask = n => { n = cardDigits(n); return n ? '•••• ' + n.slice(-4) : ''; };
@@ -260,8 +264,18 @@ $('#profDelete').onclick = async () => {
 /* ---------- mass import ---------- */
 const truthy = v => !/^(no|n|false|0|off)$/i.test(String(v).trim());
 let impParsed = null;
+let impBot = null; // a recognized bot file: { format, profiles }
 function impAnalyze() {
   let text = $('#impText').value.trim();
+  impBot = typeof BotFormats !== 'undefined' ? BotFormats.read(text, parseDelimited) : null;
+  if (impBot) {
+    const n = impBot.profiles.length, cat = $('#impCat').value;
+    const ex = impBot.profiles.filter(p => findSameProfile(p, cat)).length;
+    impParsed = null;
+    $('#impPreview').innerHTML = n ? `${botIcon(impBot.format)} <b>${esc(impBot.format.name)}</b> profile file · <b>${n}</b> ${n === 1 ? 'profile' : 'profiles'}${ex ? ` · ${ex} already in this category will be updated` : ''}` : `This looks like a ${esc(impBot.format.name)} file but it has no profiles in it.`;
+    $('#impMap').innerHTML = n ? impBot.profiles.slice(0, 6).map(p => `<span class="badge">${esc(p.name || p.email || 'Untitled')}</span>`).join('') + (n > 6 ? `<span class="badge">+${n - 6} more</span>` : '') : '';
+    $('#impGo').disabled = !n; return;
+  }
   if (/^[\[{]/.test(text)) { // JSON (array of objects, or {profiles:[...]})
     try {
       let j = JSON.parse(text); if (!Array.isArray(j)) j = j.profiles || Object.values(j);
@@ -283,8 +297,29 @@ $('#importBtn').onclick = () => {
   $('#impCat').innerHTML = catOptions(view !== 'all' ? view : state.categories[0].id) + '<option value="__new">+ New category…</option>';
   $('#impText').value = ''; impAnalyze(); openDlg('dlgImport');
 };
-$('#impCat').onchange = async e => { if (e.target.value === '__new') { const n = await askText('New category', '', { placeholder: 'e.g. Target, Walmart, Pokémon drops', ok: 'Add category' }); const id = n && ensureCategory(n); $('#impCat').innerHTML = catOptions(id || state.categories[0].id) + '<option value="__new">+ New category…</option>'; renderCats(); } };
+$('#impCat').onchange = async e => { if (impBot && e.target.value !== '__new') impAnalyze(); if (e.target.value === '__new') { const n = await askText('New category', '', { placeholder: 'e.g. Target, Walmart, Pokémon drops', ok: 'Add category' }); const id = n && ensureCategory(n); $('#impCat').innerHTML = catOptions(id || state.categories[0].id) + '<option value="__new">+ New category…</option>'; renderCats(); } };
+// the same profile already here: same name in the category, or same email + card
+function findSameProfile(p, catId) {
+  const card = cardDigits(p.cardNumber), em = String(p.email || '').toLowerCase();
+  return state.profiles.find(x => x.categoryId === catId && ((p.name && x.name === p.name) || (em && card && String(x.email || '').toLowerCase() === em && cardDigits(x.cardNumber) === card)));
+}
+function importBotProfiles() {
+  snapshot('import profiles');
+  const catId = $('#impCat').value; const added = [], updated = [];
+  for (const src of impBot.profiles) {
+    const ex = findSameProfile(src, catId);
+    const p = ex || blankProfile(catId);
+    FIELDS.forEach(f => { if (src[f.k] !== undefined) p[f.k] = src[f.k]; });
+    if (src.notes) p.notes = src.notes;
+    p.updatedAt = Date.now();
+    (ex ? updated : added).push(p);
+  }
+  state.profiles.push(...added); selected = new Set([...added, ...updated].map(p => p.id));
+  autoLinkAll(); closeDlg('dlgImport'); save(); refresh();
+  toast(`${impBot.format.name}: ${added.length ? 'added ' + plural(added.length, 'profile') : ''}${added.length && updated.length ? ', ' : ''}${updated.length ? 'updated ' + updated.length : ''}`, { undo: true });
+}
 $('#impGo').onclick = () => {
+  if (impBot) return importBotProfiles();
   if (!impParsed) return;
   snapshot('import profiles');
   const baseCat = $('#impCat').value; const added = []; const counter = {};
@@ -295,6 +330,7 @@ $('#impGo').onclick = () => {
       if (k === '_category') { catId = ensureCategory(v) || baseCat; return; }
       if (k === '_exp') { const m = v.match(/(\d{1,2})\s*[\/\-]\s*(\d{2,4})/); if (m) { p.cardExpMonth = m[1].padStart(2, '0'); p.cardExpYear = m[2].length === 2 ? '20' + m[2] : m[2]; } return; }
       if (k === 'sameBilling') { p.sameBilling = truthy(v); sameSet = true; return; }
+      if (FIELD[k] && FIELD[k].bool) { p[k] = truthy(v); return; }
       if (k.startsWith('bill')) hasBill = true;
       p[k] = v;
     });
@@ -471,17 +507,31 @@ $('#quickList').onclick = e => {
 };
 
 /* ---------- export ---------- */
-const EXP = { scope: 'view', fmt: 'csv' };
+const EXP = { scope: 'view', fmt: (() => { try { return localStorage.getItem('crown.expFmt') || 'csv'; } catch (_) { return 'csv'; } })() };
+const botIcon = f => `<span class="boticon" style="background:${f.color}">${esc(f.mark)}</span>`;
+const EXP_FORMATS = () => [
+  ...(typeof BotFormats !== 'undefined' ? BotFormats.FORMATS.map(f => ({ id: f.id, name: f.name, sub: f.ext, icon: botIcon(f) })) : []),
+  { id: 'csv', name: 'Spreadsheet', sub: '.csv', icon: '<span class="boticon" style="background:#323a4c">≡</span>' },
+  { id: 'json', name: 'Crown Tools', sub: '.json', icon: '<span class="boticon" style="background:#323a4c">{ }</span>' },
+];
 function renderExport() {
   $('#expScope').innerHTML = [['sel', `Selected (${selected.size})`], ['view', `Current view (${visibleProfiles().length})`], ['all', `All (${state.profiles.length})`]].map(([v, l]) => `<button class="chip ${EXP.scope === v ? 'on' : ''}" data-v="${v}" ${v === 'sel' && !selected.size ? 'disabled' : ''}>${l}</button>`).join('');
-  $('#expFmt').innerHTML = [['csv', 'CSV (spreadsheet)'], ['json', 'JSON']].map(([v, l]) => `<button class="chip ${EXP.fmt === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('');
+  $('#expFmt').innerHTML = EXP_FORMATS().map(f => `<button class="fmttile ${EXP.fmt === f.id ? 'on' : ''}" data-v="${f.id}">${f.icon}<span class="fn">${esc(f.name)}</span><span class="fs">${esc(f.sub)}</span></button>`).join('');
+  $('#expGo').textContent = 'Download' + (BotFormats && BotFormats.byId[EXP.fmt] ? ' for ' + BotFormats.byId[EXP.fmt].name : '');
 }
 $('#expScope').onclick = e => { const b = e.target.closest('[data-v]'); if (b && !b.disabled) { EXP.scope = b.dataset.v; renderExport(); } };
-$('#expFmt').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { EXP.fmt = b.dataset.v; renderExport(); } };
+$('#expFmt').onclick = e => { const b = e.target.closest('[data-v]'); if (b) { EXP.fmt = b.dataset.v; try { localStorage.setItem('crown.expFmt', EXP.fmt); } catch (_) { } renderExport(); } };
 $('#exportBtn').onclick = () => { EXP.scope = selected.size ? 'sel' : 'view'; renderExport(); openDlg('dlgExport'); };
 $('#expGo').onclick = () => {
   const list = EXP.scope === 'sel' ? state.profiles.filter(p => selected.has(p.id)) : EXP.scope === 'view' ? visibleProfiles() : state.profiles;
   if (!list.length) { toast('Nothing to export'); return; }
+  const bot = typeof BotFormats !== 'undefined' && BotFormats.byId[EXP.fmt];
+  if (bot) {
+    const cats = new Set(list.map(p => p.categoryId));
+    const base = (cats.size === 1 ? catName([...cats][0]) : 'Crown Tools profiles').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'profiles';
+    download(base + bot.ext, bot.write(list), bot.csv ? 'text/csv' : 'application/json');
+    closeDlg('dlgExport'); toast(`Exported ${plural(list.length, 'profile')} for ${bot.name}`); return;
+  }
   const rows = list.map(p => { const o = { category: catName(p.categoryId) }; FIELDS.forEach(f => { let v = p[f.k]; if (f.bool) v = v ? 'yes' : 'no'; if (f.g === 'Billing' && !f.bool && p.sameBilling) v = p['ship' + f.k.slice(4)]; o[f.k] = v ?? ''; }); o.notes = p.notes || ''; return o; });
   if (EXP.fmt === 'json') download(`crown-profiles-${stamp()}.json`, JSON.stringify(rows, null, 2), 'application/json');
   else download(`crown-profiles-${stamp()}.csv`, toCSV(Object.keys(rows[0]), rows), 'text/csv');

@@ -2,6 +2,14 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.5.4 — Profiles in Valor, Hayha, Stellar, Shikari and AYCD files (2026-10-21)
+
+- Export: pick Valor, Hayha, Stellar, Shikari or AYCD and you get a file in that bot’s exact layout (.valor.json, .Hayha, .stellar.json, .shikari.csv, .aycd.json), ready to load into the bot. Your last choice is remembered.
+- Import: load or paste a profile file from any of those bots and Crown Tools recognizes it automatically.
+- Importing the same file again updates the profiles that are already there (same name in the category) instead of making copies.
+- Profiles now keep the email password and the “one checkout per profile” setting that Valor and Shikari files carry.
+- Exported files are named after the category, like “Target.valor.json”.
+
 ## v0.5.3 — Adding categories works on phones (2026-10-21)
 
 - Fixed: “+ New category” did nothing on iPhone. Phones (especially home-screen apps) can block the browser’s built-in pop-ups, so Crown Tools now uses its own box to type a name or confirm.

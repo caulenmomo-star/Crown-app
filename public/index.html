@@ -101,13 +101,13 @@
   <div class="dbody">
     <div class="row">
       <div><label>Import into category</label><select id="impCat"></select></div>
-      <div><label>Or load a CSV / JSON file</label><input type="file" id="impFile" accept=".csv,.tsv,.txt,.json"></div>
+      <div><label>Or load a file (Valor, Hayha, Stellar, Shikari, AYCD, CSV or JSON)</label><input type="file" id="impFile"></div>
     </div>
     <div style="margin-top:12px"><label>Paste rows from a spreadsheet or CSV. The first row must be column headers.</label>
       <textarea id="impText" placeholder="name,email,phone,shipFirst,shipLast,shipAddr1,shipCity,shipState,shipZip,cardNumber,cardExpMonth,cardExpYear,cardCvv"></textarea></div>
     <div id="impPreview" class="small muted" style="margin-top:10px"></div>
     <div class="maplist" id="impMap"></div>
-    <div class="note">Headers are matched loosely ("First Name", "Address", "ZIP", "Card Number", "CVV", "Exp" as MM/YY all work). Missing billing columns = billing same as shipping. A <b>category</b> column puts each row in that category. <button class="linkbtn" id="tmplBtn">Download a blank template</button></div>
+    <div class="note"><b>Bot files</b> from Valor, Hayha, Stellar, Shikari and AYCD are recognized automatically: load the file or paste its contents. Profiles with the same name in the chosen category are updated instead of duplicated.<br><br>For spreadsheets, headers are matched loosely ("First Name", "Address", "ZIP", "Card Number", "CVV", "Exp" as MM/YY all work). Missing billing columns = billing same as shipping. A <b>category</b> column puts each row in that category. <button class="linkbtn" id="tmplBtn">Download a blank template</button></div>
   </div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="impGo" disabled>Import</button></div>
 </dialog>
@@ -139,7 +139,7 @@
   <div class="dbody">
     <div class="section">Which profiles</div><div class="chips" id="expScope"></div>
     <div class="section">Format</div><div class="chips" id="expFmt"></div>
-    <div class="note warn">Exports are <b>not encrypted</b> and include full card details. Delete the file after loading it into your bot.</div>
+    <div class="note warn">Exports are <b>not encrypted</b> and include full card details and email passwords. Delete the file after loading it into your bot.</div>
   </div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="expGo">Download</button></div>
 </dialog>
@@ -224,6 +224,7 @@
 <script src="parser.js"></script>
 <script src="core.js"></script>
 <script src="changelog.js"></script>
+<script src="botformats.js"></script>
 <script src="profiles.js"></script>
 <script src="orders.js"></script>
 <script src="pages.js"></script>

@@ -257,6 +257,14 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 .stdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;flex:0 0 auto}
 .dli .dright b{font-size:13px;white-space:nowrap}
 .mini .mmain{display:flex;flex-direction:column;gap:2px}
+/* export format tiles */
+#expFmt{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
+.fmttile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px 10px;border-radius:12px;white-space:normal;text-align:center;min-height:0}
+.fmttile.on{border-color:var(--accent);background:var(--accentSoft);box-shadow:0 0 0 1px var(--accent) inset}
+.fmttile .fn{font-weight:600;font-size:13px}
+.fmttile .fs{font-size:11px;color:var(--faint)}
+.boticon{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:10px;color:#fff;font-weight:700;font-size:14px;letter-spacing:-.3px;flex:0 0 auto}
+#impPreview .boticon{width:22px;height:22px;border-radius:6px;font-size:11px;vertical-align:-6px;margin-right:4px}
 /* in-app yes/no + text boxes */
 dialog.ask{width:min(440px,92vw)}
 .asktext p{margin:0 0 10px;color:var(--muted);line-height:1.5}
