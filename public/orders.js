@@ -757,14 +757,14 @@ $('#botGo').onclick = () => {
 };
 
 /* ================= houses ================= */
-const HF = { q: '', sort: 'orders' };
+const HF = { q: '', sort: 'orders', who: (() => { try { return localStorage.getItem('crown.hwho') || 'ok'; } catch { return 'ok'; } })() };
 function houseStats(h) {
   const os = houseOrders(h.id);
-  const names = {}, units = {}, profs = {};
-  os.forEach(o => { if (o.name) names[o.name] = (names[o.name] || 0) + 1; if (o.addr2) units[o.addr2] = (units[o.addr2] || 0) + 1; if (o.profileId) profs[o.profileId] = (profs[o.profileId] || 0) + 1; });
+  const tally = list => { const names = {}, units = {}, profs = {}; list.forEach(o => { if (o.name) names[o.name] = (names[o.name] || 0) + 1; if (o.addr2) units[o.addr2] = (units[o.addr2] || 0) + 1; if (o.profileId) profs[o.profileId] = (profs[o.profileId] || 0) + 1; }); return { names, units, profs }; };
+  const all = tally(os), ok = tally(os.filter(isStuck)); const { names, units, profs } = all;
   const by = {}; STATUSES.forEach(s => by[s.k] = 0); os.forEach(o => by[o.status] = (by[o.status] || 0) + 1);
   const last = os.reduce((a, o) => o.orderDate > a ? o.orderDate : a, '');
-  return { os, n: os.length, spent: sum(os, orderSpend), active: os.filter(isActive).length, delivered: by.delivered, dead: by.cancelled + by.refunded, by, names, units, profs, last };
+  return { os, n: os.length, spent: sum(os, orderSpend), active: os.filter(isActive).length, delivered: by.delivered, dead: by.cancelled + by.refunded, by, names, units, profs, all, ok, last };
 }
 PAGES.houses = {
   render(arg) {
@@ -782,7 +782,7 @@ PAGES.houses = {
       ${noAddr ? `<div class="note" style="margin:0 0 12px">${plural(noAddr, 'order')} ${noAddr === 1 ? 'has' : 'have'} no shipping address yet, so ${noAddr === 1 ? 'it isn’t' : 'they aren’t'} in a house. Addresses come from order confirmation emails. <a href="#orders" onclick="OF.house='__none'">See them</a></div>` : ''}
       ${hs.length ? `<div class="housegrid">${hs.map(({ h, s }) => `<div class="house" data-house="${h.id}">
         <div class="t ellipsis">${esc(houseLabel(h))}</div><div class="a ellipsis">${esc(h.nickname ? houseAddr(h) : [h.city, [h.state, h.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</div>
-        <div class="stats"><div><b>${s.n}</b>orders</div><div><b>${fmtMoney(s.spent, true)}</b>spent</div><div><b>${s.active}</b>active</div><div><b>${Object.keys(s.names).length}</b>names</div></div>
+        <div class="stats"><div><b>${s.n}</b>orders</div><div><b>${fmtMoney(s.spent, true)}</b>spent</div><div><b>${s.active}</b>active</div><div><b>${Object.keys((HF.who === 'all' ? s.all : s.ok).names).length}</b>names</div></div>
         <div class="bar">${STATUSES.filter(st => s.by[st.k]).map(st => `<span title="${st.l}: ${s.by[st.k]}" style="width:${s.by[st.k] / s.n * 100}%;background:${st.c}"></span>`).join('')}</div>
         <div class="small faint" style="margin-top:8px">${s.last ? 'Last order ' + fmtDate(s.last) : ''}</div></div>`).join('')}</div>` : `<div class="empty">${total ? 'No houses match.' : 'No houses yet. Houses are created automatically from the shipping address on your order emails.'}</div>`}`;
     $('#hQ').oninput = debounce(e => { HF.q = e.target.value; PAGES.houses.render(); const i = $('#hQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 160);
@@ -798,6 +798,7 @@ function renderHouse(id) {
   const groups = [['Active', s.os.filter(isActive)], ['Delivered', s.os.filter(o => o.status === 'delivered')], ['Cancelled & refunded', s.os.filter(isDead)]];
   const chipsOf = obj => Object.entries(obj).sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="badge">${esc(k)} <span class="faint">${n}</span></span>`).join(' ') || '<span class="faint small">None</span>';
   const others = state.houses.filter(x => x.id !== h.id && houseOrders(x.id).length);
+  const W = HF.who === 'all' ? s.all : s.ok;
   pg.innerHTML = `<div class="pagehead"><button class="ghost sm" data-nav="houses">‹ Houses</button><h1>${esc(houseLabel(h))}</h1><span class="sub">${esc(houseAddr(h))}</span><div class="spacer"></div>
     <button id="hNick">${h.nickname ? 'Rename' : 'Give it a nickname'}</button>
     <select id="hMerge" style="width:auto"><option value="">Merge into…</option>${others.map(x => `<option value="${x.id}">${esc(houseLabel(x))}</option>`).join('')}</select></div>
@@ -808,10 +809,11 @@ function renderHouse(id) {
       <div class="kpi"><div class="l">Delivered</div><div class="v">${s.delivered}</div></div>
       <div class="kpi"><div class="l">Cancelled</div><div class="v">${s.dead}</div><div class="d">${(() => { const si = stickInfo(s.os); return si.rate == null ? (si.pending ? si.pending + ' pending' : '') : si.rate + '% stick rate' + (si.pending ? ' · ' + si.pending + ' pending' : ''); })()}</div></div>
     </div>
+    <div class="toolbar" style="margin-bottom:8px"><span class="small muted">Names, line 2 and profiles from</span><div class="chips" id="hWho">${[['ok', 'Successful orders'], ['all', 'All orders']].map(([k, l]) => `<button class="chip ${HF.who === k ? 'on' : ''}" data-who="${k}">${l}</button>`).join('')}</div><span class="small faint">${HF.who === 'ok' ? 'shipped or delivered only' : 'includes cancelled and pending'}</span></div>
     <div class="cols3" style="margin-bottom:14px">
-      <div class="card"><h3>Names used</h3>${chipsOf(s.names)}</div>
-      <div class="card"><h3>Units / line 2 used</h3>${chipsOf(s.units)}</div>
-      <div class="card"><h3>Profiles</h3>${Object.keys(s.profs).length ? Object.entries(s.profs).sort((a, b) => b[1] - a[1]).map(([pid, n]) => { const p = profileById(pid); return p ? `<button class="chip" data-prof="${pid}">${esc(p.name || 'Untitled')} <span class="n">${n}</span></button>` : ''; }).join(' ') : '<span class="faint small">No linked profiles</span>'}</div>
+      <div class="card"><h3>Names used</h3>${chipsOf(W.names)}</div>
+      <div class="card"><h3>Units / line 2 used</h3>${chipsOf(W.units)}</div>
+      <div class="card"><h3>Profiles</h3>${Object.keys(W.profs).length ? Object.entries(W.profs).sort((a, b) => b[1] - a[1]).map(([pid, n]) => { const p = profileById(pid); return p ? `<button class="chip" data-prof="${pid}">${esc(p.name || 'Untitled')} <span class="n">${n}</span></button>` : ''; }).join(' ') : '<span class="faint small">No linked profiles</span>'}</div>
     </div>
     <div class="card" style="margin-bottom:14px"><h3>Notes</h3><textarea id="hNotes" style="min-height:60px;font-family:inherit;font-size:13px" placeholder="Gate code, who lives here, drop-off notes…">${esc(h.notes || '')}</textarea></div>
     ${groups.map(([l, os]) => `<div class="card" style="margin-bottom:14px"><h3>${l} <span class="badge">${os.length}</span><span class="spacer"></span>${os.length ? fmtMoney(sum(os, o => isDead(o) ? Number(o.total) || 0 : orderSpend(o))) : ''}</h3>${orderMiniList(os.sort((a, b) => String(b.orderDate).localeCompare(String(a.orderDate))), { empty: 'None' })}</div>`).join('')}`;
@@ -825,4 +827,5 @@ function renderHouse(id) {
     state.houses = state.houses.filter(x => x.id !== h.id); save(); go('houses', to.id); toast('Houses merged', { undo: true });
   };
   pg.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => openProfile(b.dataset.prof));
+  $('#hWho').onclick = e => { const b = e.target.closest('[data-who]'); if (!b) return; HF.who = b.dataset.who; try { localStorage.setItem('crown.hwho', HF.who); } catch {} const y = window.scrollY; renderHouse(id); window.scrollTo(0, y); };
 }

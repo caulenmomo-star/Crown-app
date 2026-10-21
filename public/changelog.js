@@ -1,6 +1,10 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.8', date: '2026-10-21', title: 'House names: successful orders only', items: [
+    'Each house’s Names used, Units / line 2 used and Profiles now count only successful orders (shipped or delivered) by default.',
+    'A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Crown remembers your choice.',
+  ] },
   { v: '0.4.7', date: '2026-10-20', title: 'Checked against your real orders', items: [
     'Fixed: orders whose arrival date had been copied from the order confirmation by older versions kept that guess. Now only a shipping email, live carrier tracking or a date you typed counts as the arrival date. The rest show as “Original order said …”.',
     'Houses: misspelled unit words (“Suuite 635”, “Apartmnet 4”) and letter-only unit jigs (“Apt JAS”, “No. RCH”) are recognized, so those addresses join their main house instead of making new ones.',

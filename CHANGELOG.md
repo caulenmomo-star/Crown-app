@@ -2,6 +2,11 @@
 
 Crown is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.4.8 — House names: successful orders only (2026-10-21)
+
+- Each house’s Names used, Units / line 2 used and Profiles now count only successful orders (shipped or delivered) by default.
+- A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Crown remembers your choice.
+
 ## v0.4.7 — Checked against your real orders (2026-10-20)
 
 - Fixed: orders whose arrival date had been copied from the order confirmation by older versions kept that guess. Now only a shipping email, live carrier tracking or a date you typed counts as the arrival date. The rest show as “Original order said …”.
