@@ -1,6 +1,12 @@
 /* Crown - release notes. Crown is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.4.7', date: '2026-10-20', title: 'Checked against your real orders', items: [
+    'Fixed: orders whose arrival date had been copied from the order confirmation by older versions kept that guess. Now only a shipping email, live carrier tracking or a date you typed counts as the arrival date. The rest show as “Original order said …”.',
+    'Houses: misspelled unit words (“Suuite 635”, “Apartmnet 4”) and letter-only unit jigs (“Apt JAS”, “No. RCH”) are recognized, so those addresses join their main house instead of making new ones.',
+    '“Couldn’t read” no longer lists emails that have since been read.',
+    'Walmart’s “You might also like” section is no longer read as part of the order.',
+  ] },
   { v: '0.4.6', date: '2026-10-20', title: 'Live UPS & FedEx dates, fresh re-read', items: [
     'New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Crown asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Crown and after every sync.',
     'Fixed a time-zone bug that could put live-tracking dates one day early.',

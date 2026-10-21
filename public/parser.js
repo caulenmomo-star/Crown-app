@@ -303,11 +303,16 @@
   const UNIT_LEAD = new RegExp('^((?:' + UNIT_WORDS + '\\.?\\s*#?\\s*' + UNIT_VAL + '|#\\s*[a-z0-9\\-]+))[\\s,]+(?=\\d)', 'i');
   const SUFFIX = '(?:st|str|street|ave|av|avenue|rd|road|dr|drive|ln|lane|ct|court|blvd|boulevard|way|pl|place|cir|circle|pkwy|parkway|hwy|highway|ter|terrace|trl|trail|loop|row|run|pass|pike|sq|square|n|s|e|w|ne|nw|se|sw|north|south|east|west|northeast|northwest|southeast|southwest)';
   const BARE_TAIL = new RegExp('^(.*\\b' + SUFFIX + '\\.?)\\s+(\\d{1,5}[a-z]?|[a-df-mo-rt-vx-z])$', 'i');
+  const FUZZY_UNIT = ['suite', 'apartment', 'unit', 'apt', 'building', 'bldg', 'room', 'floor', 'space', 'trailer', 'lot', 'ste'];
   function splitUnit(addr1) {
     let s = String(addr1 || '').replace(/\s+/g, ' ').trim(); const units = [];
     const lead = s.match(UNIT_LEAD); if (lead) { units.push(lead[1]); s = s.slice(lead[0].length); }
     const any = s.match(UNIT_ANY);
     if (any && any.index > 0 && /\d/.test(s.slice(0, any.index))) { units.push(any[1]); s = s.slice(0, any.index); }
+    // letter-only unit jigs at the end: "Apt JAS", "Suite MGW", "No. RCH"
+    { const m = s.match(/^(.*\d.*?)[\s,]+((?:apt|apartment|unit|suite|ste|fl|flr|floor|bldg|building|rm|room|no|dept|lot|spc|space)\.?\s*#?\s*[a-z]{1,4})$/i); if (m && /\s/.test(m[1]) && !KNOWN_TOK(fixTok(m[2].split(/[\s.#]+/).pop().toLowerCase()))) { units.push(m[2]); s = m[1]; } }
+    // misspelled unit words from address jigs: "Suuite 635", "Apartmnet 4", "Unti 9"
+    { const toks = s.split(' '); for (let j = 2; j < toks.length - 1; j++) { const w = toks[j].toLowerCase().replace(/[^a-z]/g, ''); if (w.length >= 3 && /\d/.test(toks[j + 1]) && FUZZY_UNIT.some(u => Math.abs(u.length - w.length) <= 2 && dl(u, w) <= (u.length >= 5 ? 2 : 1))) { units.push(toks.slice(j).join(' ')); s = toks.slice(0, j).join(' '); break; } } }
     const bare = s.match(BARE_TAIL);
     if (bare && /\d/.test(bare[1])) { units.push(bare[2]); s = bare[1]; }
     return { street: s.replace(/[\s,#]+$/, '').trim(), unit: units.join(' ').replace(/\s+/g, ' ').trim() };
@@ -517,7 +522,7 @@
 
   // ---------------------------------------------------------------- main
   // Everything after these lines is store recommendations, not your order.
-  const RECS = /^(up next, just for you|check everything off your list|you may also like|recommended for you|customers (also|who) bought|more to explore|inspired by your|picked for you|explore everything|shop similar|related items|trending now|don.t miss today)/i;
+  const RECS = /^(up next, just for you|you might also like|check everything off your list|you may also like|recommended for you|customers (also|who) bought|more to explore|inspired by your|picked for you|explore everything|shop similar|related items|trending now|don.t miss today)/i;
   const cutRecs = t => { const ls = String(t || '').split('\n'); const i = ls.findIndex(l => RECS.test(l.trim())); return (i > 0 ? ls.slice(0, i) : ls).join('\n'); };
   function parseOrderEmail(m) {
     const subject = String(m.subject || '');

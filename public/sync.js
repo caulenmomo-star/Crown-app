@@ -173,16 +173,9 @@ function onUnlocked() {
     const junk = state.orders.filter(isSuspicious).length, dup = suggestedDuplicates().length;
     if (merged || junk || dup) setTimeout(() => toast(`Cleanup: merged ${plural(merged, 'duplicate order')}${junk || dup ? ` · ${junk + dup} more to review on the Orders page` : ''}`), 800);
   }
-  // 0.4.5: arrival dates only come from shipping emails; confirmation dates become "original order said".
-  if (state.etaVer !== 2 && state.orders.length) {
-    for (const o of state.orders) {
-      if (!o.eta || o.etaLocked) continue;
-      const fromShip = o.etaFrom ? ['shipped', 'out', 'ready'].includes(Parser.classifyStatus(o.etaFrom)) : ['shipped', 'out', 'ready', 'delivered'].includes(o.status) && (o.tracking || []).length > 0;
-      if (!fromShip) { if (!o.estEta) { o.estEta = o.eta; o.estEtaEnd = o.etaEnd || ''; o.estFrom = o.etaFrom || ''; o.estAt = o.etaAt || ''; } o.eta = ''; o.etaEnd = ''; o.etaAt = ''; o.etaFrom = ''; }
-    }
-    state.etaVer = 2; invalidateStats(); save(); refresh();
-  }
-  if (state.houseVer !== 3 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
+  // arrival dates only come from shipping emails / carrier tracking; confirmation guesses become "original order said"
+  if (state.etaVer !== 3 && state.orders.length) { cleanEtas(); pruneUnparsed(); state.etaVer = 3; invalidateStats(); save(); refresh(); }
+  if (state.houseVer !== 4 && state.orders.length) { regroupHouses(); invalidateStats(); save(); refresh(); }
   // 0.4.0: the email reader was rebuilt against real store emails (totals, items + pictures, addresses, tracking,
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
   const needReread = state.readerVer !== READER_VER;
@@ -223,7 +216,7 @@ async function rereadAll(auto) {
     await syncAll(false, accs.map(a => a.id), { days, fresh: true, reapply: true, full: true });
     if (!cryptoKey) return;
     const failed = accs.filter(a => a.lastResult && a.lastResult.error);
-    fixOrderNumbers(); mergeSameNumber(); regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); pruneHouses(); invalidateStats();
+    fixOrderNumbers(); mergeSameNumber(); cleanEtas(); pruneUnparsed(); regroupHouses(); state.orders.forEach(fillImages); autoLinkAll(); pruneHouses(); invalidateStats();
     if (!failed.length) state.readerVer = READER_VER;
     save(); refresh();
     const withPics = state.orders.filter(o => (o.items || []).some(i => i.image)).length, inHouse = state.orders.filter(o => o.houseId).length;

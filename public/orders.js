@@ -72,7 +72,10 @@ function mergeOrderInto(keep, o) {
   for (const h of o.history || []) if (!keep.history.some(x => x.date === h.date && x.status === h.status)) keep.history.push(h);
   keep.history.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   if ((STATUS[o.status] || {}).r > (STATUS[keep.status] || {}).r) keep.status = o.status;
-  for (const f of ['orderNumber', 'total', 'eta', 'deliveredAt', 'name', 'addr1', 'addr2', 'city', 'state', 'zip', 'recipientEmail', 'last4', 'houseId', 'notes']) if ((keep[f] == null || keep[f] === '') && o[f]) keep[f] = o[f];
+  // an arrival date travels with where it came from; the confirmation's guess stays separate
+  if (!keep.eta && o.eta) Object.assign(keep, { eta: o.eta, etaEnd: o.etaEnd || '', etaFrom: o.etaFrom || '', etaAt: o.etaAt || '', etaLocked: o.etaLocked });
+  if (!keep.estEta && o.estEta) Object.assign(keep, { estEta: o.estEta, estEtaEnd: o.estEtaEnd || '', estFrom: o.estFrom || '', estAt: o.estAt || '' });
+  for (const f of ['orderNumber', 'total', 'deliveredAt', 'name', 'addr1', 'addr2', 'city', 'state', 'zip', 'recipientEmail', 'last4', 'houseId', 'notes']) if ((keep[f] == null || keep[f] === '') && o[f]) keep[f] = o[f];
   if (o.profileLink === 'manual' && keep.profileLink !== 'manual') { keep.profileId = o.profileId; keep.profileLink = 'manual'; } else if (!keep.profileId && o.profileId) { keep.profileId = o.profileId; keep.profileLink = o.profileLink; }
   if ((!keep.store || keep.store === 'other') && o.store && o.store !== 'other') keep.store = o.store;
   if (o.orderDate && (!keep.orderDate || o.orderDate < keep.orderDate)) keep.orderDate = o.orderDate;
@@ -177,8 +180,23 @@ function regroupHouses() {
     if (best && Parser.sameHouse(Parser.houseSig(best[0], h.zip), houseSigOf(h))) h.addr1 = best[0];
   }
   pruneHouses();
-  state.houseVer = 3;
+  state.houseVer = 4;
 }
+// An arrival date is only real if it came from a shipping email or live carrier tracking (or you typed it).
+// Anything else (old builds copied the order confirmation's guess) becomes "originally estimated".
+function cleanEtas() {
+  let n = 0;
+  for (const o of state.orders) {
+    if (!o.eta || o.etaLocked) continue;
+    const ok = / tracking$/.test(o.etaFrom || '') || (!!o.etaFrom && ['shipped', 'out', 'ready'].includes(Parser.classifyStatus(o.etaFrom)));
+    if (ok) continue;
+    if (!o.estEta) Object.assign(o, { estEta: o.eta, estEtaEnd: o.etaEnd || '', estFrom: o.etaFrom || '', estAt: o.etaAt || '' });
+    Object.assign(o, { eta: '', etaEnd: '', etaFrom: '', etaAt: '' }); n++;
+  }
+  return n;
+}
+// Drop "couldn't read" entries for emails that did get read since.
+function pruneUnparsed() { const got = new Set(state.orders.flatMap(o => o.messageIds || [])); const before = state.unparsed.length; state.unparsed = state.unparsed.filter(u => !got.has(u.messageId)); return before - state.unparsed.length; }
 function pruneHouses() { const used = new Set(state.orders.map(o => o.houseId)); state.houses = state.houses.filter(h => used.has(h.id) || h.nickname || h.notes); }
 
 /* ---------- profile linking ---------- */
