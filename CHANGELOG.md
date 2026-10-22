@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.7 — Checkout card upgrades (2026-10-22)
+
+- Use your own photo as the Checkout card background, and save it as PNG or JPG.
+- Top items now show a picture of each product.
+- Added an estimated profit: what your items are worth at the TCGplayer median minus what you paid.
+
 ## v0.9.6 — Checkout card on the dashboard (2026-10-22)
 
 - The shareable Checkout card now sits at the top of the dashboard, with a cleaner, more compact layout.

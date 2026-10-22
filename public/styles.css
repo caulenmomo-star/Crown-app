@@ -792,3 +792,14 @@ html[data-theme=cherry] dialog{box-shadow:var(--shadow)}
   .recap-row{grid-template-columns:minmax(0,1fr);gap:6px}
   .recap-row .lbl{padding-top:0}
 }
+/* checkout card: photo, prices */
+.swatch i.ph{display:inline-flex;align-items:center;justify-content:center;background:var(--panel);color:var(--muted);font-style:normal;font-size:14px;box-shadow:inset 0 0 0 1px var(--line)}
+.recap-photo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.recap-photo input[type=range]{width:140px;accent-color:var(--accent)}
+.recap-prices{padding-top:5px;line-height:1.5}
+.recap-title b.pos{color:var(--ok)}.recap-title b.neg{color:var(--danger)}
+.prrow{align-items:flex-start}
+.prrow .mmain{flex:1;min-width:0}
+.prres{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.prres button{text-align:left;justify-content:flex-start;white-space:normal;height:auto;line-height:1.35;padding:6px 10px}
+.prsearch{display:flex;gap:6px;margin-top:6px}.prsearch input{flex:1;min-width:0}

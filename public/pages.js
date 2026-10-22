@@ -258,9 +258,10 @@ PAGES.spending = {
   },
 };
 /* ================= checkout card (shareable recap, top of the dashboard) ================= */
-// Settings are a per-device convenience: kept in this browser only.
-const SHARE = Object.assign({ money: true, items: true, store: true, range: 'page', theme: 'aurora' }, (() => { try { return JSON.parse(localStorage.getItem('crown.share') || '{}'); } catch (_) { return {}; } })());
+// Settings and your background photo are a per-device convenience: kept in this browser only.
+const SHARE = Object.assign({ money: true, items: true, store: true, pics: true, profit: true, range: 'page', theme: 'aurora', bg: 'theme', dim: 55, fmt: 'png' }, (() => { try { return JSON.parse(localStorage.getItem('crown.share') || '{}'); } catch (_) { return {}; } })());
 const saveShare = () => { try { localStorage.setItem('crown.share', JSON.stringify(SHARE)); } catch (_) { } };
+const sharePhoto = () => { try { return localStorage.getItem('crown.sharePhoto') || ''; } catch (_) { return ''; } };
 const THEMES = {
   aurora: { name: 'Aurora', bg: ['#0b1020', '#1b1748', '#0d3b3a'], blobs: ['#7c8cff', '#2dd4bf'], accent: '#a5b4fc' },
   ice: { name: 'Ice', bg: ['#07111f', '#0c2d4d', '#0a4f73'], blobs: ['#7dd3fc', '#e0f2fe'], accent: '#bae6fd' },
@@ -274,75 +275,148 @@ const RECAP_RANGES = [['page', 'Match dashboard'], ['today', 'Today'], ['yesterd
 function dashSpec() { if (DASH.from || DASH.to) return 'c:' + (DASH.from || '') + ':' + (DASH.to || ''); return DASH.days === 1 ? 'today' : String(DASH.days); }
 const recapSpec = () => SHARE.range === 'page' ? dashSpec() : SHARE.range;
 // "Pokémon Trading Card Game: Mega Evolution—…" -> "Mega Evolution—…" on the card
-const recapName = n => String(n || '').replace(/^(?:\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]?\s*)+/i, '').replace(/\s+/g, ' ').trim();
+const recapName = n => String(n || '').replace(/^(?:\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]?\s*)+/i, '').replace(/^(?:scarlet\s*&\s*violet|sword\s*&\s*shield|mega\s+evolution)\s*[—–:]\s*/i, '').replace(/\s+/g, ' ').trim();
+const fmtSigned = v => (v >= 0 ? '+' : '−') + fmtMoney(Math.abs(v), Math.abs(v) >= 10000);
+function recapData() {
+  const spec = recapSpec(), list = ordersInRange(spec), cs = spStats(list), pf = profitOf(list);
+  return { spec, list, cs, pf, label: rangeLabel(spec) };
+}
 function recapCardHtml() {
-  const spec = recapSpec(), cs = spStats(ordersInRange(spec));
+  const { spec, list, cs, pf, label } = recapData();
+  if (typeof ensureLinks === 'function') ensureLinks(list);
+  const names = new Map(); list.filter(o => !isDead(o)).forEach(o => (o.items || []).forEach(i => { if (i.name && qtyOf(i) > 0) names.set(i.name, (names.get(i.name) || 0) + qtyOf(i)); }));
+  const photo = sharePhoto();
+  const pfLine = !SHARE.money ? '' : pf.priced ? ` · <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> est. profit` : IV.busy || IV.queue.length ? ' · pricing items…' : '';
   return `<div class="card recap ${SHARE.open ? 'open' : ''}"><div class="recap-grid">
       <div class="recap-prev"><canvas id="shareCanvas" width="1080" height="1350" aria-label="Checkout card preview"></canvas></div>
-      <div class="recap-head"><div class="recap-title"><h3>Checkout card</h3><div class="small muted">${esc(rangeLabel(spec))} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}</div></div>
-          <div class="recap-btns"><button class="primary sm" id="shDl">Download</button><button class="sm" id="shCopy">Copy image</button><button class="sm ghost recap-tog" id="shTog">${SHARE.open ? 'Done' : 'Customize'}</button></div></div>
+      <div class="recap-head"><div class="recap-title"><h3>Checkout card</h3><div class="small muted">${esc(label)} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}${pfLine}</div></div>
+          <div class="recap-btns"><button class="primary sm" id="shDl">Save ${SHARE.fmt === 'jpg' ? 'JPG' : 'PNG'}</button><button class="sm" id="shCopy">Copy image</button><button class="sm ghost recap-tog" id="shTog">${SHARE.open ? 'Done' : 'Customize'}</button></div></div>
       <div class="recap-more">
         <div class="recap-row"><div class="lbl">Range</div><div><div class="chips sm" id="shRange">${RECAP_RANGES.map(([k, l]) => `<button class="chip ${SHARE.range === k ? 'on' : ''}" data-shr="${k}">${l}</button>`).join('')}</div>
           <div class="recap-dates"><input type="date" id="shFrom" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[1] : ''}" aria-label="From"><span class="faint">to</span><input type="date" id="shTo" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[2] : ''}" aria-label="To"></div></div></div>
-        <div class="recap-row"><div class="lbl">Theme</div><div class="swatches" id="shTheme">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${SHARE.theme === k ? 'on' : ''}" data-th="${k}" title="${t.name}" style="--sw:linear-gradient(135deg,${t.bg[1]},${t.blobs[0]} 60%,${t.blobs[1]})"><i></i><span>${t.name}</span></button>`).join('')}</div></div>
-        <div class="recap-row"><div class="lbl">Show</div><div class="chips sm">${[['money', 'Dollar amounts'], ['store', 'Top store'], ['items', 'Top items']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${SHARE[k] ? '✓ ' : ''}${l}</button>`).join('')}</div></div>
-        <div class="small faint recap-note">Never includes addresses, names, emails or card numbers.</div>
+        <div class="recap-row"><div class="lbl">Look</div><div><div class="swatches" id="shTheme">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${SHARE.bg !== 'photo' && SHARE.theme === k ? 'on' : ''}" data-th="${k}" title="${t.name}" style="--sw:linear-gradient(135deg,${t.bg[1]},${t.blobs[0]} 60%,${t.blobs[1]})"><i></i><span>${t.name}</span></button>`).join('')}
+            <button class="swatch ${SHARE.bg === 'photo' ? 'on' : ''}" id="shPhotoBtn" ${photo ? `style="--sw:url('${photo}') center/cover"` : ''}><i class="${photo ? '' : 'ph'}">${photo ? '' : '＋'}</i><span>${photo ? 'Your photo' : 'Use a photo'}</span></button></div>
+          <input type="file" id="shPhoto" accept="image/png,image/jpeg,image/webp,image/heic" hidden>
+          ${SHARE.bg === 'photo' && photo ? `<div class="recap-photo"><span class="small muted">Darken</span><input type="range" id="shDim" min="10" max="85" value="${SHARE.dim}"><button class="sm ghost" id="shPhotoNew">Change</button><button class="sm ghost" id="shPhotoDel">Remove</button></div>` : ''}</div></div>
+        <div class="recap-row"><div class="lbl">Show</div><div class="chips sm">${[['money', 'Dollar amounts'], ['profit', 'Est. profit'], ['store', 'Top store'], ['items', 'Top items'], ['pics', 'Item pictures']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${SHARE[k] ? '✓ ' : ''}${l}</button>`).join('')}</div></div>
+        <div class="recap-row"><div class="lbl">Save as</div><div class="chips sm">${[['png', 'PNG'], ['jpg', 'JPG']].map(([k, l]) => `<button class="chip ${SHARE.fmt === k ? 'on' : ''}" data-fmt="${k}">${l}</button>`).join('')}<span class="small faint" style="align-self:center;margin-left:6px">1080 × 1350</span></div></div>
+        <div class="recap-row"><div class="lbl">Prices</div><div class="small muted recap-prices">${names.size ? `${pf.priced ? `${pf.priced} of ${pf.units} items valued at the TCGplayer median — worth ${fmtMoney(pf.value)}, cost ${fmtMoney(pf.cost)}.` : IV.busy || IV.queue.length ? `Matching items to TCGplayer… ${IV.done}/${IV.total}` : 'No items here could be matched to TCGplayer yet.'} <button class="linkbtn" id="shReview">Review prices</button>` : 'No item details in this range.'}</div></div>
+        <div class="small faint recap-note">Never includes addresses, names, emails or card numbers. eBay’s sold prices aren’t available to apps like this, so values come from TCGplayer.</div>
       </div></div></div>`;
+}
+let recapDraw = Promise.resolve();
+async function paintRecap() {
+  const cv = $('#shareCanvas'); if (!cv) return;
+  const d = recapData();
+  drawShareCard(cv, d, {}); // right away, then again once pictures load
+  const top = SHARE.items ? d.cs.topItems.slice(0, 5) : [];
+  const urls = SHARE.pics ? top.map(it => it.image || ((linkFor(it.name) || {}).image) || '') : [];
+  const bg = SHARE.bg === 'photo' ? sharePhoto() : '';
+  if (!bg && !urls.some(Boolean)) return;
+  const wait = (p, ms) => Promise.race([p, new Promise(r => setTimeout(() => r(null), ms))]);
+  const [bgImg, ...thumbs] = await Promise.all([wait(loadImg(bg), 8000), ...urls.map(u => wait(loadImg(u), 8000))]);
+  if (cv.isConnected) drawShareCard(cv, d, { bg: bgImg, thumbs });
+}
+// downsize a photo you pick to the card's size (cover crop) and keep it on this device
+async function takePhoto(file) {
+  const url = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  const im = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('That file isn’t a picture this browser can open — try a PNG or JPG.')); i.src = url; });
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1350; const x = c.getContext('2d');
+  const s = Math.max(1080 / im.width, 1350 / im.height), w = im.width * s, h = im.height * s; x.drawImage(im, (1080 - w) / 2, (1350 - h) / 2, w, h);
+  const out = c.toDataURL('image/jpeg', 0.86);
+  try { localStorage.setItem('crown.sharePhoto', out); } catch (_) { throw new Error('That photo is too big to keep on this device — try a smaller one.'); }
+  IMG.delete(out);
 }
 function wireRecapCard(rerender) {
   const cv = $('#shareCanvas'); if (!cv) return;
-  const spec = recapSpec(); drawShareCard(cv, spStats(ordersInRange(spec)), rangeLabel(spec));
+  IV.onUpdate = () => { if (route.page === 'dashboard' && cryptoKey && !document.querySelector('dialog[open]')) rerender(); else if ($('#dlgPrices').open) renderPriceReview(); };
+  recapDraw = paintRecap();
   const set = fn => { fn(); saveShare(); rerender(); };
   $('#shTog').onclick = () => set(() => SHARE.open = !SHARE.open);
   $('#shRange').onclick = e => { const b = e.target.closest('[data-shr]'); if (b) set(() => SHARE.range = b.dataset.shr); };
-  $('#shTheme').onclick = e => { const b = e.target.closest('[data-th]'); if (b) set(() => SHARE.theme = b.dataset.th); };
+  $('#shTheme').onclick = e => { const b = e.target.closest('[data-th]'); if (b) set(() => { SHARE.theme = b.dataset.th; SHARE.bg = 'theme'; }); };
   $$('.recap [data-sh]').forEach(b => b.onclick = () => set(() => SHARE[b.dataset.sh] = !SHARE[b.dataset.sh]));
+  $$('.recap [data-fmt]').forEach(b => b.onclick = () => set(() => SHARE.fmt = b.dataset.fmt));
   $('#shFrom').onchange = $('#shTo').onchange = () => { const f = $('#shFrom').value, t = $('#shTo').value; if (f || t) set(() => SHARE.range = 'c:' + f + ':' + t); };
-  $('#shDl').onclick = () => cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png');
-  $('#shCopy').onclick = () => cv.toBlob(async b => { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Download instead.'); } }, 'image/png');
+  $('#shPhotoBtn').onclick = () => { if (sharePhoto() && SHARE.bg !== 'photo') set(() => SHARE.bg = 'photo'); else $('#shPhoto').click(); };
+  if ($('#shPhotoNew')) $('#shPhotoNew').onclick = () => $('#shPhoto').click();
+  $('#shPhoto').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await takePhoto(f); set(() => SHARE.bg = 'photo'); } catch (err) { toast(err.message); } };
+  if ($('#shPhotoDel')) $('#shPhotoDel').onclick = () => { try { localStorage.removeItem('crown.sharePhoto'); } catch (_) { } set(() => SHARE.bg = 'theme'); };
+  if ($('#shDim')) { $('#shDim').oninput = e => { SHARE.dim = +e.target.value; saveShare(); paintRecap(); }; }
+  if ($('#shReview')) $('#shReview').onclick = () => { const names = new Map(); recapData().list.filter(o => !isDead(o)).forEach(o => (o.items || []).forEach(i => { if (i.name && qtyOf(i) > 0) names.set(i.name, (names.get(i.name) || 0) + qtyOf(i)); })); openPriceReview([...names.entries()].sort((a, b) => b[1] - a[1])); };
+  const blob = type => recapDraw.then(() => new Promise(res => cv.toBlob(res, type, 0.92)));
+  $('#shDl').onclick = async () => { const jpg = SHARE.fmt === 'jpg', b = await blob(jpg ? 'image/jpeg' : 'image/png'); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.${jpg ? 'jpg' : 'png'}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
+  $('#shCopy').onclick = async () => { try { const b = await blob('image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Save instead.'); } };
 }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function fitFont(ctx, text, maxW, weight, size, F) { let s = size; ctx.font = `${weight} ${s}px ${F}`; while (s > 18 && ctx.measureText(String(text)).width > maxW) { s -= 2; ctx.font = `${weight} ${s}px ${F}`; } return s; }
 function fitText(ctx, text, maxW) { text = String(text); if (ctx.measureText(text).width <= maxW) return text; while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1); return text.trim() + '…'; }
-function drawShareCard(cv, s, label) {
+function drawShareCard(cv, d, img) {
+  const s = d.cs, pf = d.pf, label = d.label; img = img || {};
   const ctx = cv.getContext('2d'); const W = cv.width, H = cv.height; const T = THEMES[SHARE.theme] || THEMES.aurora;
   const F = '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", sans-serif', L = 84, R = W - 84, CW = R - L;
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, T.bg[0]); g.addColorStop(0.55, T.bg[1]); g.addColorStop(1, T.bg[2]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  [[W * 0.88, H * 0.1, 560, T.blobs[0]], [W * 0.08, H * 0.82, 640, T.blobs[1]]].forEach(([x, y, r, c]) => { const rg = ctx.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, c + '55'); rg.addColorStop(1, c + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); });
+  // background: your photo (darkened, tinted with the theme) or the theme's gradient
+  if (img.bg) {
+    ctx.drawImage(img.bg, 0, 0, W, H);
+    const g = ctx.createLinearGradient(0, 0, 0, H); const a = Math.max(0.1, Math.min(0.85, (SHARE.dim || 55) / 100));
+    g.addColorStop(0, `rgba(0,0,0,${a * 0.85})`); g.addColorStop(0.45, `rgba(0,0,0,${Math.min(0.92, a + 0.08)})`); g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, a + 0.2)})`); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    const rg = ctx.createRadialGradient(W * 0.88, H * 0.08, 0, W * 0.88, H * 0.08, 520); rg.addColorStop(0, T.blobs[0] + '40'); rg.addColorStop(1, T.blobs[0] + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, T.bg[0]); g.addColorStop(0.55, T.bg[1]); g.addColorStop(1, T.bg[2]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    [[W * 0.88, H * 0.1, 560, T.blobs[0]], [W * 0.08, H * 0.82, 640, T.blobs[1]]].forEach(([x, y, r, c]) => { const rg = ctx.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, c + '55'); rg.addColorStop(1, c + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); });
+  }
   // header: crown + title on the left, the date range in a pill on the right
   ctx.fillStyle = '#f5c451'; ctx.save(); ctx.translate(L, 84); ctx.scale(2.4, 2.4); ctx.beginPath(); ctx.moveTo(3, 18); ctx.lineTo(21, 18); ctx.lineTo(22, 7); ctx.lineTo(16.5, 11); ctx.lineTo(12, 4); ctx.lineTo(7.5, 11); ctx.lineTo(2, 7); ctx.closePath(); ctx.fill(); ctx.fillRect(3, 19.5, 18, 2); ctx.restore();
   ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.font = `700 32px ${F}`; ctx.fillText('CHECKOUT RECAP', L + 76, 128);
   const lab = String(label || ''); ctx.font = `600 26px ${F}`; const lw = Math.min(ctx.measureText(lab).width + 44, 420);
-  ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(ctx, R - lw, 90, lw, 54, 27); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(fitText(ctx, lab, lw - 40), R - lw / 2, 126); ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,.12)'; rr(ctx, R - lw, 90, lw, 54, 27); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(fitText(ctx, lab, lw - 40), R - lw / 2, 126); ctx.textAlign = 'left';
   // the big number
   const big = SHARE.money ? fmtMoney(s.spent, s.spent >= 100000) : String(s.live.length);
-  ctx.fillStyle = '#fff'; fitFont(ctx, big, CW, 800, SHARE.money ? 156 : 176, F); ctx.fillText(big, L - 6, 352);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 32px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), L, 412);
+  ctx.fillStyle = '#fff'; fitFont(ctx, big, CW, 800, SHARE.money ? 150 : 170, F); ctx.fillText(big, L - 6, 336);
+  ctx.fillStyle = 'rgba(255,255,255,.72)'; ctx.font = `500 30px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), L, 392);
   // stat tiles
   const boxes = [[SHARE.money ? String(s.live.length) : String(s.items), SHARE.money ? 'Orders' : 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [SHARE.money ? USD0.format(Math.round(s.avg || 0)) : String(s.dead.length), SHARE.money ? 'Avg order' : 'Cancelled'], [String(s.items), 'Items']].slice(0, SHARE.money ? 4 : 3);
-  const gap = 20, bw = (CW - (boxes.length - 1) * gap) / boxes.length, by = 466, bh = 150;
-  boxes.forEach(([v, l], i) => { const x = L + i * (bw + gap); ctx.fillStyle = 'rgba(255,255,255,.08)'; rr(ctx, x, by, bw, bh, 24); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.13)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 44, 750, 54, F); ctx.fillText(v, x + 24, by + 80); ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `500 24px ${F}`; ctx.fillText(l, x + 24, by + 120); });
-  let y = by + bh + 86;
-  const head = t => { ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `700 22px ${F}`; ctx.fillText(t.split('').join(String.fromCharCode(8202)), L, y); };
+  const gap = 20, bw = (CW - (boxes.length - 1) * gap) / boxes.length, by = 438, bh = 140;
+  boxes.forEach(([v, l], i) => { const x = L + i * (bw + gap); ctx.fillStyle = 'rgba(255,255,255,.09)'; rr(ctx, x, by, bw, bh, 24); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 44, 750, 52, F); ctx.fillText(v, x + 24, by + 76); ctx.fillStyle = 'rgba(255,255,255,.64)'; ctx.font = `500 23px ${F}`; ctx.fillText(l, x + 24, by + 114); });
+  let y = by + bh + 26;
+  // estimated profit: TCGplayer median value of what was bought, minus what it cost
+  if (SHARE.money && SHARE.profit && pf && pf.priced) {
+    const ph = 132, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
+    ctx.fillStyle = up ? 'rgba(74,222,128,.12)' : 'rgba(248,113,113,.12)'; rr(ctx, L, y, CW, ph, 24); ctx.fill(); ctx.strokeStyle = up ? 'rgba(74,222,128,.35)' : 'rgba(248,113,113,.35)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText('EST. PROFIT', L + 28, y + 42);
+    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW * 0.5, 800, 60, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 104);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = `600 28px ${F}`; ctx.fillText('Worth ' + fmtMoney(pf.value, pf.value >= 10000), R - 28, y + 58);
+    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `500 22px ${F}`; ctx.fillText(`TCGplayer median · ${pf.priced}${pf.priced < pf.units ? ' of ' + pf.units : ''} items`, R - 28, y + 96); ctx.textAlign = 'left';
+    y += ph + 24;
+  }
+  const head = t => { ctx.fillStyle = 'rgba(255,255,255,.56)'; ctx.font = `700 21px ${F}`; ctx.fillText(t, L, y); };
+  y += 30;
   if (SHARE.store && s.byStore[0]) {
-    head('TOP STORE'); y += 58;
+    head('TOP STORE'); y += 54;
     ctx.fillStyle = Parser.storeInfo(s.byStore[0].k).color; ctx.beginPath(); ctx.arc(L + 14, y - 14, 13, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = `700 42px ${F}`; const sn = s.byStore[0].name; ctx.fillText(sn, L + 44, y);
-    const w1 = ctx.measureText(sn).width; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `500 34px ${F}`; ctx.fillText('·  ' + plural(s.byStore[0].n, 'order') + (SHARE.money ? '  ·  ' + fmtMoney(s.byStore[0].v, true) : ''), L + 44 + w1 + 18, y);
-    y += 92;
+    ctx.fillStyle = '#fff'; ctx.font = `700 40px ${F}`; const sn = s.byStore[0].name; ctx.fillText(sn, L + 44, y);
+    const w1 = ctx.measureText(sn).width; ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `500 32px ${F}`; ctx.fillText('·  ' + plural(s.byStore[0].n, 'order') + (SHARE.money ? '  ·  ' + fmtMoney(s.byStore[0].v, true) : ''), L + 44 + w1 + 18, y);
+    y += 74;
   }
   if (SHARE.items && s.topItems.length) {
-    head('TOP ITEMS'); y += 30;
-    const rows = Math.max(0, Math.min(5, Math.floor((H - 150 - y) / 70)));
-    s.topItems.slice(0, rows).forEach(it => {
-      const q = it.qty + '×'; ctx.font = `700 28px ${F}`; const qw = Math.max(72, ctx.measureText(q).width + 30);
-      ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(ctx, L, y, qw, 50, 25); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(q, L + qw / 2, y + 35); ctx.textAlign = 'left';
-      ctx.fillStyle = '#fff'; ctx.font = `500 32px ${F}`; ctx.fillText(fitText(ctx, recapName(it.name), CW - qw - 22), L + qw + 22, y + 36);
-      y += 70;
+    head('TOP ITEMS'); y += 24;
+    const pics = SHARE.pics, rowH = pics ? 82 : 66, rows = Math.max(0, Math.min(5, Math.floor((H - 120 - y) / rowH)));
+    s.topItems.slice(0, rows).forEach((it, i) => {
+      let x = L;
+      if (pics) {
+        const sz = 66, im = (img.thumbs || [])[i];
+        ctx.save(); rr(ctx, x, y, sz, sz, 14); ctx.fillStyle = im ? '#fff' : 'rgba(255,255,255,.08)'; ctx.fill(); ctx.clip();
+        if (im) { const sc = Math.min((sz - 8) / im.width, (sz - 8) / im.height), w = im.width * sc, h = im.height * sc; ctx.drawImage(im, x + (sz - w) / 2, y + (sz - h) / 2, w, h); }
+        ctx.restore(); x += sz + 20;
+      }
+      const q = it.qty + '×'; ctx.font = `700 26px ${F}`; const qw = Math.max(66, ctx.measureText(q).width + 28), cy = y + (pics ? 33 : 25);
+      ctx.fillStyle = 'rgba(255,255,255,.12)'; rr(ctx, x, cy - 24, qw, 48, 24); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(q, x + qw / 2, cy + 9); ctx.textAlign = 'left';
+      ctx.fillStyle = '#fff'; ctx.font = `500 31px ${F}`; ctx.fillText(fitText(ctx, recapName(it.name), R - (x + qw + 20)), x + qw + 20, cy + 11);
+      y += rowH;
     });
   }
-  ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.font = `500 22px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), L, H - 64);
+  ctx.fillStyle = 'rgba(255,255,255,.44)'; ctx.font = `500 22px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), L, H - 60);
 }
 
 /* ================= inboxes ================= */

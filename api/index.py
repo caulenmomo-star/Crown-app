@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.9.6"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.9.7"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -986,6 +986,64 @@ def carrier_test(req):
 
 
 
+
+# ---------------------------------------------------------------- product pictures for the Checkout card
+# A canvas can't be saved once a picture from another site is drawn on it, so pictures are fetched here and handed
+# back as data. Only public https image addresses: never this computer or a private network, a size cap, images only.
+IMG_MAX = 2_500_000
+IMG_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
+
+
+def _public_host(host):
+    import ipaddress
+    if os.environ.get("CROWN_IMG_ALLOW_LOCAL") and host in ("127.0.0.1", "localhost"):
+        return True
+    try:
+        infos = socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)
+    except Exception:
+        return False
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return bool(infos)
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def image_fetch(req):
+    url = str(req.get("url") or "").strip()
+    for hop in range(4):
+        u = urllib.parse.urlsplit(url)
+        local_ok = os.environ.get("CROWN_IMG_ALLOW_LOCAL") and u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost")
+        if not (u.scheme == "https" or local_ok) or not u.hostname or len(url) > 2000:
+            raise UserError("That picture link can't be used.")
+        if not _public_host(u.hostname):
+            raise UserError("That picture link can't be used.")
+        opener = urllib.request.build_opener(_NoRedirect, urllib.request.HTTPSHandler(context=ssl_context()))
+        r = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (CrownTools %s)" % VERSION, "Accept": "image/webp,image/png,image/jpeg,image/*;q=0.8"})
+        try:
+            with opener.open(r, timeout=12) as resp:
+                ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+                if ctype not in IMG_TYPES:
+                    raise UserError("That link isn't a picture.")
+                data = resp.read(IMG_MAX + 1)
+                if len(data) > IMG_MAX:
+                    raise UserError("That picture is too big.")
+                return {"ok": True, "type": ctype, "data": base64.b64encode(data).decode()}
+        except urllib.error.HTTPError as e:
+            if e.code in (301, 302, 303, 307, 308) and e.headers.get("Location"):
+                url = urllib.parse.urljoin(url, e.headers["Location"])
+                continue
+            raise UserError("Couldn't load that picture (%s)." % e.code)
+        except urllib.error.URLError as e:
+            raise UserError("Couldn't load that picture (%s)." % e.reason)
+    raise UserError("That picture link redirects too many times.")
+
+
 # ---------------------------------------------------------------- Discord: reading bot checkout messages
 # A Discord bot you add to your server (View Channel + Read Message History, with Message Content Intent on) lets
 # Crown Tools read the checkout posts your bots send to a channel. The token comes from your encrypted data on each
@@ -1567,6 +1625,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/carriertest": carrier_test,
             "/api/discord": discord_send,
             "/api/discord/check": discord_check,
+            "/api/img": image_fetch,
             "/api/discord/read": discord_read,
             "/api/upc": upc_lookup,
             "/api/market/categories": market_categories,
@@ -2703,6 +2762,7 @@ class handler(BaseHTTPRequestHandler):
             "/carriertest": carrier_test,
             "/discord": discord_send,
             "/discord/check": discord_check,
+            "/img": image_fetch,
             "/discord/read": discord_read,
             "/upc": upc_lookup,
             "/market/categories": market_categories,
@@ -2717,7 +2777,7 @@ class handler(BaseHTTPRequestHandler):
         def go():
             b = self._body()
             u = require_user(h)
-            limits = {"/discord": (300, 3600), "/discord/check": (60, 3600), "/discord/read": (400, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
+            limits = {"/img": (1500, 3600), "/discord": (300, 3600), "/discord/check": (60, 3600), "/discord/read": (400, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
             if r in limits:
                 rate_limit("u" + r.replace("/", ""), u["id"], *limits[r])
             if r.startswith("/imap/"):
