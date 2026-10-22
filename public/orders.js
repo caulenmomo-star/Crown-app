@@ -14,7 +14,10 @@ const shortTitle = o => { if (!o.items || !o.items.length) return o.subject || '
 const orderTitle = o => o.items && o.items.length ? o.items[0].name + (o.items.length > 1 ? ` +${o.items.length - 1} more` : '') : (o.subject || '');
 const orderImage = o => ((o.items || []).find(i => i.image) || {}).image || '';
 // Product picture in a fixed frame; if the store's image can't load, the empty frame stays (no broken-image icon).
-const thumb = (src, cls) => `<span class="thumb ${cls || ''}${src ? '' : ' none'}">${src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</span>`;
+// broken item pictures are removed (done here instead of inline onerror="" so the strict security policy allows it)
+document.addEventListener('error', e => { const t = e.target; if (t && t.tagName === 'IMG' && t.parentElement && t.parentElement.classList.contains('thumb')) t.remove(); }, true);
+document.addEventListener('click', e => { if (e.target.closest('[data-nohouse]')) OF.house = '__none'; }, true);
+const thumb = (src, cls) => `<span class="thumb ${cls || ''}${src ? '' : ' none'}">${src ? `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</span>`;
 const itemCount = o => sum(o.items || [], qtyOf);
 const cancelledCount = o => sum(o.items || [], i => Number(i.cancelledQty) || 0);
 function findOrder(no, store) {
@@ -783,7 +786,7 @@ PAGES.houses = {
     pg.innerHTML = `<div class="pagehead"><h1>Houses</h1><span class="sub">${plural(total, 'house')} · grouped by street address only — apt, unit and line 2 ignored</span></div>
       <div class="toolbar"><input class="search" data-search id="hQ" placeholder="Search address, name, unit…  ( / )" value="${esc(HF.q)}">
       <div class="chips">${[['orders', 'Most orders'], ['spent', 'Most spent'], ['active', 'Most active'], ['recent', 'Newest'], ['az', 'A–Z']].map(([k, l]) => `<button class="chip ${HF.sort === k ? 'on' : ''}" data-hs="${k}">${l}</button>`).join('')}</div></div>
-      ${noAddr ? `<div class="note" style="margin:0 0 12px">${plural(noAddr, 'order')} ${noAddr === 1 ? 'has' : 'have'} no shipping address yet, so ${noAddr === 1 ? 'it isn’t' : 'they aren’t'} in a house. Addresses come from order confirmation emails. <a href="#orders" onclick="OF.house='__none'">See them</a></div>` : ''}
+      ${noAddr ? `<div class="note" style="margin:0 0 12px">${plural(noAddr, 'order')} ${noAddr === 1 ? 'has' : 'have'} no shipping address yet, so ${noAddr === 1 ? 'it isn’t' : 'they aren’t'} in a house. Addresses come from order confirmation emails. <a href="#orders" data-nohouse>See them</a></div>` : ''}
       ${hs.length ? `<div class="housegrid">${hs.map(({ h, s }) => `<div class="house" data-house="${h.id}">
         <div class="t ellipsis">${esc(houseLabel(h))}</div><div class="a ellipsis">${esc(h.nickname ? houseAddr(h) : [h.city, [h.state, h.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '))}</div>
         <div class="stats"><div><b>${s.n}</b>orders</div><div><b>${fmtMoney(s.spent, true)}</b>spent</div><div><b>${s.active}</b>active</div><div><b>${Object.keys((HF.who === 'all' ? s.all : s.ok).names).length}</b>names</div></div>

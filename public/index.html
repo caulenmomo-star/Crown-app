@@ -35,6 +35,12 @@
   </div>
 </div>
 
+<!-- ================= ACCOUNT (online) ================= -->
+<div id="acct" class="lock" hidden>
+  <div class="lockbox acctbox" id="acctBox"></div>
+  <div class="acctlegal small faint"><a href="terms.html" target="_blank" rel="noopener">Terms</a> · <a href="privacy.html" target="_blank" rel="noopener">Privacy</a> · <a href="refund.html" target="_blank" rel="noopener">Refunds</a></div>
+</div>
+
 <!-- ================= APP ================= -->
 <div id="app" hidden>
   <nav class="nav">
@@ -47,6 +53,7 @@
     </div>
   </nav>
   <main id="main">
+    <div class="banner annbar" id="annBar" hidden><span></span></div>
     <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown Tools directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown Tools with <b>Start Crown Tools</b> to turn them on.</div>
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
     <section class="page" data-page="profiles" id="pg-profiles">
@@ -225,10 +232,11 @@
 <script src="core.js"></script>
 <script src="changelog.js"></script>
 <script src="botformats.js"></script>
+<script src="account.js"></script>
 <script src="profiles.js"></script>
 <script src="orders.js"></script>
 <script src="pages.js"></script>
 <script src="sync.js"></script>
-<script>Crown.boot();</script>
+<script src="boot.js"></script>
 </body>
 </html>

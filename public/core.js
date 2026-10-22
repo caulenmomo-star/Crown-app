@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.5.4'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.6.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -79,7 +79,7 @@ function migrate(s) {
 }
 let state = blankState();
 let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
-let CLOUD = false, cloudInfo = {}, authKey = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
+let CLOUD = false, cloudInfo = {}, authKey = null, acctEmail = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
 // A newer Crown Tools is running (or was deployed): this tab's code is old, so it must reload before it can save.
@@ -94,12 +94,13 @@ async function api(path, body, method) {
   let res;
   const headers = { 'X-Crown': '1', 'X-Crown-App': VERSION };
   if (body) headers['Content-Type'] = 'application/json';
-  if (CLOUD && authKey) headers['X-Crown-Auth'] = authKey;
+  if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; }
   try {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Tools Online — check your internet connection.' : 'Crown Tools’ helper isn’t running. Open Crown Tools with “Start Crown Tools”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
   if (j && j.outdated) showOutdated();
+  if (j && j.noAccess && cryptoKey && typeof Account !== 'undefined') Account.lostAccess(j.reason);
   if (!res.ok || !j || j.ok === false) { const err = new Error((j && j.error) || ('Request failed (' + res.status + ')')); err.data = j || {}; throw err; }
   return j;
 }
@@ -449,6 +450,7 @@ function renderLockUI() {
   $('#lockBtn').disabled = false;
 }
 async function setupLock(msg) {
+  if (CLOUD && cloudInfo.accounts && typeof Account !== 'undefined') { Account.show(msg); return; }
   $('#app').hidden = true; $('#lock').hidden = false;
   $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = msg || '';
   if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update your browser (Safari, Chrome or Edge).' : 'This browser can’t encrypt here. Open Crown Tools in Chrome, Edge or Safari using Start Crown Tools.'; return; }
@@ -513,6 +515,7 @@ async function lock(msg) {
   if (typeof selected !== 'undefined') selected.clear();
   $$('dialog').forEach(d => d.open && d.close());
   if (typeof onLocked === 'function') onLocked();
+  if (CLOUD && cloudInfo.accounts && typeof Account !== 'undefined') { acctEmail = null; Account.signOut(); Account.show(msg); return; }
   setupLock(msg);
 }
 let lastActivity = Date.now();
@@ -584,6 +587,6 @@ const Crown = {
         const s = route.page === 'profiles' ? $('#search') : $('#pg-' + route.page + ' input[data-search]'); if (s) { e.preventDefault(); s.focus(); }
       }
     });
-    await setupLock();
+    if (CLOUD && cloudInfo.accounts && typeof Account !== 'undefined') await Account.boot(); else await setupLock();
   },
 };

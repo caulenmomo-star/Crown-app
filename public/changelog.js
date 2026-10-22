@@ -1,6 +1,15 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.6.0', date: '2026-10-21', title: 'Accounts and subscriptions', items: [
+    'Crown Tools Online now has accounts: anyone can sign up with their email and a password, and each account’s data is kept separate and encrypted with that person’s own password.',
+    'The sign-up screen shows the monthly price up front, and people tick a box to agree before their account is made. After signing up they confirm their email, then subscribe on a separate screen to get access.',
+    'Subscriptions are paid monthly through Stripe. Customers can update their card or cancel from Settings → Account → Manage billing. If a payment fails, access continues for a short grace period.',
+    'New separate admin website for the owner, protected by a password and authenticator codes: see revenue and sign-ups, find customers, give free access for any length of time, suspend accounts, change the price and trial, make discount codes, post an announcement, and review an activity log.',
+    'The server checks every request: data, email sync and tracking only work for accounts that are paid or have free access.',
+    'Forgot password, delete account, and draft Terms, Privacy and Refund pages.',
+    'Stricter browser security rules for the app and admin site.',
+  ] },
   { v: '0.5.4', date: '2026-10-21', title: 'Profiles in Valor, Hayha, Stellar, Shikari and AYCD files', items: [
     'Export: pick Valor, Hayha, Stellar, Shikari or AYCD and you get a file in that bot’s exact layout (.valor.json, .Hayha, .stellar.json, .shikari.csv, .aycd.json), ready to load into the bot. Your last choice is remembered.',
     'Import: load or paste a profile file from any of those bots and Crown Tools recognizes it automatically.',

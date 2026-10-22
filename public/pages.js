@@ -388,6 +388,7 @@ PAGES.settings = {
     const pg = $('#pg-settings'); const S = state.settings;
     const trackAll = !S.trackedStores || !S.trackedStores.length;
     pg.innerHTML = `<div class="pagehead"><h1>Settings</h1></div>
+      ${CLOUD && typeof Account !== 'undefined' ? Account.card() : ''}
       <div class="cols2">
         <div class="card"><h3>Security</h3>
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
@@ -430,6 +431,7 @@ PAGES.settings = {
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();
+    if (CLOUD && typeof Account !== 'undefined') Account.wireCard();
     $('#stNotify').onclick = async () => { if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } } S.notify = !S.notify; save(); PAGES.settings.render(); if (S.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('Crown Tools', { body: 'Notifications are on 👑' }); };
     $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
@@ -470,7 +472,7 @@ PAGES.settings = {
 $('#restoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { toast(err.message); } };
 $('#cpGo').onclick = async () => {
   const o = $('#cpOld').value, n = $('#cpNew').value, n2 = $('#cpNew2').value; $('#cpErr').textContent = '';
-  if (n.length < 6) { $('#cpErr').textContent = 'Use at least 6 characters.'; return; }
+  if (n.length < (CLOUD ? 8 : 6)) { $('#cpErr').textContent = `Use at least ${CLOUD ? 8 : 6} characters.`; return; }
   if (n !== n2) { $('#cpErr').textContent = 'New passwords don’t match.'; return; }
   $('#cpGo').disabled = true;
   try {

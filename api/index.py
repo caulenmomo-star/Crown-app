@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.5.4"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.6.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1231,19 +1231,42 @@ def main():
 
 # =====================================================================
 # Crown Tools Online - Vercel serverless handler (appended to server.py at build time).
-# Storage: Upstash Redis (REST). Everything stored is encrypted in the browser first;
-# the server only ever sees ciphertext plus a hash of a password-derived access key.
+# Multi-user: every customer has an account and their own encrypted vault. Data is encrypted in the
+# browser with the customer's password; the server only stores ciphertext plus a hash of a
+# password-derived access key, so neither the server nor the admin can read anyone's profiles or orders.
+# Storage: Upstash Redis (REST). Payments: Stripe (test or live keys from the environment).
 # =====================================================================
+import base64 as _b64
 import hashlib as _hashlib
 import hmac as _hmac
-from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs
+import secrets as _secrets
+import smtplib as _smtplib
+import struct as _struct
+from email.mime.text import MIMEText as _MIMEText
+from email.mime.multipart import MIMEMultipart as _MIMEMultipart
+from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs, urlencode as _urlencode
 
 KV_URL = (os.environ.get("KV_REST_API_URL") or os.environ.get("UPSTASH_REDIS_REST_URL") or "").rstrip("/")
 KV_TOKEN = os.environ.get("KV_REST_API_TOKEN") or os.environ.get("UPSTASH_REDIS_REST_TOKEN") or ""
 SETUP_CODE = (os.environ.get("CROWN_SETUP_CODE") or "").strip()
-K_META, K_VAULT, K_FAILS, K_BINDEX, K_BLAST = "crown:meta", "crown:vault", "crown:fails", "crown:backups", "crown:lastbackup"
+SECRET = os.environ.get("CROWN_SECRET") or _hashlib.sha256(("crown-secret:" + KV_TOKEN).encode()).hexdigest()
+STRIPE_KEY = os.environ.get("STRIPE_SECRET_KEY") or ""
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET") or ""
+STRIPE_API = (os.environ.get("STRIPE_API_BASE") or "https://api.stripe.com").rstrip("/")
+SMTP_HOST = os.environ.get("CROWN_SMTP_HOST") or ("smtp.gmail.com" if os.environ.get("CROWN_SMTP_USER") else "")
+SMTP_PORT = int(os.environ.get("CROWN_SMTP_PORT") or 465)
+SMTP_USER = os.environ.get("CROWN_SMTP_USER") or ""
+SMTP_PASS = os.environ.get("CROWN_SMTP_PASS") or ""
+MAIL_FROM = os.environ.get("CROWN_MAIL_FROM") or SMTP_USER
+MAIL_DEBUG = os.environ.get("CROWN_MAIL_DEBUG") or ""  # tests: write emails to this file instead of sending
+APP_URL = (os.environ.get("CROWN_APP_URL") or "").rstrip("/")
+ADMIN_ORIGINS = [o.strip().rstrip("/") for o in (os.environ.get("CROWN_ADMIN_ORIGIN") or "").split(",") if o.strip()]
+
 MAX_CLOUD_BACKUPS = 20
 CLOUD_BACKUP_EVERY = 15 * 60
+DAY = 86400
+DEFAULT_SETTINGS = {"priceCents": 1500, "currency": "usd", "trialDays": 0, "graceDays": 3, "signupsOpen": True,
+                    "requireVerify": True, "announcement": "", "productName": "Crown Tools"}
 SAVE_SCRIPT = """
 local meta = redis.call('GET', KEYS[1])
 local cur = 0
@@ -1255,6 +1278,8 @@ m['rev'] = cur + 1
 redis.call('SET', KEYS[1], cjson.encode(m))
 return {1, cur + 1}
 """
+# the single-user version's keys: kept so the owner can bring that data into their account once
+L_META, L_VAULT, L_BINDEX = "crown:meta", "crown:vault", "crown:backups"
 
 
 class Conflict(Exception):
@@ -1267,9 +1292,15 @@ class TooMany(Exception):
     pass
 
 
+class NoAccess(Exception):
+    def __init__(self, status):
+        Exception.__init__(self, "no access")
+        self.status = status
+
+
 def kv(*cmd):
     if not KV_URL or not KV_TOKEN:
-        raise UserError("Crown Tools Online's storage isn't connected yet. Add the free Upstash Redis database to this project in Vercel (see the setup steps), then redeploy.")
+        raise UserError("Crown Tools Online's storage isn't connected yet.")
     req = urllib.request.Request(KV_URL, data=json.dumps([str(c) if not isinstance(c, str) else c for c in cmd]).encode("utf-8"),
                                  method="POST", headers={"Authorization": "Bearer " + KV_TOKEN, "Content-Type": "application/json"})
     try:
@@ -1289,90 +1320,227 @@ def kv(*cmd):
     return j.get("result") if isinstance(j, dict) else j
 
 
-def get_meta():
-    raw = kv("GET", K_META)
-    return json.loads(raw) if raw else None
+def kv_json(key):
+    raw = kv("GET", key)
+    try:
+        return json.loads(raw) if raw else None
+    except ValueError:
+        return None
 
 
-def note_failure():
-    n = kv("INCR", K_FAILS)
-    if n == 1:
-        kv("EXPIRE", K_FAILS, 900)
-    time.sleep(0.4)
-    if n and int(n) > 30:
-        raise TooMany()
+def kv_set_json(key, obj, ttl=None):
+    if ttl:
+        return kv("SET", key, json.dumps(obj, separators=(",", ":")), "EX", str(int(ttl)))
+    return kv("SET", key, json.dumps(obj, separators=(",", ":")))
 
 
-def check_fails():
-    n = kv("GET", K_FAILS)
-    if n and int(n) > 30:
-        raise TooMany()
+# ---------------------------------------------------------------- helpers
+
+def sha(s):
+    return _hashlib.sha256(str(s).encode("utf-8")).hexdigest()
 
 
 def hash_key(k):
-    return _hashlib.sha256(("crown:" + str(k or "")).encode("utf-8")).hexdigest()
+    return sha("crown:" + str(k or ""))
 
 
-def require_auth(headers):
-    vals = kv("MGET", K_META, K_FAILS) or [None, None]  # one storage call per request
-    if vals[1] and int(vals[1]) > 30:
+def norm_email(e):
+    e = str(e or "").strip().lower()
+    if not re.fullmatch(r"[^@\s]{1,64}@[^@\s]{1,190}\.[a-z0-9-]{2,24}", e):
+        return ""
+    return e
+
+
+def now():
+    return time.time()
+
+
+def settings():
+    s = dict(DEFAULT_SETTINGS)
+    s.update(kv_json("ct:settings") or {})
+    return s
+
+
+def mail_ready():
+    return bool(MAIL_DEBUG or (SMTP_HOST and SMTP_USER and SMTP_PASS))
+
+
+def billing_ready():
+    return bool(STRIPE_KEY)
+
+
+def rate_limit(kind, key, limit, window):
+    k = "ct:rl:%s:%s" % (kind, sha(key)[:24])
+    n = kv("INCR", k)
+    if n == 1:
+        kv("EXPIRE", k, str(window))
+    if n and int(n) > limit:
         raise TooMany()
-    meta = json.loads(vals[0]) if vals[0] else None
-    key = headers.get("X-Crown-Auth") or ""
-    if not meta:
-        raise UserError("Crown Tools isn't set up yet.")
-    if not key or not _hmac.compare_digest(hash_key(key), meta.get("authHash", "")):
-        note_failure()
-        raise PermissionError("Wrong password.")
-    return meta
 
 
-def check_code(code):
-    check_fails()
-    if not SETUP_CODE:
-        raise UserError("The setup code isn't configured on the server.")
-    clean = lambda x: re.sub(r"[^A-Z0-9]", "", str(x or "").upper())
-    if not clean(code) or not _hmac.compare_digest(clean(code), clean(SETUP_CODE)):
-        note_failure()
-        raise PermissionError("That setup code isn't right.")
+def clear_limit(kind, key):
+    kv("DEL", "ct:rl:%s:%s" % (kind, sha(key)[:24]))
+
+
+def fake_salt(email):
+    return _b64.b64encode(_hmac.new(SECRET.encode(), ("salt:" + email).encode(), _hashlib.sha256).digest()[:16]).decode()
 
 
 def valid_vault(v):
     return isinstance(v, dict) and all(isinstance(v.get(k), str) and v.get(k) for k in ("salt", "iv", "ct"))
 
 
-def save_vault(vault, base_rev, auth_hash):
+def audit(actor, action, target="", detail=""):
+    try:
+        kv("LPUSH", "ct:audit", json.dumps({"at": now(), "actor": actor, "action": action, "target": target, "detail": detail}))
+        kv("LTRIM", "ct:audit", "0", "1999")
+    except Exception:
+        pass
+
+
+def check_mail_host(host):
+    """Email sync may only connect to real mail servers on the internet, never to addresses inside the hosting network."""
+    import ipaddress
+    host = str(host or "").strip()
+    if not host or os.environ.get("CROWN_ALLOW_PRIVATE_IMAP"):
+        return
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        raise UserError("Couldn't find the mail server %s." % host)
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise UserError("That mail server address isn't allowed.")
+
+
+# ---------------------------------------------------------------- users
+
+def user_by_email(email):
+    uid = kv("GET", "ct:email:" + email) if email else None
+    return kv_json("ct:user:" + uid) if uid else None
+
+
+def get_user(uid):
+    return kv_json("ct:user:" + str(uid)) if uid else None
+
+
+def put_user(u):
+    kv_set_json("ct:user:" + u["id"], u)
+
+
+def access_of(u, s=None, t=None):
+    """Can this account use Crown Tools right now? Returns (allowed, reason)."""
+    s = s or settings()
+    t = t or now()
+    if u.get("suspended"):
+        return False, "suspended"
+    comp = u.get("comp") or {}
+    if comp.get("until") == "forever" or (isinstance(comp.get("until"), (int, float)) and comp["until"] > t):
+        return True, "free"
+    if s.get("requireVerify") and mail_ready() and not u.get("verified"):
+        return False, "verify"
+    sub = u.get("sub") or {}
+    st = sub.get("status")
+    if st == "trialing":
+        return True, "trial"
+    if st == "active":
+        return True, "active"
+    if st in ("past_due", "unpaid") and t < float(sub.get("periodEnd") or 0) + float(s.get("graceDays") or 0) * DAY:
+        return True, "grace"
+    if st in ("canceled", "incomplete_expired"):
+        return False, "canceled"
+    if comp.get("until") and comp.get("until") != "forever":
+        return False, "expired"
+    return False, "unpaid"
+
+
+def public_account(u, s=None):
+    s = s or settings()
+    ok, reason = access_of(u, s)
+    sub = u.get("sub") or {}
+    comp = u.get("comp") or {}
+    return {"email": u["email"], "id": u["id"], "verified": bool(u.get("verified")), "access": ok, "reason": reason,
+            "createdAt": u.get("createdAt"),
+            "sub": {"status": sub.get("status") or "", "periodEnd": sub.get("periodEnd") or 0, "cancelAtPeriodEnd": bool(sub.get("cancelAtPeriodEnd")),
+                    "hasCustomer": bool(u.get("customerId"))},
+            "comp": {"until": comp.get("until") or None, "note": comp.get("note") or ""},
+            "price": {"cents": int(s["priceCents"]), "currency": s["currency"], "trialDays": int(s.get("trialDays") or 0)},
+            "graceDays": int(s.get("graceDays") or 0), "trialUsed": bool(u.get("trialUsed")),
+            "billingReady": billing_ready(), "mailReady": mail_ready(), "announcement": s.get("announcement") or ""}
+
+
+def client_ip(headers):
+    return (headers.get("X-Forwarded-For") or headers.get("X-Real-Ip") or "").split(",")[0].strip() or "?"
+
+
+def require_user(headers, need_access=True):
+    email = norm_email(headers.get("X-Crown-Email"))
+    key = headers.get("X-Crown-Auth") or ""
+    ip = client_ip(headers)
+    if not email or not key:
+        raise PermissionError("Sign in first.")
+    for kind, k, lim in (("lfe", email, 12), ("lfi", ip, 60)):  # wrong-password counters
+        n = kv("GET", "ct:rl:%s:%s" % (kind, sha(k)[:24]))
+        if n and int(n) > lim:
+            raise TooMany()
+    u = user_by_email(email)
+    if not u or not _hmac.compare_digest(hash_key(key), u.get("authHash", "")):
+        rate_limit("lfe", email, 1000, 900)
+        rate_limit("lfi", ip, 1000, 900)
+        time.sleep(0.3)
+        raise PermissionError("Wrong email or password.")
+    if need_access:
+        ok, reason = access_of(u)
+        if not ok:
+            raise NoAccess(reason)
+    return u
+
+
+# ---------------------------------------------------------------- vaults (one per user)
+
+def vkeys(uid):
+    return "ct:vmeta:" + uid, "ct:vault:" + uid
+
+
+def save_vault(uid, vault, base_rev):
     if not valid_vault(vault):
         raise UserError("That doesn't look like a Crown Tools vault.")
     blob = json.dumps(vault, separators=(",", ":"))
-    meta = json.dumps({"authHash": auth_hash, "salt": vault["salt"], "savedAt": time.time(), "size": len(blob)})
-    res = kv("EVAL", SAVE_SCRIPT, "2", K_META, K_VAULT, "force" if base_rev == "force" else str(int(base_rev or 0)), blob, meta)
+    if len(blob) > 20 * 1024 * 1024:
+        raise UserError("Your data is too large to save online.")
+    km, kvault = vkeys(uid)
+    meta = json.dumps({"savedAt": now(), "size": len(blob)})
+    res = kv("EVAL", SAVE_SCRIPT, "2", km, kvault, "force" if base_rev == "force" else str(int(base_rev or 0)), blob, meta)
     if not res or int(res[0]) != 1:
         raise Conflict(int(res[1]) if res else 0)
     rev = int(res[1])
     try:
-        last = kv("GET", K_BLAST)
-        if not last or time.time() - float(last) > CLOUD_BACKUP_EVERY:
+        last = kv("GET", "ct:bkl:" + uid)
+        if not last or now() - float(last) > CLOUD_BACKUP_EVERY:
             bid = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
-            kv("SET", "crown:backup:" + bid, blob)
-            kv("LPUSH", K_BINDEX, json.dumps({"id": bid, "at": time.time(), "size": len(blob)}))
-            old = kv("LRANGE", K_BINDEX, str(MAX_CLOUD_BACKUPS), "-1") or []
-            for o in old:
+            kv("SET", "ct:bk:%s:%s" % (uid, bid), blob)
+            kv("LPUSH", "ct:bki:" + uid, json.dumps({"id": bid, "at": now(), "size": len(blob)}))
+            for o in kv("LRANGE", "ct:bki:" + uid, str(MAX_CLOUD_BACKUPS), "-1") or []:
                 try:
-                    kv("DEL", "crown:backup:" + json.loads(o)["id"])
+                    kv("DEL", "ct:bk:%s:%s" % (uid, json.loads(o)["id"]))
                 except Exception:
                     pass
-            kv("LTRIM", K_BINDEX, "0", str(MAX_CLOUD_BACKUPS - 1))
-            kv("SET", K_BLAST, str(time.time()))
+            kv("LTRIM", "ct:bki:" + uid, "0", str(MAX_CLOUD_BACKUPS - 1))
+            kv("SET", "ct:bkl:" + uid, str(now()))
     except Exception:
         pass  # a missed backup must never fail a save
     return rev
 
 
-def cloud_backups():
-    rows = kv("LRANGE", K_BINDEX, "0", "-1") or []
+def vault_rev(uid):
+    m = kv_json(vkeys(uid)[0]) or {}
+    return int(m.get("rev") or 0)
+
+
+def user_backups(uid):
     out = []
-    for r in rows:
+    for r in kv("LRANGE", "ct:bki:" + uid, "0", "-1") or []:
         try:
             b = json.loads(r)
             out.append({"name": b["id"], "mtime": b["at"], "size": b.get("size", 0)})
@@ -1381,13 +1549,301 @@ def cloud_backups():
     return out
 
 
+def delete_user_data(u):
+    uid = u["id"]
+    keys = ["ct:user:" + uid, "ct:email:" + u["email"], "ct:vault:" + uid, "ct:vmeta:" + uid, "ct:bki:" + uid, "ct:bkl:" + uid]
+    for r in kv("LRANGE", "ct:bki:" + uid, "0", "-1") or []:
+        try:
+            keys.append("ct:bk:%s:%s" % (uid, json.loads(r)["id"]))
+        except Exception:
+            pass
+    if u.get("customerId"):
+        keys.append("ct:cust:" + u["customerId"])
+    kv("DEL", *keys)
+    kv("ZREM", "ct:users", uid)
+
+
+# ---------------------------------------------------------------- email
+
+def app_url(headers=None):
+    if APP_URL:
+        return APP_URL
+    host = (headers.get("X-Forwarded-Host") or headers.get("Host") or "") if headers else ""
+    return ("https://" + host) if host else "https://crowntools.vercel.app"
+
+
+def send_mail(to, subject, text, html=None):
+    if MAIL_DEBUG:
+        with open(MAIL_DEBUG, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"to": to, "subject": subject, "text": text}) + "\n")
+        return True
+    if not mail_ready():
+        return False
+    msg = _MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = "%s <%s>" % (settings().get("productName") or "Crown Tools", MAIL_FROM)
+    msg["To"] = to
+    msg.attach(_MIMEText(text, "plain", "utf-8"))
+    if html:
+        msg.attach(_MIMEText(html, "html", "utf-8"))
+    with _smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ssl_context(), timeout=20) as s:
+        s.login(SMTP_USER, SMTP_PASS)
+        s.sendmail(MAIL_FROM, [to], msg.as_string())
+    return True
+
+
+def mail_html(title, body, button=None, url=None):
+    btn = ('<p style="margin:24px 0"><a href="%s" style="background:#7c8cff;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">%s</a></p>' % (url, button)) if button else ""
+    return ('<div style="font-family:-apple-system,Segoe UI,sans-serif;max-width:520px;margin:auto;padding:24px;color:#111">'
+            '<h2 style="margin:0 0 12px">%s</h2><p style="line-height:1.5">%s</p>%s'
+            '<p style="color:#888;font-size:12px">If you didn\'t ask for this, you can ignore this email.</p></div>') % (title, body, btn)
+
+
+def make_token(kind, uid, ttl):
+    tok = _secrets.token_urlsafe(32)
+    kv("SET", "ct:tok:%s:%s" % (kind, sha(tok)), uid, "EX", str(ttl))
+    return tok
+
+
+def use_token(kind, tok, consume=True):
+    if not tok or len(str(tok)) > 200:
+        return None
+    k = "ct:tok:%s:%s" % (kind, sha(tok))
+    uid = kv("GET", k)
+    if uid and consume:
+        kv("DEL", k)
+    return uid
+
+
+def send_verify(u, headers):
+    tok = make_token("verify", u["id"], 3 * DAY)
+    url = "%s/?verify=%s" % (app_url(headers), tok)
+    return send_mail(u["email"], "Confirm your Crown Tools email",
+                     "Confirm your email for Crown Tools by opening this link:\n\n%s\n\nThe link works for 3 days." % url,
+                     mail_html("Confirm your email", "Tap the button to confirm the email address for your Crown Tools account.", "Confirm email", url))
+
+
+# ---------------------------------------------------------------- Stripe (standard library only)
+
+def _flat(params, prefix=""):
+    out = []
+    if isinstance(params, dict):
+        for k, v in params.items():
+            out += _flat(v, "%s[%s]" % (prefix, k) if prefix else k)
+    elif isinstance(params, list):
+        for i, v in enumerate(params):
+            out += _flat(v, "%s[%d]" % (prefix, i))
+    elif params is not None:
+        out.append((prefix, "true" if params is True else "false" if params is False else str(params)))
+    return out
+
+
+def stripe(method, path, params=None):
+    if not STRIPE_KEY:
+        raise UserError("Payments aren't set up yet.")
+    data = _urlencode(_flat(params or {})).encode() if params and method != "GET" else None
+    url = STRIPE_API + path + (("?" + _urlencode(_flat(params))) if params and method == "GET" else "")
+    req = urllib.request.Request(url, data=data, method=method, headers={"Authorization": "Bearer " + STRIPE_KEY, "Content-Type": "application/x-www-form-urlencoded"})
+    try:
+        with urllib.request.urlopen(req, timeout=25, context=ssl_context()) as r:
+            return json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            msg = json.loads(e.read().decode("utf-8")).get("error", {}).get("message", "")
+        except Exception:
+            msg = ""
+        raise UserError("Payment service error: %s" % (msg or e.code))
+
+
+def ensure_price(s):
+    """The Stripe price that matches the current monthly price (Stripe prices can't be edited, so a new one is made when it changes)."""
+    if s.get("stripePriceId") and int(s.get("stripePriceCents") or -1) == int(s["priceCents"]) and s.get("stripeCurrency") == s["currency"] and s.get("stripeMode") == STRIPE_KEY[:8]:
+        return s["stripePriceId"]
+    prod = s.get("stripeProductId") if s.get("stripeMode") == STRIPE_KEY[:8] else None
+    if not prod:
+        prod = stripe("POST", "/v1/products", {"name": s.get("productName") or "Crown Tools", "metadata": {"app": "crowntools"}})["id"]
+    price = stripe("POST", "/v1/prices", {"product": prod, "unit_amount": int(s["priceCents"]), "currency": s["currency"], "recurring": {"interval": "month"}, "metadata": {"app": "crowntools"}})
+    cur = kv_json("ct:settings") or {}
+    cur.update({"stripeProductId": prod, "stripePriceId": price["id"], "stripePriceCents": int(s["priceCents"]), "stripeCurrency": s["currency"], "stripeMode": STRIPE_KEY[:8]})
+    kv_set_json("ct:settings", cur)
+    return price["id"]
+
+
+def ensure_customer(u):
+    if u.get("customerId") and u.get("customerMode") == STRIPE_KEY[:8]:
+        return u["customerId"]
+    c = stripe("POST", "/v1/customers", {"email": u["email"], "metadata": {"uid": u["id"]}})
+    u["customerId"] = c["id"]
+    u["customerMode"] = STRIPE_KEY[:8]
+    put_user(u)
+    kv("SET", "ct:cust:" + c["id"], u["id"])
+    return c["id"]
+
+
+def apply_subscription(u, sub):
+    item = ((sub.get("items") or {}).get("data") or [{}])[0]
+    period_end = sub.get("current_period_end") or item.get("current_period_end") or 0
+    u["sub"] = {"id": sub.get("id"), "status": sub.get("status"), "periodEnd": period_end, "cancelAtPeriodEnd": bool(sub.get("cancel_at_period_end")),
+                "priceId": (item.get("price") or {}).get("id", ""), "updatedAt": now()}
+    if sub.get("status") == "trialing":
+        u["trialUsed"] = True
+    put_user(u)
+
+
+def sync_from_stripe(u):
+    """Pull this customer's newest subscription straight from Stripe (used right after checkout, in case the webhook is slow)."""
+    if not u.get("customerId") or not STRIPE_KEY:
+        return u
+    subs = stripe("GET", "/v1/subscriptions", {"customer": u["customerId"], "status": "all", "limit": 5}).get("data") or []
+    if subs:
+        subs.sort(key=lambda x: (x.get("status") in ("active", "trialing", "past_due"), x.get("created") or 0), reverse=True)
+        apply_subscription(u, subs[0])
+    return u
+
+
+def verify_stripe_signature(raw, header):
+    if not STRIPE_WEBHOOK_SECRET:
+        raise PermissionError("Webhook secret isn't set.")
+    parts = dict(p.split("=", 1) for p in str(header or "").split(",") if "=" in p)
+    t = parts.get("t", "")
+    sigs = [p.split("=", 1)[1] for p in str(header or "").split(",") if p.startswith("v1=")]
+    if not t or not sigs or abs(now() - int(t)) > 300:
+        raise PermissionError("Bad signature.")
+    expect = _hmac.new(STRIPE_WEBHOOK_SECRET.encode(), (t + ".").encode() + raw, _hashlib.sha256).hexdigest()
+    if not any(_hmac.compare_digest(expect, s) for s in sigs):
+        raise PermissionError("Bad signature.")
+
+
+def handle_webhook(raw, headers):
+    verify_stripe_signature(raw, headers.get("Stripe-Signature"))
+    ev = json.loads(raw.decode("utf-8"))
+    if kv("SET", "ct:evt:" + str(ev.get("id")), "1", "NX", "EX", str(7 * DAY)) is None:
+        return {"ok": True, "duplicate": True}
+    obj = (ev.get("data") or {}).get("object") or {}
+    typ = ev.get("type", "")
+    uid = None
+    if typ.startswith("customer.subscription."):
+        uid = (obj.get("metadata") or {}).get("uid") or kv("GET", "ct:cust:" + str(obj.get("customer")))
+        u = get_user(uid)
+        if u:
+            apply_subscription(u, obj)
+    elif typ == "checkout.session.completed":
+        uid = obj.get("client_reference_id") or kv("GET", "ct:cust:" + str(obj.get("customer")))
+        u = get_user(uid)
+        if u:
+            if obj.get("customer") and not u.get("customerId"):
+                u["customerId"] = obj["customer"]
+                put_user(u)
+                kv("SET", "ct:cust:" + obj["customer"], u["id"])
+            sync_from_stripe(u)
+    elif typ in ("invoice.payment_failed", "invoice.paid", "invoice.payment_succeeded"):
+        uid = kv("GET", "ct:cust:" + str(obj.get("customer")))
+        u = get_user(uid)
+        if u:
+            sync_from_stripe(u)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- admin
+
+def b32secret():
+    return _b64.b32encode(_secrets.token_bytes(20)).decode().rstrip("=")
+
+
+def totp_ok(secret, code, last_step=None):
+    try:
+        key = _b64.b32decode(secret + "=" * (-len(secret) % 8))
+    except Exception:
+        return None
+    code = re.sub(r"\D", "", str(code or ""))
+    if len(code) != 6:
+        return None
+    step = int(now() // 30)
+    for s in (step - 1, step, step + 1):
+        if last_step and s <= last_step:
+            continue
+        h = _hmac.new(key, _struct.pack(">Q", s), _hashlib.sha1).digest()
+        o = h[-1] & 15
+        v = (_struct.unpack(">I", h[o:o + 4])[0] & 0x7FFFFFFF) % 1000000
+        if _hmac.compare_digest("%06d" % v, code):
+            return s
+    return None
+
+
+def pw_hash(pw, salt=None):
+    salt = salt or _secrets.token_hex(16)
+    return salt, _hashlib.pbkdf2_hmac("sha256", str(pw).encode(), salt.encode(), 310000).hex()
+
+
+def require_admin(headers):
+    auth = headers.get("Authorization") or ""
+    tok = auth[7:] if auth.startswith("Bearer ") else ""
+    sess = kv_json("ct:asess:" + sha(tok)) if tok else None
+    if not sess:
+        raise PermissionError("Please sign in to the admin site.")
+    return sess
+
+
+def admin_user_row(u, s, t):
+    ok, reason = access_of(u, s, t)
+    sub = u.get("sub") or {}
+    comp = u.get("comp") or {}
+    return {"id": u["id"], "email": u["email"], "createdAt": u.get("createdAt"), "lastSeen": u.get("lastSeen"), "verified": bool(u.get("verified")),
+            "access": ok, "reason": reason, "subStatus": sub.get("status") or "", "periodEnd": sub.get("periodEnd") or 0, "cancelAtPeriodEnd": bool(sub.get("cancelAtPeriodEnd")),
+            "compUntil": comp.get("until"), "compNote": comp.get("note") or "", "suspended": bool(u.get("suspended")), "note": u.get("adminNote") or "",
+            "customerId": u.get("customerId") or "", "vaultSize": u.get("vaultSize") or 0}
+
+
+def all_users():
+    ids = kv("ZREVRANGE", "ct:users", "0", "-1") or []
+    out = []
+    for i in range(0, len(ids), 100):
+        chunk = ids[i:i + 100]
+        for raw in kv("MGET", *["ct:user:" + x for x in chunk]) or []:
+            try:
+                if raw:
+                    out.append(json.loads(raw))
+            except ValueError:
+                pass
+    return out
+
+
+def admin_stats():
+    s = settings()
+    t = now()
+    users = all_users()
+    rows = [admin_user_row(u, s, t) for u in users]
+    paying = [r for r in rows if r["reason"] in ("active", "grace") and r["subStatus"] in ("active", "past_due", "unpaid")]
+    return {"total": len(rows), "access": sum(1 for r in rows if r["access"]), "paying": len(paying),
+            "trial": sum(1 for r in rows if r["reason"] == "trial"), "free": sum(1 for r in rows if r["reason"] == "free"),
+            "unpaid": sum(1 for r in rows if r["reason"] in ("unpaid", "expired", "verify")), "canceled": sum(1 for r in rows if r["reason"] == "canceled"),
+            "pastDue": sum(1 for r in rows if r["subStatus"] in ("past_due", "unpaid")), "suspended": sum(1 for r in rows if r["suspended"]),
+            "new7": sum(1 for r in rows if (r["createdAt"] or 0) > t - 7 * DAY), "new30": sum(1 for r in rows if (r["createdAt"] or 0) > t - 30 * DAY),
+            "mrrCents": len(paying) * int(s["priceCents"]), "currency": s["currency"],
+            "billingReady": billing_ready(), "webhookReady": bool(STRIPE_WEBHOOK_SECRET), "mailReady": mail_ready(),
+            "stripeMode": "live" if STRIPE_KEY.startswith("sk_live") or STRIPE_KEY.startswith("rk_live") else ("test" if STRIPE_KEY else "off"),
+            "legacyData": bool(kv("GET", L_META))}
+
+
+# ---------------------------------------------------------------- HTTP handler
+
 class handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
+    def _cors(self):
+        origin = (self.headers.get("Origin") or "").rstrip("/")
+        if origin and origin in ADMIN_ORIGINS and self._route().startswith("/admin"):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Crown")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Max-Age", "600")
+
     def _send(self, code, obj):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
+        self._cors()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
@@ -1407,15 +1863,25 @@ class handler(BaseHTTPRequestHandler):
             p = p[len("/api"):]
         return "/" + p.strip("/")
 
-    def _body(self):
+    def _query(self):
+        q = _parse_qs(_urlparse(self.path).query)
+        return {k: v[0] for k, v in q.items() if k != "route"}
+
+    def _raw(self):
         n = int(self.headers.get("Content-Length") or 0)
         if n > MAX_BODY:
             raise UserError("Request too large.")
-        raw = self.rfile.read(n) if n else b"{}"
+        return self.rfile.read(n) if n else b""
+
+    def _body(self):
+        raw = self._raw() or b"{}"
         try:
-            return json.loads(raw.decode("utf-8") or "{}")
+            b = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
             raise UserError("Bad request.")
+        if not isinstance(b, dict):
+            raise UserError("Bad request.")
+        return b
 
     def _run(self, fn):
         try:
@@ -1423,14 +1889,16 @@ class handler(BaseHTTPRequestHandler):
         except Conflict as c:
             self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Crown Tools was changed on another device."})
         except TooMany:
-            self._send(200, {"ok": False, "error": "Too many wrong tries. Wait 15 minutes and try again."})
+            self._send(200, {"ok": False, "error": "Too many tries. Wait 15 minutes and try again."})
+        except NoAccess as e:
+            self._send(200, {"ok": False, "noAccess": True, "reason": e.status, "error": "Your Crown Tools subscription isn't active."})
         except PermissionError as e:
             self._send(200, {"ok": False, "auth": True, "error": str(e)})
         except UserError as e:
             self._send(200, {"ok": False, "error": str(e)})
         except Exception as e:
             traceback.print_exc()
-            self._send(500, {"ok": False, "error": "Unexpected error: %s" % e})
+            self._send(500, {"ok": False, "error": "Unexpected error. Please try again."})
 
     def _guard(self):
         if self.headers.get("X-Crown") != "1":
@@ -1438,49 +1906,61 @@ class handler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self._cors()
+        self.end_headers()
+
+    # ------------------------------------------------------------ GET
     def do_GET(self):
         r = self._route()
-        if r != "/ping" and not self._guard():  # the status check is read-only and safe to leave open
-            return
         h = self.headers
         if r == "/ping":
             def ping():
-                exists = None
-                try:
-                    exists = bool(get_meta())
-                except UserError:
-                    pass
-                return {"ok": True, "version": VERSION, "cloud": True, "storage": bool(KV_URL and KV_TOKEN), "exists": exists}
+                s = settings()
+                return {"ok": True, "version": VERSION, "cloud": True, "accounts": True, "storage": bool(KV_URL and KV_TOKEN),
+                        "price": {"cents": int(s["priceCents"]), "currency": s["currency"], "trialDays": int(s.get("trialDays") or 0)},
+                        "signupsOpen": bool(s.get("signupsOpen")), "announcement": s.get("announcement") or "", "billingReady": billing_ready()}
             return self._run(ping)
-        if r == "/salt":
-            def salt():
-                m = get_meta()
-                return {"ok": True, "exists": bool(m), "salt": (m or {}).get("salt", "")}
-            return self._run(salt)
+        if not self._guard():
+            return
+        if r.startswith("/admin"):
+            return self._admin_get(r)
+        if r == "/account":
+            return self._run(lambda: {"ok": True, "account": public_account(require_user(h, need_access=False))})
         if r == "/vault":
             def vault():
-                meta = require_auth(h)
-                raw = kv("GET", K_VAULT)
-                return {"ok": True, "vault": json.loads(raw) if raw else None, "rev": int(meta.get("rev") or 0)}
+                u = require_user(h)
+                raw = kv("GET", "ct:vault:" + u["id"])
+                u["lastSeen"] = now()
+                put_user(u)
+                return {"ok": True, "vault": json.loads(raw) if raw else None, "rev": vault_rev(u["id"]), "account": public_account(u)}
             return self._run(vault)
+        if r == "/export":  # the encrypted data as a backup file - allowed even without a subscription
+            def export():
+                u = require_user(h, need_access=False)
+                raw = kv("GET", "ct:vault:" + u["id"])
+                return {"ok": True, "vault": json.loads(raw) if raw else None}
+            return self._run(export)
         if r == "/rev":
-            return self._run(lambda: {"ok": True, "rev": int(require_auth(h).get("rev") or 0)})
+            return self._run(lambda: {"ok": True, "rev": vault_rev(require_user(h)["id"])})
         if r == "/backups":
-            return self._run(lambda: (require_auth(h), {"ok": True, "backups": cloud_backups()})[1])
+            return self._run(lambda: {"ok": True, "backups": user_backups(require_user(h)["id"])})
         if r.startswith("/backups/"):
             name = r[len("/backups/"):]
 
             def one():
-                require_auth(h)
+                u = require_user(h)
                 if not re.fullmatch(r"\d{8}-\d{6}", name):
                     raise UserError("Unknown backup.")
-                raw = kv("GET", "crown:backup:" + name)
+                raw = kv("GET", "ct:bk:%s:%s" % (u["id"], name))
                 if not raw:
                     raise UserError("That backup no longer exists.")
                 return {"ok": True, "vault": json.loads(raw)}
             return self._run(one)
         self._send(404, {"ok": False, "error": "Not found"})
 
+    # ------------------------------------------------------------ PUT
     def do_PUT(self):
         if not self._guard():
             return
@@ -1491,57 +1971,252 @@ class handler(BaseHTTPRequestHandler):
         if r == "/vault":
             def put():
                 b = self._body()
-                meta = require_auth(h)
-                new_key = b.get("newAuthKey")
-                auth_hash = hash_key(new_key) if new_key else meta["authHash"]
-                rev = save_vault(b.get("vault"), b.get("baseRev", 0), auth_hash)
-                return {"ok": True, "rev": rev, "savedAt": time.time()}
+                u = require_user(h)
+                rev = save_vault(u["id"], b.get("vault"), b.get("baseRev", 0))
+                changed = False
+                if b.get("newAuthKey"):  # password changed: the new key and salt take over
+                    u["authHash"] = hash_key(b["newAuthKey"])
+                    u["salt"] = b["vault"]["salt"]
+                    changed = True
+                size = len(json.dumps(b.get("vault")))
+                if abs(size - int(u.get("vaultSize") or 0)) > 2048 or changed:
+                    u["vaultSize"] = size
+                    changed = True
+                if changed:
+                    put_user(u)
+                return {"ok": True, "rev": rev, "savedAt": now()}
             return self._run(put)
         self._send(404, {"ok": False, "error": "Not found"})
 
+    # ------------------------------------------------------------ POST
     def do_POST(self):
-        if not self._guard():
-            return
         r = self._route()
         h = self.headers
+        if r == "/billing/webhook":  # Stripe calls this; it's checked by signature instead of headers
+            raw = self._raw()
+            return self._run(lambda: handle_webhook(raw, h))
+        if not self._guard():
+            return
+        if r.startswith("/admin"):
+            return self._admin_post(r)
+        ip = client_ip(h)
 
-        def authed(fn):
-            def go():
+        if r == "/auth/salt":
+            def salt():
                 b = self._body()
-                require_auth(h)
-                return fn(b)
-            return go
+                email = norm_email(b.get("email"))
+                if not email:
+                    raise UserError("Enter a valid email address.")
+                rate_limit("salt", ip, 120, 900)
+                u = user_by_email(email)
+                return {"ok": True, "salt": (u or {}).get("salt") or fake_salt(email)}
+            return self._run(salt)
 
-        if r == "/setup":
-            def setup():
+        if r == "/auth/signup":
+            def signup():
                 b = self._body()
-                check_code(b.get("code"))
-                if get_meta():
-                    raise UserError("Crown Tools is already set up. Unlock it with your password, or use “Forgot password?” to start over.")
-                if not b.get("authKey"):
+                s = settings()
+                email = norm_email(b.get("email"))
+                if not email:
+                    raise UserError("Enter a valid email address.")
+                if not b.get("agree"):
+                    raise UserError("Please confirm you understand the monthly price and agree to the Terms.")
+                claim = bool(b.get("claimCode"))
+                if not s.get("signupsOpen") and not claim:
+                    raise UserError("Sign-ups are closed right now.")
+                rate_limit("signup", ip, 8, 3600)
+                if not b.get("authKey") or not valid_vault(b.get("vault")) or not isinstance(b.get("salt"), str):
                     raise UserError("Bad request.")
-                rev = save_vault(b.get("vault"), 0, hash_key(b["authKey"]))
-                kv("DEL", K_FAILS)
-                return {"ok": True, "rev": rev}
-            return self._run(setup)
-        if r == "/reset":
+                if user_by_email(email):
+                    raise UserError("There's already an account with that email. Sign in instead.")
+                uid = _secrets.token_hex(12)
+                u = {"id": uid, "email": email, "createdAt": now(), "verified": False, "salt": b["salt"], "authHash": hash_key(b["authKey"]),
+                     "agreedAt": now(), "agreedPrice": int(s["priceCents"]), "ip": ip[:64]}
+                if claim:  # the owner bringing the single-user version's data into their new account
+                    if not SETUP_CODE:
+                        raise UserError("The setup code isn't configured on the server.")
+                    rate_limit("claim", ip, 10, 900)
+                    clean = lambda x: re.sub(r"[^A-Z0-9]", "", str(x or "").upper())
+                    if not _hmac.compare_digest(clean(b["claimCode"]), clean(SETUP_CODE)):
+                        raise PermissionError("That setup code isn't right.")
+                    lm = kv_json(L_META)
+                    if not lm:
+                        raise UserError("There's no earlier data to bring over.")
+                    if not _hmac.compare_digest(hash_key(b["authKey"]), lm.get("authHash", "")):
+                        raise PermissionError("That isn't the password your earlier Crown Tools data used.")
+                    u["salt"] = lm.get("salt") or b["salt"]
+                    u["verified"] = True
+                    u["comp"] = {"until": "forever", "note": "Owner", "by": "setup code", "at": now()}
+                if kv("SET", "ct:email:" + email, uid, "NX") is None:
+                    raise UserError("There's already an account with that email. Sign in instead.")
+                put_user(u)
+                kv("ZADD", "ct:users", str(now()), uid)
+                if claim:
+                    raw = kv("GET", L_VAULT)
+                    save_vault(uid, json.loads(raw), "force")
+                    for row in kv("LRANGE", L_BINDEX, "0", "-1") or []:
+                        try:
+                            bk = json.loads(row)
+                            data = kv("GET", "crown:backup:" + bk["id"])
+                            if data:
+                                kv("SET", "ct:bk:%s:%s" % (uid, bk["id"]), data)
+                                kv("RPUSH", "ct:bki:" + uid, row)
+                        except Exception:
+                            pass
+                    kv("RENAME", L_META, "crown:meta:claimed")
+                    audit(email, "claimed earlier data", uid)
+                else:
+                    save_vault(uid, b["vault"], 0)
+                sent = False
+                if not u["verified"] and mail_ready():
+                    try:
+                        sent = send_verify(u, h)
+                    except Exception:
+                        traceback.print_exc()
+                audit(email, "signed up", uid)
+                return {"ok": True, "account": public_account(u, s), "verifySent": sent}
+            return self._run(signup)
+
+        if r == "/auth/legacy":  # salt of the earlier single-user data, so the owner's password can be checked
+            def legacy():
+                b = self._body()
+                rate_limit("claim", ip, 10, 900)
+                clean = lambda x: re.sub(r"[^A-Z0-9]", "", str(x or "").upper())
+                if not SETUP_CODE or not _hmac.compare_digest(clean(b.get("code")), clean(SETUP_CODE)):
+                    raise PermissionError("That setup code isn't right.")
+                lm = kv_json(L_META)
+                if not lm:
+                    raise UserError("There's no earlier data to bring over.")
+                return {"ok": True, "salt": lm.get("salt")}
+            return self._run(legacy)
+
+        if r == "/auth/verify":
+            def verify():
+                b = self._body()
+                rate_limit("verify", ip, 30, 900)
+                uid = use_token("verify", b.get("token"))
+                u = get_user(uid)
+                if not u:
+                    raise UserError("That link has expired or was already used. Sign in and ask for a new one.")
+                u["verified"] = True
+                put_user(u)
+                audit(u["email"], "verified email", u["id"])
+                return {"ok": True, "email": u["email"]}
+            return self._run(verify)
+
+        if r == "/auth/resend":
+            def resend():
+                u = require_user(h, need_access=False)
+                rate_limit("resend", u["id"], 4, 3600)
+                if u.get("verified"):
+                    return {"ok": True, "already": True}
+                if not mail_ready():
+                    raise UserError("Email isn't set up on the server yet.")
+                send_verify(u, h)
+                return {"ok": True}
+            return self._run(resend)
+
+        if r == "/auth/forgot":
+            def forgot():
+                b = self._body()
+                email = norm_email(b.get("email"))
+                rate_limit("forgot", ip, 6, 3600)
+                if email:
+                    rate_limit("forgote", email, 3, 3600)
+                u = user_by_email(email)
+                if u and mail_ready():
+                    tok = make_token("reset", u["id"], 3600)
+                    url = "%s/?reset=%s" % (app_url(h), tok)
+                    send_mail(email, "Reset your Crown Tools password",
+                              "Open this link to choose a new password:\n\n%s\n\nImportant: your saved data is locked with your old password, so a reset starts you with empty data. If you remember your old password later, you can restore a backup.\n\nThe link works for 1 hour." % url,
+                              mail_html("Reset your password", "Choose a new password for Crown Tools. Your saved data is locked with your old password, so a reset starts you with empty data (backups made with the old password can still be restored if you remember it).", "Choose a new password", url))
+                return {"ok": True, "mailReady": mail_ready()}  # same answer whether or not the email exists
+            return self._run(forgot)
+
+        if r == "/auth/reset":
             def reset():
                 b = self._body()
-                check_code(b.get("code"))
-                for row in kv("LRANGE", K_BINDEX, "0", "-1") or []:
-                    try:
-                        kv("DEL", "crown:backup:" + json.loads(row)["id"])
-                    except Exception:
-                        pass
-                kv("DEL", K_META, K_VAULT, K_BINDEX, K_BLAST, K_FAILS)
-                return {"ok": True}
-            return self._run(reset)
-        if r == "/restore":
-            def restore(b):
-                if not b.get("newAuthKey"):
+                rate_limit("reset", ip, 10, 900)
+                if not b.get("authKey") or not valid_vault(b.get("vault")):
                     raise UserError("Bad request.")
-                return {"ok": True, "rev": save_vault(b.get("vault"), "force", hash_key(b["newAuthKey"]))}
-            return self._run(authed(restore))
+                uid = use_token("reset", b.get("token"))
+                u = get_user(uid)
+                if not u:
+                    raise UserError("That reset link has expired or was already used.")
+                u["authHash"] = hash_key(b["authKey"])
+                u["salt"] = b["vault"]["salt"]
+                u["verified"] = True
+                put_user(u)
+                save_vault(uid, b["vault"], "force")
+                audit(u["email"], "reset password", uid)
+                return {"ok": True, "email": u["email"]}
+            return self._run(reset)
+
+        if r == "/account/delete":
+            def delete():
+                u = require_user(h, need_access=False)
+                sub = u.get("sub") or {}
+                if sub.get("id") and sub.get("status") not in ("canceled", "incomplete_expired") and STRIPE_KEY:
+                    try:
+                        stripe("DELETE", "/v1/subscriptions/" + sub["id"])
+                    except Exception:
+                        traceback.print_exc()
+                delete_user_data(u)
+                audit(u["email"], "deleted account", u["id"])
+                return {"ok": True}
+            return self._run(delete)
+
+        if r == "/billing/checkout":
+            def checkout():
+                u = require_user(h, need_access=False)
+                s = settings()
+                if u.get("suspended"):
+                    raise UserError("This account is suspended.")
+                if s.get("requireVerify") and mail_ready() and not u.get("verified"):
+                    raise UserError("Confirm your email first. Check your inbox for the link.")
+                rate_limit("checkout", u["id"], 20, 3600)
+                price = ensure_price(s)
+                cust = ensure_customer(u)
+                base = app_url(h)
+                params = {"mode": "subscription", "customer": cust, "client_reference_id": u["id"],
+                          "line_items": [{"price": price, "quantity": 1}], "allow_promotion_codes": True,
+                          "success_url": base + "/?billing=success", "cancel_url": base + "/?billing=cancel",
+                          "subscription_data": {"metadata": {"uid": u["id"]}}}
+                if int(s.get("trialDays") or 0) > 0 and not u.get("trialUsed"):
+                    params["subscription_data"]["trial_period_days"] = int(s["trialDays"])
+                sess = stripe("POST", "/v1/checkout/sessions", params)
+                return {"ok": True, "url": sess["url"]}
+            return self._run(checkout)
+
+        if r == "/billing/portal":
+            def portal():
+                u = require_user(h, need_access=False)
+                if not u.get("customerId"):
+                    raise UserError("There's no billing account yet. Subscribe first.")
+                p = stripe("POST", "/v1/billing_portal/sessions", {"customer": u["customerId"], "return_url": app_url(h) + "/#settings"})
+                return {"ok": True, "url": p["url"]}
+            return self._run(portal)
+
+        if r == "/billing/sync":
+            def bsync():
+                u = require_user(h, need_access=False)
+                rate_limit("bsync", u["id"], 60, 3600)
+                return {"ok": True, "account": public_account(sync_from_stripe(u))}
+            return self._run(bsync)
+
+        if r == "/restore":
+            def restore():
+                b = self._body()
+                u = require_user(h)
+                if not b.get("newAuthKey") or not valid_vault(b.get("vault")):
+                    raise UserError("Bad request.")
+                rev = save_vault(u["id"], b["vault"], "force")
+                u["authHash"] = hash_key(b["newAuthKey"])
+                u["salt"] = b["vault"]["salt"]
+                put_user(u)
+                return {"ok": True, "rev": rev}
+            return self._run(restore)
+
         routes = {
             "/imap/test": lambda b: imap_test(b.get("account") or {}),
             "/imap/folders": lambda b: imap_folders(b.get("account") or {}),
@@ -1553,4 +2228,256 @@ class handler(BaseHTTPRequestHandler):
         fn = routes.get(r)
         if not fn:
             return self._send(404, {"ok": False, "error": "Not found"})
-        self._run(authed(fn))
+
+        def go():
+            b = self._body()
+            require_user(h)
+            if r.startswith("/imap/"):
+                check_mail_host((b.get("account") or {}).get("host"))
+            return fn(b)
+        self._run(go)
+
+    # ------------------------------------------------------------ admin API
+    def _admin_get(self, r):
+        h = self.headers
+        q = self._query()
+        if r == "/admin/status":
+            return self._run(lambda: {"ok": True, "setup": bool(kv("GET", "ct:admin")), "version": VERSION})
+        if r == "/admin/stats":
+            return self._run(lambda: (require_admin(h), {"ok": True, "stats": admin_stats(), "settings": {k: v for k, v in settings().items() if not k.startswith("stripe")}})[1])
+        if r == "/admin/users":
+            def users():
+                require_admin(h)
+                s = settings()
+                t = now()
+                rows = [admin_user_row(u, s, t) for u in all_users()]
+                term = (q.get("q") or "").strip().lower()
+                if term:
+                    rows = [x for x in rows if term in x["email"] or term in x["id"] or term in (x["note"] or "").lower() or term in (x["compNote"] or "").lower()]
+                f = q.get("filter") or "all"
+                pick = {"access": lambda x: x["access"], "paying": lambda x: x["reason"] in ("active", "grace") and x["subStatus"] in ("active", "past_due", "unpaid"),
+                        "free": lambda x: x["reason"] == "free", "trial": lambda x: x["reason"] == "trial", "waiting": lambda x: not x["access"] and not x["suspended"],
+                        "pastdue": lambda x: x["subStatus"] in ("past_due", "unpaid"), "suspended": lambda x: x["suspended"], "unverified": lambda x: not x["verified"]}
+                if f in pick:
+                    rows = [x for x in rows if pick[f](x)]
+                return {"ok": True, "users": rows[:1000], "total": len(rows)}
+            return self._run(users)
+        if r.startswith("/admin/user/"):
+            uid = r[len("/admin/user/"):]
+
+            def one():
+                require_admin(h)
+                u = get_user(uid)
+                if not u:
+                    raise UserError("No such account.")
+                row = admin_user_row(u, settings(), now())
+                row["backups"] = len(kv("LRANGE", "ct:bki:" + uid, "0", "-1") or [])
+                row["agreedAt"] = u.get("agreedAt")
+                row["agreedPrice"] = u.get("agreedPrice")
+                row["history"] = [json.loads(x) for x in (kv("LRANGE", "ct:audit", "0", "1999") or []) if ('"' + uid + '"') in x][:50]
+                return {"ok": True, "user": row}
+            return self._run(one)
+        if r == "/admin/audit":
+            return self._run(lambda: (require_admin(h), {"ok": True, "log": [json.loads(x) for x in (kv("LRANGE", "ct:audit", "0", "299") or [])]})[1])
+        if r == "/admin/coupons":
+            def coupons():
+                require_admin(h)
+                if not STRIPE_KEY:
+                    return {"ok": True, "coupons": [], "billingReady": False}
+                pcs = stripe("GET", "/v1/promotion_codes", {"limit": 50}).get("data") or []
+                return {"ok": True, "billingReady": True, "coupons": [{"id": p["id"], "code": p["code"], "active": p.get("active"), "times": p.get("times_redeemed", 0),
+                                                                       "percentOff": (p.get("coupon") or {}).get("percent_off"), "amountOff": (p.get("coupon") or {}).get("amount_off"),
+                                                                       "duration": (p.get("coupon") or {}).get("duration"), "months": (p.get("coupon") or {}).get("duration_in_months")} for p in pcs]}
+            return self._run(coupons)
+        self._send(404, {"ok": False, "error": "Not found"})
+
+    def _admin_post(self, r):
+        h = self.headers
+        ip = client_ip(h)
+        if r == "/admin/setup":
+            def setup():
+                b = self._body()
+                rate_limit("asetup", ip, 10, 900)
+                if kv("GET", "ct:admin"):
+                    raise UserError("The admin account already exists. Sign in instead.")
+                clean = lambda x: re.sub(r"[^A-Z0-9]", "", str(x or "").upper())
+                if not SETUP_CODE or not _hmac.compare_digest(clean(b.get("code")), clean(SETUP_CODE)):
+                    raise PermissionError("That setup code isn't right.")
+                email = norm_email(b.get("email"))
+                pw = str(b.get("password") or "")
+                if not email or len(pw) < 10:
+                    raise UserError("Use your email and a password of at least 10 characters.")
+                secret = str(b.get("totpSecret") or "")
+                step = totp_ok(secret, b.get("totpCode"))
+                if not step:
+                    raise UserError("That 6-digit code didn't match. Check your authenticator app's time and try again.")
+                salt, ph = pw_hash(pw)
+                if kv("SET", "ct:admin", json.dumps({"email": email, "salt": salt, "hash": ph, "totp": secret, "lastStep": step, "createdAt": now()}), "NX") is None:
+                    raise UserError("The admin account already exists.")
+                audit(email, "created admin account")
+                return {"ok": True}
+            return self._run(setup)
+        if r == "/admin/login":
+            def login():
+                b = self._body()
+                rate_limit("alogin", ip, 10, 900)
+                a = kv_json("ct:admin")
+                email = norm_email(b.get("email"))
+                if not a or email != a["email"] or not _hmac.compare_digest(pw_hash(b.get("password") or "", a["salt"])[1], a["hash"]):
+                    time.sleep(0.5)
+                    raise PermissionError("Wrong email, password or code.")
+                step = totp_ok(a["totp"], b.get("code"), a.get("lastStep"))
+                if not step:
+                    raise PermissionError("Wrong email, password or code.")
+                a["lastStep"] = step
+                kv_set_json("ct:admin", a)
+                tok = _secrets.token_urlsafe(32)
+                kv_set_json("ct:asess:" + sha(tok), {"email": email, "at": now(), "ip": ip[:64]}, 12 * 3600)
+                clear_limit("alogin", ip)
+                audit(email, "admin signed in", detail=ip[:64])
+                return {"ok": True, "token": tok, "email": email}
+            return self._run(login)
+        if r == "/admin/logout":
+            def logout():
+                auth = h.get("Authorization") or ""
+                if auth.startswith("Bearer "):
+                    kv("DEL", "ct:asess:" + sha(auth[7:]))
+                return {"ok": True}
+            return self._run(logout)
+
+        def act(fn):
+            def go():
+                sess = require_admin(h)
+                return fn(self._body(), sess["email"])
+            return self._run(go)
+
+        if r == "/admin/settings":
+            def save_settings(b, who):
+                cur = kv_json("ct:settings") or {}
+                changes = []
+                if "priceCents" in b:
+                    p = int(b["priceCents"])
+                    if p < 50 or p > 100000:
+                        raise UserError("Price must be between $0.50 and $1,000.")
+                    cur["priceCents"] = p
+                    changes.append("price %d" % p)
+                if "currency" in b:
+                    c = str(b["currency"]).lower()
+                    if not re.fullmatch(r"[a-z]{3}", c):
+                        raise UserError("Bad currency.")
+                    cur["currency"] = c
+                for k, lo, hi in (("trialDays", 0, 90), ("graceDays", 0, 30)):
+                    if k in b:
+                        v = int(b[k])
+                        if v < lo or v > hi:
+                            raise UserError("%s must be %d-%d." % (k, lo, hi))
+                        cur[k] = v
+                        changes.append("%s %d" % (k, v))
+                for k in ("signupsOpen", "requireVerify"):
+                    if k in b:
+                        cur[k] = bool(b[k])
+                        changes.append("%s %s" % (k, cur[k]))
+                if "announcement" in b:
+                    cur["announcement"] = str(b["announcement"])[:400]
+                    changes.append("announcement")
+                kv_set_json("ct:settings", cur)
+                audit(who, "changed settings", detail=", ".join(changes))
+                return {"ok": True, "settings": {k: v for k, v in settings().items() if not k.startswith("stripe")}}
+            return act(save_settings)
+        m = re.fullmatch(r"/admin/user/([a-f0-9]{24})/(grant|revoke|suspend|unsuspend|verify|note|delete|resend|sync)", r)
+        if m:
+            uid, what = m.group(1), m.group(2)
+
+            def user_action(b, who):
+                u = get_user(uid)
+                if not u:
+                    raise UserError("No such account.")
+                detail = ""
+                if what == "grant":
+                    if b.get("forever"):
+                        until = "forever"
+                    elif b.get("until"):
+                        until = float(b["until"])
+                    else:
+                        days = int(b.get("days") or 0)
+                        if days < 1 or days > 3650:
+                            raise UserError("Pick a number of days.")
+                        base = (u.get("comp") or {}).get("until")
+                        start = base if isinstance(base, (int, float)) and base > now() and b.get("extend") else now()
+                        until = start + days * DAY
+                    u["comp"] = {"until": until, "note": str(b.get("note") or "")[:200], "by": who, "at": now()}
+                    detail = "forever" if until == "forever" else "until @%d" % int(until)
+                elif what == "revoke":
+                    u.pop("comp", None)
+                elif what == "suspend":
+                    u["suspended"] = True
+                    detail = str(b.get("note") or "")[:200]
+                elif what == "unsuspend":
+                    u["suspended"] = False
+                elif what == "verify":
+                    u["verified"] = True
+                elif what == "note":
+                    u["adminNote"] = str(b.get("note") or "")[:500]
+                elif what == "resend":
+                    if not mail_ready():
+                        raise UserError("Email isn't set up on the server yet.")
+                    send_verify(u, h)
+                elif what == "sync":
+                    sync_from_stripe(u)
+                    u = get_user(uid)
+                elif what == "delete":
+                    if (b.get("confirm") or "").strip().lower() != u["email"]:
+                        raise UserError("Type the account's email to confirm.")
+                    sub = u.get("sub") or {}
+                    if sub.get("id") and sub.get("status") not in ("canceled", "incomplete_expired") and STRIPE_KEY:
+                        try:
+                            stripe("DELETE", "/v1/subscriptions/" + sub["id"])
+                        except Exception:
+                            traceback.print_exc()
+                    delete_user_data(u)
+                    audit(who, "deleted account", uid, u["email"])
+                    return {"ok": True, "deleted": True}
+                if what not in ("resend", "sync"):
+                    put_user(u)
+                audit(who, what, uid, (u["email"] + (" " + detail if detail else "")))
+                return {"ok": True, "user": admin_user_row(u, settings(), now())}
+            return act(user_action)
+        if r == "/admin/coupon":
+            def coupon(b, who):
+                code = re.sub(r"[^A-Za-z0-9_-]", "", str(b.get("code") or "")).upper()[:30]
+                if not code:
+                    raise UserError("Enter a code, like LAUNCH50.")
+                params = {"duration": b.get("duration") if b.get("duration") in ("once", "repeating", "forever") else "once", "name": code}
+                if params["duration"] == "repeating":
+                    params["duration_in_months"] = max(1, min(36, int(b.get("months") or 1)))
+                if b.get("percentOff"):
+                    params["percent_off"] = max(1, min(100, int(b["percentOff"])))
+                elif b.get("amountOffCents"):
+                    params["amount_off"] = int(b["amountOffCents"])
+                    params["currency"] = settings()["currency"]
+                else:
+                    raise UserError("Set a percent or amount off.")
+                c = stripe("POST", "/v1/coupons", params)
+                pc = stripe("POST", "/v1/promotion_codes", {"coupon": c["id"], "code": code})
+                audit(who, "created discount code", detail=code)
+                return {"ok": True, "id": pc["id"]}
+            return act(coupon)
+        if r == "/admin/coupon/off":
+            def coupon_off(b, who):
+                stripe("POST", "/v1/promotion_codes/" + re.sub(r"[^A-Za-z0-9_]", "", str(b.get("id") or "")), {"active": False})
+                audit(who, "turned off discount code", detail=str(b.get("id")))
+                return {"ok": True}
+            return act(coupon_off)
+        if r == "/admin/password":
+            def change(b, who):
+                a = kv_json("ct:admin")
+                if not _hmac.compare_digest(pw_hash(b.get("old") or "", a["salt"])[1], a["hash"]):
+                    raise PermissionError("Current password is wrong.")
+                if len(str(b.get("new") or "")) < 10:
+                    raise UserError("Use at least 10 characters.")
+                a["salt"], a["hash"] = pw_hash(b["new"])
+                kv_set_json("ct:admin", a)
+                audit(who, "changed admin password")
+                return {"ok": True}
+            return act(change)
+        self._send(404, {"ok": False, "error": "Not found"})

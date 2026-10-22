@@ -257,6 +257,22 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 .stdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px;flex:0 0 auto}
 .dli .dright b{font-size:13px;white-space:nowrap}
 .mini .mmain{display:flex;flex-direction:column;gap:2px}
+/* online account screens */
+.acctbox{width:min(440px,92vw)}
+#acct{overflow:auto;align-content:center;padding:24px 0}
+.acctlegal{text-align:center;margin-top:14px}
+.acctlegal a{color:var(--faint)}
+.acsub{margin-top:2px}
+.acnote{margin:12px 0 0}
+.acfoot{margin-top:12px;gap:12px;flex-wrap:wrap}
+.acctbox button.primary{width:100%;margin-top:18px;padding:11px}
+.pricecard{margin-top:14px;padding:14px;border:1px solid #2b3863;background:linear-gradient(135deg,#161c33,#141821);border-radius:12px}
+.pricecard .pc1{font-size:20px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.pricecard.big .pc1{font-size:26px}
+.plist{margin:10px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.7}
+.accheck{align-items:flex-start;margin-top:14px;line-height:1.45}
+.accheck input{margin-top:3px}
+.annbar{margin:16px 26px 0;border-color:#2b3863;background:#18203a;color:#c9d1ff}
 /* export format tiles */
 #expFmt{display:grid;grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:8px}
 .fmttile{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px 10px;border-radius:12px;white-space:normal;text-align:center;min-height:0}
