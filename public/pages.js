@@ -88,8 +88,7 @@ PAGES.dashboard = {
     const cardDead = (state.cards || []).filter(c => c.status === 'dead').length;
     const cardGroups = (state.cardGroups || []).length;
     const liveCards = (state.cards || []).filter(c => c.status === 'active' || c.status === 'unused').length;
-    const hasCheckout = profTotal || accTotal || cardTotal;
-    const chkCard = !hasCheckout ? '' : `<div class="card chkcard" style="margin-bottom:16px">
+    const chkCard = `<div class="card chkcard">
       <h3>Checkout<span class="spacer"></span><button class="ghost sm" data-nav="profiles">Profiles ›</button></h3>
       <div class="chkkpis">
         <div class="kpi click" data-nav="profiles"><div class="l">Profiles</div><div class="v">${profTotal}</div><div class="d"${dsum.bad ? ' style="color:var(--warn)"' : ''}>${dsum.bad ? plural(dsum.bad, 'profile') + ' to change' : dsum.watch ? plural(dsum.watch, 'profile') + ' to watch' : profTotal ? 'all good' : 'none yet'}</div></div>

@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.2 — Checkout card (2026-10-22)
+
+- The Checkout card now always shows at the top of the dashboard.
+
 ## v0.9.1 — Dashboard & prices (2026-10-22)
 
 - Added a Checkout card to the top of the dashboard — profiles, accounts and cards at a glance.

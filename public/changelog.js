@@ -1,6 +1,9 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.9.2', date: '2026-10-22', title: 'Checkout card', items: [
+    'The Checkout card now always shows at the top of the dashboard.',
+  ] },
   { v: '0.9.1', date: '2026-10-22', title: 'Dashboard & prices', items: [
     'Added a Checkout card to the top of the dashboard — profiles, accounts and cards at a glance.',
     'Inventory now tracks the TCGplayer median price and refreshes it every 6 hours.',

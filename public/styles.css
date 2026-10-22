@@ -466,7 +466,9 @@ button.primary.dangerbtn{background:var(--danger);border-color:var(--danger)}
 .kpi .v.pos{color:var(--ok)}.kpi .v.neg{color:var(--danger)}
 .kpi.click{cursor:pointer}.kpi.click:hover{border-color:var(--line2,#2a3142)}
 .chkkpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-.chkcard .kpi{background:var(--bg)}
+.chkcard{margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)}
+.chkcard h3{font-size:16px}
+.chkcard .kpi{background:var(--panel)}
 @media (max-width:480px){.chkkpis{gap:8px}.chkcard .kpi{padding:11px 10px}}
 .thumb.lg{width:96px;height:96px;flex-basis:96px;border-radius:12px}
 dialog.scan{width:min(560px,96vw)}
