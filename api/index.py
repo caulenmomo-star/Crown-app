@@ -1199,7 +1199,13 @@ def market_search(req):
                 if toks and not all(t in hay or (t in MARKET_ALIASES and MARKET_ALIASES[t] in hay) for t in toks):
                     continue
                 found.append(dict(p, setName=g["name"], setDate=g.get("date") or ""))
-    found.sort(key=lambda p: (p["setDate"], p["name"]), reverse=True)
+    # best match first: no "case"/"display"/"bundle of" unless asked for, then the shortest (closest) name, then newest set
+    extra = re.compile(r"\b(case|display|bundle of|lot|sleeved|blister|\d+\s*pack|set of|half)\b")
+    def rank(p):
+        n = p["name"].lower()
+        pen = sum(1 for m in extra.findall(n) if m not in q)
+        return (pen, len(n), "".join(chr(255 - ord(c)) for c in p["setDate"]))
+    found.sort(key=rank)
     found = found[:40]
     gids = sorted({p["group"] for p in found})
     prices = {}
