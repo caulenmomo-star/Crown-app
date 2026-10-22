@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.9.2'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.9.3'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -79,7 +79,7 @@ function stickInfo(list) {
 }
 
 /* ---------- state ---------- */
-const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
+const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
   return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
@@ -125,6 +125,9 @@ async function api(path, body, method) {
 
 /* ---------- crypto ---------- */
 const enc = new TextEncoder(), dec = new TextDecoder();
+// New and changed passwords must be at least this long (existing shorter passwords still unlock).
+const MIN_PW = 12;
+const PW_HINT = `Use at least ${MIN_PW} characters — a few random words works well.`;
 function b64e(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 function b64d(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
 // One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Crown Tools / Profile Manager
@@ -240,7 +243,7 @@ async function pollRemote() {
   catch (e) { if (e.data && e.data.auth) lock('Your password was changed on another device. Unlock with the new password.'); }
 }
 setInterval(pollRemote, 30000);
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') pollRemote(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible') return; if (typeof idleLockCheck === 'function') idleLockCheck(); if (cryptoKey) pollRemote(); });
 
 // Three-way merge: base = last version both sides agreed on. Records are matched by id;
 // whichever side changed a record wins (newest edit if both did); deletes on either side stick.
@@ -478,7 +481,7 @@ function renderLockUI() {
   $('#lockSub').textContent = mode === 'unlock' ? 'Enter your password to unlock.'
     : mode === 'restore' ? 'Enter the password this backup was made with' + (CLOUD ? ', plus your setup code.' : '.')
       : CLOUD ? 'Welcome to Crown Tools Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
-        : 'Create a password. Everything in Crown Tools is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
+        : 'Create a password of at least ' + MIN_PW + ' characters. Everything in Crown Tools is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
   $('#lockBtn').textContent = mode === 'unlock' ? 'Unlock' : mode === 'restore' ? 'Restore & open' : 'Create & open';
   $('#lockBtn').disabled = false;
 }
@@ -512,7 +515,7 @@ async function doUnlock() {
       cryptoKey = out.key; salt = out.salt; state = migrate(out.data); pendingRestore = null; cloudExists = true;
       if (CLOUD) baseJSON = JSON.stringify(state); else await saveNow();
     } else if (mode === 'create') {
-      if (pw.length < 6) throw new Error('Use at least 6 characters.');
+      if (pw.length < MIN_PW) throw new Error(PW_HINT);
       if (pw !== $('#pw2').value) throw new Error('Passwords don’t match.');
       salt = crypto.getRandomValues(new Uint8Array(16)); const ks = await deriveKeys(pw, salt);
       state = blankState();
@@ -553,7 +556,10 @@ async function lock(msg) {
 }
 let lastActivity = Date.now();
 ['mousemove', 'keydown', 'mousedown', 'wheel', 'touchstart'].forEach(ev => document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
-setInterval(() => { const m = state.settings && state.settings.autoLockMin; if (cryptoKey && m && Date.now() - lastActivity > m * 60000) lock('Locked after ' + m + ' minutes of inactivity.'); }, 20000);
+function idleLockCheck() { const m = state.settings && state.settings.autoLockMin; if (cryptoKey && m && Date.now() - lastActivity > m * 60000) lock('Locked after ' + m + ' minutes of inactivity.'); }
+setInterval(idleLockCheck, 20000);
+// coming back to the tab or app after a long time locks right away instead of showing your data first
+window.addEventListener('pageshow', idleLockCheck);
 
 function askPassword(title, text) {
   return new Promise(resolve => {

@@ -725,3 +725,15 @@ html[data-theme=cherry] dialog{box-shadow:var(--shadow)}
 .addmanual{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--panel2)}
 .addmanual summary{cursor:pointer;color:var(--muted);font-weight:500}
 .addmanual[open] summary{margin-bottom:4px;color:var(--text)}
+
+/* calendar: a day's orders grouped by house */
+.calhouse{border:1px solid var(--line);border-radius:var(--radius);padding:10px 12px;margin-top:10px;background:var(--bg)}
+.calhouse-h{display:flex;align-items:center;gap:10px;min-width:0}
+.calhouse-h .mmain{flex:1;min-width:0}
+.calhouse-h .t2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calhouse-h[data-nav]{cursor:pointer}
+.calhouse-h[data-nav]:hover .t2{text-decoration:underline}
+.calhouse-i{font-size:18px;line-height:1}
+.calhouse .section{margin-top:10px}
+.calhouse.nohouse{border-style:dashed}
+@media (max-width:480px){.calhouse{padding:9px 10px}.calhouse-h .nowrap{white-space:normal;text-align:right;max-width:34%;flex:none}}

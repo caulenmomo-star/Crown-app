@@ -39,7 +39,7 @@ const Account = (() => {
         <div class="pricecard"><div class="pc1"><b>${esc(pr)}</b>${P().trialDays ? ` <span class="badge">${P().trialDays}-day free trial</span>` : ''}</div>
           <div class="small muted">Crown Tools is a paid monthly subscription. Creating an account is free — you’ll subscribe on the next screen to start using it. Cancel anytime.</div></div>
         <div class="field"><label for="acEmail">Email</label><input id="acEmail" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
-        <div class="field"><label for="acPw">Password</label><input id="acPw" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+        <div class="field"><label for="acPw">Password</label><input id="acPw" type="password" autocomplete="new-password" placeholder="At least ${MIN_PW} characters"></div>
         <div class="field"><label for="acPw2">Confirm password</label><input id="acPw2" type="password" autocomplete="new-password"></div>
         <div class="note warn small">Your password also locks your data on this device — nobody, not even Crown Tools, can read it or recover it. If you forget it, you can reset it but you’ll start with empty data.</div>
         <label class="check accheck"><input type="checkbox" id="acAgree"> <span>I understand Crown Tools costs <b>${esc(pr)}</b> after I create my account, and I agree to the <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
@@ -116,7 +116,7 @@ const Account = (() => {
     const email = $('#acEmail').value.trim().toLowerCase(), pw = $('#acPw').value, pw2 = $('#acPw2').value;
     const claim = ($('#acClaim') && $('#acClaim').value || '').trim();
     if (!/^[^@\s]+@[^@\s]+\.[a-z0-9-]{2,}$/i.test(email)) return fail(new Error('Enter a valid email address.'));
-    if (pw.length < 8) return fail(new Error('Use a password with at least 8 characters.'));
+    if (pw.length < MIN_PW) return fail(new Error(PW_HINT));
     if (pw !== pw2) return fail(new Error('Passwords don’t match.'));
     if (!$('#acAgree').checked) return fail(new Error('Please tick the box to confirm the price and Terms.'));
     busy(true, 'Creating account…');
@@ -173,7 +173,7 @@ const Account = (() => {
   }
   async function resetPw() {
     const pw = $('#acPw').value, pw2 = $('#acPw2').value;
-    if (pw.length < 8) return fail(new Error('Use at least 8 characters.'));
+    if (pw.length < MIN_PW) return fail(new Error(PW_HINT));
     if (pw !== pw2) return fail(new Error('Passwords don’t match.'));
     busy(true, 'Saving…');
     try {

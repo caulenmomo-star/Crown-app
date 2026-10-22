@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.3 — Calendar & security (2026-10-22)
+
+- The calendar now groups each day’s orders by the house they’re going to.
+- Auto-lock is on by default (15 minutes) and locks right away when you come back after being away.
+- New passwords need at least 12 characters.
+
 ## v0.9.2 — Checkout card (2026-10-22)
 
 - The Checkout card now always shows at the top of the dashboard.

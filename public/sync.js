@@ -185,6 +185,8 @@ function onUnlocked() {
   // out-for-delivery). Re-read every order email once so existing orders fill in, then relink profiles and houses.
   const needReread = state.readerVer !== READER_VER;
   if (needReread) { if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => rereadAll(true), 1500); else if (!state.imapAccounts.length) state.readerVer = READER_VER; }
+  // one time: data made before auto-lock had a default gets 15 minutes (can be set back to Never in Settings)
+  if (!state.settings.lockDefault) { if (!state.settings.autoLockMin) state.settings.autoLockMin = 15; state.settings.lockDefault = 1; save(); }
   if (state.syncVer !== 1) { if (!state.settings.autoSyncMin) state.settings.autoSyncMin = 5; state.syncVer = 1; save(); }
   setTimeout(() => refreshStaleTracking(), 4000);
   setTimeout(() => { if (cryptoKey && typeof refreshPrices === 'function') refreshPrices(false, true); }, 9000);

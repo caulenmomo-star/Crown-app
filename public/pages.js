@@ -141,6 +141,28 @@ function calIndex() {
   });
   return idx;
 }
+// The selected day's orders grouped by the house they're going to (houses with the most orders first, no address last),
+// each house keeping its Arriving / Delivered / Ordered sections.
+const CAL_TYPES = [['eta', 'Arriving', 'arriving'], ['del', 'Delivered', 'delivered'], ['plc', 'Ordered', 'ordered']];
+function calDayByHouse(sel) {
+  const groups = new Map();
+  for (const [k] of CAL_TYPES) for (const o of sel[k]) {
+    const hid = o.houseId && houseById(o.houseId) ? o.houseId : '';
+    if (!groups.has(hid)) groups.set(hid, { eta: [], del: [], plc: [] });
+    groups.get(hid)[k].push(o);
+  }
+  if (!groups.size) return '<div class="empty sm">Nothing on this day.</div>';
+  const n = g => g.eta.length + g.del.length + g.plc.length;
+  const list = [...groups.entries()].sort((a, b) => (!a[0]) - (!b[0]) || n(b[1]) - n(a[1]) || houseLabel(houseById(a[0])).localeCompare(houseLabel(houseById(b[0]))));
+  const houses = list.filter(([hid]) => hid).length;
+  return `${houses > 1 ? `<div class="small muted" style="margin-bottom:2px">${plural(houses, 'house')}</div>` : ''}` + list.map(([hid, g]) => {
+    const h = hid ? houseById(hid) : null;
+    const summary = CAL_TYPES.filter(([k]) => g[k].length).map(([k, , w]) => `${g[k].length} ${w}`).join(' · ');
+    return `<div class="calhouse${h ? '' : ' nohouse'}">
+      <div class="calhouse-h"${h ? ` data-nav="houses/${hid}" title="Open this house"` : ''}><span class="calhouse-i">${h ? '🏠' : '❔'}</span><div class="mmain"><div class="t2">${esc(h ? houseLabel(h) : 'No address yet')}</div>${h ? (() => { const sub = h.nickname ? houseAddr(h) : [h.city, [h.state, h.zip].filter(Boolean).join(' ')].filter(Boolean).join(', '); return sub ? `<div class="small muted ellipsis">${esc(sub)}</div>` : ''; })() : ''}</div><span class="small faint nowrap">${summary}</span>${h ? '<span class="faint">›</span>' : ''}</div>
+      ${CAL_TYPES.filter(([k]) => g[k].length).map(([k, t]) => `<div class="section">${t} (${g[k].length})</div>${orderMiniList(g[k])}`).join('')}</div>`;
+  }).join('');
+}
 PAGES.calendar = {
   render() {
     const pg = $('#pg-calendar'); const idx = calIndex(); const tk = todayKey();
@@ -155,7 +177,7 @@ PAGES.calendar = {
       <div class="calgrid">${cells.map(d => { const k = dayKey(d); const e = idx[k] || { eta: [], del: [], plc: [] }; return `<div class="day ${d.getMonth() !== CAL.m ? 'out' : ''} ${k === tk ? 'today' : ''} ${k === CAL.sel ? 'sel' : ''}" data-day="${k}"><div class="dn">${d.getDate()}</div>
         ${CAL.show.eta && e.eta.length ? `<div class="ev eta" title="${e.eta.length} arriving"><span class="evi">📦</span> <b>${e.eta.length}</b><span class="evl"> arriving</span></div>` : ''}${CAL.show.del && e.del.length ? `<div class="ev del" title="${e.del.length} delivered"><span class="evi">✓</span> <b>${e.del.length}</b><span class="evl"> delivered</span></div>` : ''}${CAL.show.plc && e.plc.length ? `<div class="ev plc" title="${e.plc.length} ordered"><span class="evi">🛒</span> <b>${e.plc.length}</b><span class="evl"> · ${fmtMoney(sum(e.plc, orderSpend), true)}</span></div>` : ''}</div>`; }).join('')}</div>
       <div class="card" style="margin-top:14px"><h3>${fmtDate(CAL.sel, { weekday: true, year: true })} <span class="faint" style="font-weight:400">${relDay(CAL.sel)}</span></h3>
-        ${[['Arriving', sel.eta], ['Delivered', sel.del], ['Ordered', sel.plc]].filter(([, l]) => l.length).map(([t, l]) => `<div class="section">${t} (${l.length})</div>${orderMiniList(l)}`).join('') || '<div class="empty sm">Nothing on this day.</div>'}</div>`;
+        ${calDayByHouse(sel)}</div>`;
     const mv = d => { const n = new Date(CAL.y, CAL.m + d, 1); CAL.y = n.getFullYear(); CAL.m = n.getMonth(); PAGES.calendar.render(); };
     $('#cPrev').onclick = () => mv(-1); $('#cNext').onclick = () => mv(1);
     $('#cToday').onclick = () => { const n = new Date(); CAL.y = n.getFullYear(); CAL.m = n.getMonth(); CAL.sel = todayKey(); PAGES.calendar.render(); };
@@ -533,7 +555,7 @@ PAGES.settings = {
 $('#restoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { toast(err.message); } };
 $('#cpGo').onclick = async () => {
   const o = $('#cpOld').value, n = $('#cpNew').value, n2 = $('#cpNew2').value; $('#cpErr').textContent = '';
-  if (n.length < (CLOUD ? 8 : 6)) { $('#cpErr').textContent = `Use at least ${CLOUD ? 8 : 6} characters.`; return; }
+  if (n.length < MIN_PW) { $('#cpErr').textContent = PW_HINT; return; }
   if (n !== n2) { $('#cpErr').textContent = 'New passwords don’t match.'; return; }
   $('#cpGo').disabled = true;
   try {
