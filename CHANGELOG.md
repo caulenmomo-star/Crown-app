@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.4 — Discord checkouts & cancel reasons (2026-10-22)
+
+- Connect Discord to read your bots’ checkouts and link them to orders, profiles, houses and accounts.
+- Cancelled orders now show why — quantity limit or item demand.
+- Profile health now counts item-demand cancels separately and flags a line 2 that hit the quantity limit.
+
 ## v0.9.3 — Calendar & security (2026-10-22)
 
 - The calendar now groups each day’s orders by the house they’re going to.

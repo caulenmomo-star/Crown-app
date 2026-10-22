@@ -1,6 +1,6 @@
 /* Crown Tools - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 4;
+const READER_VER = 5; // 5: cancellation reasons
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -137,7 +137,7 @@ async function syncAll(manual, ids, opts) {
   try { await Promise.all(accs.map(async a => { const r = await syncAccount(a, totals, opts); if (r.found) foundAny = true; if (r.error) errors.push((a.label || a.user) + ': ' + r.error); })); }
   finally { syncing = false; }
   if (!cryptoKey) return;
-  lastUndo = null; invalidateStats();
+  lastUndo = null; if (typeof relinkCheckouts === 'function') relinkCheckouts(); invalidateStats();
   const after = accs.map(a => JSON.stringify([a.lastResult && a.lastResult.error, a.uidValidity, a.lastSync ? 1 : 0])).join();
   if (foundAny || before !== after || pendingSave || manual) save(); // nothing new = nothing to save
   if (typeof rematchScans === 'function' && rematchScans()) save();

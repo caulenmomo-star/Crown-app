@@ -601,6 +601,18 @@
   // Everything after these lines is store recommendations, not your order.
   const RECS = /^(up next, just for you|you might also like|check everything off your list|you may also like|recommended for you|customers (also|who) bought|more to explore|inspired by your|picked for you|explore everything|shop similar|related items|trending now|don.t miss today)/i;
   const cutRecs = t => { const ls = String(t || '').split('\n'); const i = ls.findIndex(l => RECS.test(l.trim())); return (i > 0 ? ls.slice(0, i) : ls).join('\n'); };
+  // Why a store says it cancelled. Only a reason the email actually commits to counts: Target's cancel email lists every
+  // possible reason ("Purchase limit exceeded / Payment issue / Activity not supported"), so that template says nothing.
+  // 'limit' = quantity / purchase limit, 'demand' = sold out / high demand, 'flag' = payment, policy or fraud review.
+  function cancelReason(subject, text) {
+    const t = (String(subject || '') + '\n' + String(text || '')).toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ');
+    const listsAll = [/purchase limit exceeded/, /payment issue/, /activity not supported/, /one of the following reasons/].filter(r => r.test(t)).length >= 2;
+    if (listsAll) return '';
+    if (/flagged by our|policy (review|flag)|due to (our )?policy|violat\w* (our|the) (terms|policy)|activity not (supported|allowed) on|(could ?n[o']t|could not|unable to|weren't able to|were not able to) verify (your |the )?(payment|card|billing|identity|order)|payment (issue|problem|was declined|declined|failed|could not be|couldn't be)|card (was )?declined|(billing|payment) information (was |is )?(invalid|incorrect)|authoriz\w* (failed|was declined)/.test(t)) return 'flag';
+    if (/(exceed\w*|over|reached|hit|above) (the |our |a |its )?(purchase|quantity|order|item|household|customer) limit|(purchase|quantity|order) limits? (was |were |has been |have been )?(exceeded|reached)|due to (purchase|quantity|order) limits?|limit(ed)? (of )?\d+ per (customer|household|guest|order|address)|maximum (purchase |order )?quantity|more than the (allowed|maximum|limit)|limit per (customer|household|guest)/.test(t)) return 'limit';
+    if (/out of stock|no longer (in stock|available)|sold out|ran out|high demand|(insufficient|limited|not enough) (inventory|stock|quantity)|inventory (issue|shortage)|unable to (fulfill|fill)|couldn't (fulfill|fill)|could not (fulfill|fill)|not able to fulfill|item(s)? (is |are )?unavailable|unavailable item|backorder/.test(t)) return 'demand';
+    return '';
+  }
   function parseOrderEmail(m) {
     const subject = String(m.subject || '');
     const status = classifyStatus(subject);
@@ -649,6 +661,7 @@
       totalKind: first(extractTotal) != null ? 'order' : first(extractPayment) != null ? 'payment' : '',
       tracking: (() => { for (const s of sources) { const v = extractTracking(s, orderNumber); if (v.length) return v; } return []; })(),
       last4: first(extractLast4) || '',
+      cancelReason: status === 'cancelled' ? cancelReason(subject, text) : '',
       items: settlePrices(items, sub),
       // "We had to cancel an item in your order" - only part of the order is cancelled
       partial: status === 'cancelled' && (/\b(an item|some items|one item|1 item|items? in your order|items? from your order|part of your order|an item from|some of your items)\b/i.test(subject) || /\b(rest of your order|remaining items?|other items? (?:in|from) your order)\b/i.test(text)),
@@ -674,7 +687,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { cancelReason, detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

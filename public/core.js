@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.9.3'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.9.4'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -79,9 +79,9 @@ function stickInfo(list) {
 }
 
 /* ---------- state ---------- */
-const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
+const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, discordToken: '', discordLookback: 30, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -89,7 +89,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-  for (const k of ['accounts', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['accounts', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -250,7 +250,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'accounts', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses']) {
+  for (const k of ['categories', 'profiles', 'accounts', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];
@@ -495,7 +495,8 @@ async function setupLock(msg) {
     catch (e) { $('#lockSub').textContent = e.message; $('#lockBtn').disabled = true; return; }
   } else await loadBlob();
   renderLockUI();
-  setTimeout(() => { if (!/(iPad|iPhone)/.test(navigator.userAgent)) $('#pw1').focus(); }, 60);
+  // put the cursor in the password box - but never pull it away from a box you've already clicked into or typed in
+  setTimeout(() => { const a = document.activeElement; if (!/(iPad|iPhone)/.test(navigator.userAgent) && (!a || a === document.body) && !$('#pw1').value && !$('#pw2').value) $('#pw1').focus(); }, 60);
 }
 async function doUnlock() {
   const pw = $('#pw1').value; $('#lockErr').textContent = '';

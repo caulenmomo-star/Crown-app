@@ -1,6 +1,11 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.9.4', date: '2026-10-22', title: 'Discord checkouts & cancel reasons', items: [
+    'Connect Discord to read your bots’ checkouts and link them to orders, profiles, houses and accounts.',
+    'Cancelled orders now show why — quantity limit or item demand.',
+    'Profile health now counts item-demand cancels separately and flags a line 2 that hit the quantity limit.',
+  ] },
   { v: '0.9.3', date: '2026-10-22', title: 'Calendar & security', items: [
     'The calendar now groups each day’s orders by the house they’re going to.',
     'Auto-lock is on by default (15 minutes) and locks right away when you come back after being away.',

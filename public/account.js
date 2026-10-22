@@ -94,7 +94,7 @@ const Account = (() => {
     box.querySelectorAll('[data-ap]').forEach(b => b.onclick = () => setPanel(b.dataset.ap));
   }
   const enter = (sels, fn) => sels.forEach(s => { const el = $(s); if (el) el.addEventListener('keydown', e => { if (e.key === 'Enter') fn(); }); });
-  const focusFirst = s => setTimeout(() => { if (!/(iPad|iPhone)/.test(navigator.userAgent)) { const el = $(s); if (el) el.focus(); } }, 60);
+  const focusFirst = s => setTimeout(() => { const a = document.activeElement; if (!/(iPad|iPhone)/.test(navigator.userAgent) && (!a || a === document.body)) { const el = $(s); if (el && !el.value) el.focus(); } }, 60);
   const busy = (on, label) => { const b = $('#acGo') || $('#acPay'); if (b) { b.disabled = on; if (label) b.dataset.label = b.dataset.label || b.textContent; b.textContent = on ? label : (b.dataset.label || b.textContent); } };
   const fail = e => { const el = $('#acErr'); if (el) el.textContent = e.message || String(e); busy(false); };
 

@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.9.3"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.9.4"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -985,6 +985,144 @@ def carrier_test(req):
     return {"ok": True}
 
 
+
+# ---------------------------------------------------------------- Discord: reading bot checkout messages
+# A Discord bot you add to your server (View Channel + Read Message History, with Message Content Intent on) lets
+# Crown Tools read the checkout posts your bots send to a channel. The token comes from your encrypted data on each
+# request and is never stored or logged here.
+DISCORD_API = (os.environ.get("CROWN_DISCORD_API") or "https://discord.com/api/v10").rstrip("/")
+BOT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{18,40}\.[A-Za-z0-9_\-]{4,12}\.[A-Za-z0-9_\-]{20,80}$")
+SNOWFLAKE_RE = re.compile(r"^\d{15,22}$")
+DISCORD_EPOCH = 1420070400000
+
+
+def _dbot_token(req):
+    t = str(req.get("token") or "").strip().strip('"').strip()
+    if t.lower().startswith("bot "):
+        t = t[4:].strip()
+    if not BOT_TOKEN_RE.match(t):
+        raise UserError("That doesn't look like a Discord bot token. In the Discord Developer Portal open your app → Bot → Reset Token, then copy it.")
+    return t
+
+
+def _dchannel(req, key="channel"):
+    c = re.sub(r"\D", "", str(req.get(key) or ""))
+    if not SNOWFLAKE_RE.match(c):
+        raise UserError("A channel ID is a long number. In Discord turn on Developer Mode (Settings → Advanced), then right-click the channel → Copy Channel ID.")
+    return c
+
+
+def _dget(path, token):
+    for attempt in range(4):
+        r = urllib.request.Request(DISCORD_API + path, headers={"Authorization": "Bot " + token, "User-Agent": "DiscordBot (https://crowntools.vercel.app, %s)" % VERSION})
+        try:
+            with urllib.request.urlopen(r, timeout=20, context=ssl_context()) as resp:
+                return json.loads(resp.read().decode() or "null")
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 3:
+                try:
+                    wait = float(json.loads(e.read().decode() or "{}").get("retry_after") or 1)
+                except Exception:
+                    wait = 1.0
+                time.sleep(min(5.0, max(0.2, wait)))
+                continue
+            if e.code == 401:
+                raise UserError("Discord didn't accept that bot token. Copy it again from the Developer Portal (your app → Bot → Reset Token).")
+            if e.code == 403:
+                raise UserError("The bot can't read that channel. In Discord, give the bot View Channel and Read Message History there.")
+            if e.code == 404:
+                raise UserError("Discord couldn't find that channel. Check the channel ID, and that the bot is in that server.")
+            raise UserError("Discord error %s." % e.code)
+        except urllib.error.URLError as e:
+            raise UserError("Couldn't reach Discord (%s)." % e.reason)
+    raise UserError("Discord is busy right now — try again in a minute.")
+
+
+def _slim_message(m):
+    if not isinstance(m, dict):
+        return None
+    snap = None
+    for sn in (m.get("message_snapshots") or [])[:1]:  # Discord "Forward" wraps the original message
+        if isinstance(sn, dict) and isinstance(sn.get("message"), dict):
+            snap = sn["message"]
+    src = snap or m
+    embeds = []
+    for e in (src.get("embeds") or [])[:10]:
+        if not isinstance(e, dict):
+            continue
+        embeds.append({
+            "title": _clip(e.get("title"), 300), "description": _clip(e.get("description"), 4000), "url": _clip(e.get("url"), 500),
+            "author": _clip((e.get("author") or {}).get("name") if isinstance(e.get("author"), dict) else "", 200),
+            "footer": _clip((e.get("footer") or {}).get("text") if isinstance(e.get("footer"), dict) else "", 300),
+            "thumb": _clip((e.get("thumbnail") or {}).get("url") if isinstance(e.get("thumbnail"), dict) else "", 800),
+            "fields": [{"name": _clip(f.get("name"), 256), "value": _clip(f.get("value"), 1024)} for f in (e.get("fields") or [])[:30] if isinstance(f, dict)],
+        })
+    return {"id": str(m.get("id") or ""), "channel": str(m.get("channel_id") or ""), "at": _clip(m.get("timestamp"), 40),
+            "author": _clip((m.get("author") or {}).get("username") if isinstance(m.get("author"), dict) else "", 100),
+            "webhook": bool(m.get("webhook_id")), "content": _clip(src.get("content"), 2000), "embeds": embeds}
+
+
+def discord_check(req):
+    token = _dbot_token(req)
+    me = _dget("/users/@me", token) or {}
+    out = {"ok": True, "bot": me.get("username") or "your bot"}
+    if req.get("channel"):
+        ch = _dchannel(req)
+        info = _dget("/channels/%s" % ch, token) or {}
+        last = _dget("/channels/%s/messages?limit=10" % ch, token) or []
+        out.update({"channel": ch, "name": _clip(info.get("name"), 100), "guild": str(info.get("guild_id") or ""), "count": len(last)})
+        # Without Message Content Intent, Discord hands bots empty posts
+        blank = [x for x in last if isinstance(x, dict) and x.get("webhook_id") and not x.get("embeds") and not x.get("content")]
+        out["contentBlocked"] = bool(last) and len(blank) == len([x for x in last if isinstance(x, dict) and x.get("webhook_id")]) and len(blank) > 0
+    return out
+
+
+def discord_read(req):
+    """New messages in one channel, oldest first. With 'after' (the last message seen) it reads forward from there;
+    the first time it reads back to 'since' (an ISO date). Returns 'last' to pass as 'after' next time and 'more' when
+    there's still more to read."""
+    token = _dbot_token(req)
+    ch = _dchannel(req)
+    after = re.sub(r"\D", "", str(req.get("after") or ""))
+    max_pages = max(1, min(20, int(req.get("maxPages") or 10)))
+    msgs, pages, more = [], 0, False
+    if SNOWFLAKE_RE.match(after):
+        cur = after
+        while True:
+            if pages >= max_pages:
+                more = True
+                break
+            batch = _dget("/channels/%s/messages?limit=100&after=%s" % (ch, cur), token) or []
+            pages += 1
+            if not batch:
+                break
+            msgs.extend(batch)
+            cur = max(batch, key=lambda x: int(x["id"]))["id"]
+            if len(batch) < 100:
+                break
+    else:
+        try:
+            since_ms = int(datetime.datetime.fromisoformat(str(req.get("since") or "")[:10]).replace(tzinfo=datetime.timezone.utc).timestamp() * 1000)
+        except Exception:
+            since_ms = int(time.time() * 1000) - 30 * 86400000
+        floor = max(0, since_ms - DISCORD_EPOCH) << 22
+        before = None
+        while pages < max_pages:
+            batch = _dget("/channels/%s/messages?limit=100%s" % (ch, "&before=" + before if before else ""), token) or []
+            pages += 1
+            if not batch:
+                break
+            msgs.extend(batch)
+            oldest = min(batch, key=lambda x: int(x["id"]))
+            before = oldest["id"]
+            if len(batch) < 100 or int(oldest["id"]) < floor:
+                break
+        msgs = [m for m in msgs if int(m["id"]) >= floor]
+    msgs.sort(key=lambda m: int(m["id"]))
+    slim = [x for x in (_slim_message(m) for m in msgs) if x and x["id"]]
+    return {"ok": True, "messages": slim, "last": slim[-1]["id"] if slim else after, "more": more}
+
+
 # ---------------------------------------------------------------- Discord alerts
 DISCORD_RE = re.compile(r"^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/\d{5,30}/[A-Za-z0-9_\-]{20,120}$")
 
@@ -1428,6 +1566,8 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/track": track,
             "/api/carriertest": carrier_test,
             "/api/discord": discord_send,
+            "/api/discord/check": discord_check,
+            "/api/discord/read": discord_read,
             "/api/upc": upc_lookup,
             "/api/market/categories": market_categories,
             "/api/market/groups": market_groups,
@@ -2562,6 +2702,8 @@ class handler(BaseHTTPRequestHandler):
             "/track": track,
             "/carriertest": carrier_test,
             "/discord": discord_send,
+            "/discord/check": discord_check,
+            "/discord/read": discord_read,
             "/upc": upc_lookup,
             "/market/categories": market_categories,
             "/market/groups": market_groups,
@@ -2575,7 +2717,7 @@ class handler(BaseHTTPRequestHandler):
         def go():
             b = self._body()
             u = require_user(h)
-            limits = {"/discord": (300, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
+            limits = {"/discord": (300, 3600), "/discord/check": (60, 3600), "/discord/read": (400, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
             if r in limits:
                 rate_limit("u" + r.replace("/", ""), u["id"], *limits[r])
             if r.startswith("/imap/"):

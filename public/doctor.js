@@ -35,45 +35,126 @@ function currentOrders(p, list) {
 }
 const SEVERE = /^Missing .*(card number|address|exp|CVV)|fails the checksum|Card expired/;
 
+/* ---------- why an order was cancelled ---------- */
+// limit  - quantity / purchase limit: this house had already got the same item through (the house is maxed), or the
+//          store said so. On a jigged address (one with a line 2) that means the jig didn't get past the limit; with no
+//          line 2 it's expected.
+// demand - item demand: nothing for that item got through to the house - the 50/50 kind, or the store said sold out.
+// flag   - the store said payment, policy or fraud review.
+// You can set it yourself on any order (o.cancelWhy); what you set always wins.
+const CANCEL_KINDS = {
+  limit: { l: 'Quantity limit', short: 'limit', c: 'var(--accent)' },
+  demand: { l: 'Item demand', short: 'demand', c: 'var(--warn)' },
+  flag: { l: 'Payment / policy', short: 'flag', c: 'var(--danger)' },
+};
+const LIMIT_WINDOW = 14 * 864e5;
+const prodKeys = o => (o.items || []).map(i => i.name).filter(Boolean);
+function sameProduct(a, b) {
+  const ka = itemKey(a), kb = itemKey(b); if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  const ca = typeof coreKey === 'function' ? coreKey(a) : ka, cb = typeof coreKey === 'function' ? coreKey(b) : kb;
+  if (ca && ca === cb) return true;
+  return Math.min(ca.length, cb.length) >= 12 && (ca.includes(cb) || cb.includes(ca));
+}
+const isJig = o => !!unitOf(o.addr1 || '', o.addr2 || '');
+let _cinfo = null;
+// same-product orders that got through to this house around the same time
+function limitHits(o) {
+  const hk = oHouse(o); if (!hk) return [];
+  const t = oDay(o), names = prodKeys(o);
+  return (doctorIndex().byHouse.get(hk) || []).filter(x => x !== o && isStuck(x) && (!o.store || !x.store || x.store === o.store) && Math.abs(oDay(x) - t) <= LIMIT_WINDOW)
+    .filter(x => { const xn = prodKeys(x); return names.length && xn.length ? names.some(a => xn.some(b => sameProduct(a, b))) : Math.abs(oDay(x) - t) <= 3 * 864e5; });
+}
+function cancelInfo(o) {
+  if (!o || !isCancelled(o)) return null;
+  if (!_cinfo) _cinfo = new Map();
+  if (_cinfo.has(o.id)) return _cinfo.get(o.id);
+  let r; const jig = isJig(o), hits = limitHits(o);
+  if (CANCEL_KINDS[o.cancelWhy]) r = { kind: o.cancelWhy, by: 'you', why: 'Set by you' };
+  else if (CANCEL_KINDS[o.cancelReason]) r = { kind: o.cancelReason, by: 'email', why: 'The store’s email said so' };
+  else if (hits.length) r = { kind: 'limit', by: 'house', why: `${plural(hits.length, 'order')} of this item already got through to this house` };
+  else r = { kind: 'demand', by: 'house', why: oHouse(o) ? 'Nothing for this item got through to this house' : 'No address to compare against' };
+  r.jig = jig;
+  // A line 2 is "caught" when the item got through to the house on a different address (the plain one or another
+  // line 2) and this line 2 still hit the limit - the store matched it to the house. Hitting the limit on the very
+  // address that already got it through (plain or the same line 2) just means that address is maxed - expected.
+  const u = unitOf(o.addr1 || '', o.addr2 || '');
+  r.caught = r.kind === 'limit' && jig && (hits.length ? hits.some(x => unitOf(x.addr1 || '', x.addr2 || '') !== u) : true);
+  r.expected = r.kind === 'limit' && !r.caught;
+  _cinfo.set(o.id, r);
+  return r;
+}
+const cancelKind = o => { const c = cancelInfo(o); return c ? c.kind : ''; };
+function cancelChip(o) {
+  const c = cancelInfo(o); if (!c) return '';
+  const K = CANCEL_KINDS[c.kind];
+  const tip = `${K.l}${c.kind === 'limit' ? (c.caught ? ' on a line 2 — the jig didn’t get past the limit' : c.jig ? ' on a line 2 that had already got it through — that address is maxed, expected' : ' on the plain address — expected, the house is maxed') : ''}. ${c.why}.`;
+  return `<span class="cchip cc-${c.kind}${c.expected ? ' cc-ok' : ''}" title="${esc(tip)}">${esc(K.short)}${c.caught ? ' · line 2' : ''}</span>`;
+}
+// counts by kind for a list of orders
+function cancelTally(list) {
+  const t = { demand: 0, flag: 0, limit: 0, limitJig: 0, limitPlain: 0 };
+  for (const o of list) { const c = cancelInfo(o); if (!c) continue; t[c.kind]++; if (c.kind === 'limit') t[c.caught ? 'limitJig' : 'limitPlain']++; }
+  return t;
+}
+
 /* ---------- the verdict for one profile ---------- */
 // level: 'bad' (change it), 'watch', 'good', 'new' (no orders yet), plus plain-English reasons and what to do.
 function profileVerdict(p) {
   const ix = doctorIndex();
   const all = (ix.byProfile.get(p.id) || []).slice().sort((a, b) => oDay(a) - oDay(b));
   const cur = currentOrders(p, all);
-  const t = tally(cur), tAll = tally(all);
-  const decided = cur.filter(o => isStuck(o) || isCancelled(o));
-  const last3 = decided.slice(-3);
+  const t = tally(cur), tAll = tally(all), ck = cancelTally(cur), ckAll = cancelTally(all);
   const reasons = [], fixes = new Set(); let level = 'good';
   const bump = l => { const r = { new: 0, good: 1, watch: 2, bad: 3 }; if (r[l] > r[level]) level = l; };
-  // the profile's own record on its current address
-  if (t.dead >= 3 && t.stuck === 0) { bump('bad'); reasons.push(`All ${t.dead} decided orders on this address were cancelled`); fixes.add('l2'); }
-  else if (last3.length === 3 && last3.every(isCancelled)) { bump('bad'); reasons.push('The last 3 orders were all cancelled'); fixes.add('l2'); }
-  else if (decided.length >= 5 && t.stuck / decided.length <= 0.2) { bump('bad'); reasons.push(`Only ${Math.round(t.stuck / decided.length * 100)}% of orders stick (${t.stuck} of ${decided.length})`); fixes.add('l2'); }
-  else if (t.dead >= 1 && (decided.length ? t.stuck / decided.length < 0.6 : true)) { bump('watch'); reasons.push(`${plural(t.dead, 'cancellation')}, ${t.stuck} stuck`); }
-  else if (decided.length && isCancelled(decided[decided.length - 1])) { bump('watch'); reasons.push('The most recent order was cancelled'); }
-  // the exact address (street + line 2) is burned no matter which profile used it
+  const curL2 = p.shipAddr2 || Parser.splitUnit(p.shipAddr1 || '').unit || '';
+  // 1. Quantity limit on a line 2: the jig didn't get past the house limit - the store tied this line 2 to the house.
+  //    (A limit on the plain address with no line 2 is expected - the house is maxed - so it never counts against it.)
+  const limJig = cur.filter(o => cancelKind(o) === 'limit' && cancelInfo(o).caught);
+  if (limJig.length) {
+    const lastLim = Math.max(...limJig.map(oDay));
+    const stuckAfter = cur.filter(o => isStuck(o) && isJig(o) && oDay(o) > lastLim).length;
+    const what = curL2 ? `Line 2 “${curL2}”` : 'This line 2';
+    if (!stuckAfter) { bump('bad'); reasons.push(`${what} didn’t get past the quantity limit (${plural(limJig.length, 'time')}) — the store matched it to the house`); fixes.add('l2'); }
+    else { bump('watch'); reasons.push(`${what} hit the quantity limit ${plural(limJig.length, 'time')}, but ${stuckAfter} got through after`); }
+  }
+  // 2. Item demand (and payment / policy flags): one cancel is a coin flip, so it takes several to call a profile bad.
+  //    Quantity-limit cancels are left out here - they say nothing about the profile itself.
+  const judged = cur.filter(o => isStuck(o) || (isCancelled(o) && cancelKind(o) !== 'limit'));
+  const dem = ck.demand, rate = judged.length ? t.stuck / judged.length : 1;
+  const last4 = judged.slice(-4);
+  if (dem >= 4 && t.stuck === 0) { bump('bad'); reasons.push(`${dem} orders cancelled for item demand and none got through`); fixes.add('l2'); }
+  else if (last4.length === 4 && last4.every(o => isCancelled(o) && cancelKind(o) === 'demand')) { bump('bad'); reasons.push('The last 4 orders were all cancelled for item demand'); fixes.add('l2'); }
+  else if (judged.length >= 6 && rate <= 0.2) { bump('bad'); reasons.push(`Only ${Math.round(rate * 100)}% get through (${t.stuck} of ${judged.length}, not counting quantity limits)`); fixes.add('l2'); }
+  else if (dem >= 2 && t.stuck === 0) { bump('watch'); reasons.push(`${plural(dem, 'item-demand cancel')} and nothing through yet — could still be bad luck`); }
+  else if (dem >= 3 && rate < 0.4) { bump('watch'); reasons.push(`${plural(dem, 'item-demand cancel')}, ${t.stuck} through`); }
+  if (ck.flag >= 2) { bump('bad'); reasons.push(`Cancelled for payment / policy ${ck.flag} times`); fixes.add('card'); }
+  else if (ck.flag === 1) { bump('watch'); reasons.push('Cancelled once for payment / policy'); }
+  // 3. the exact address (street + line 2) no matter which profile used it
   const hk = pHouse(p), uk = hk && hk + '#' + unitOf(p.shipAddr1, p.shipAddr2);
-  if (uk && p.shipAddr2) {
+  if (uk && unitOf(p.shipAddr1, p.shipAddr2)) {
     const since = Date.now() - 120 * 864e5;
-    const onUnit = (ix.byUnit.get(uk) || []).filter(o => oDay(o) >= Math.max(since, p.l2ChangedAt || 0));
-    const u = tally(onUnit);
-    if (u.dead >= 3 && u.stuck === 0) { bump('bad'); reasons.push(`“${p.shipAddr2}” at this address was cancelled ${u.dead} times (any profile)`); fixes.add('l2'); }
-    else if (u.dead >= 2 && u.stuck === 0 && level !== 'bad') { bump('watch'); reasons.push(`“${p.shipAddr2}” here has ${u.dead} cancellations and nothing shipped`); }
+    const onUnit = (ix.byUnit.get(uk) || []).filter(o => oDay(o) >= Math.max(since, p.l2ChangedAt || 0) && o.profileId !== p.id);
+    const others = onUnit.filter(o => cancelKind(o) === 'limit' && cancelInfo(o).caught);
+    if (others.length && !limJig.length) { bump('bad'); reasons.push(`“${curL2}” here hit the quantity limit on another profile — the store has tied it to the house`); fixes.add('l2'); }
+    const u = tally(onUnit.filter(o => cancelKind(o) !== 'limit')), ud = cancelTally(onUnit);
+    if (ud.demand + ud.flag >= 4 && u.stuck === 0) { bump('bad'); reasons.push(`“${curL2}” at this address was cancelled ${ud.demand + ud.flag} times on other profiles`); fixes.add('l2'); }
   }
-  // the card: cancelled at several different houses and never shipped
-  const last4 = cardDigits(p.cardNumber).slice(-4);
-  if (last4) {
-    const onCard = (ix.byCard.get(last4) || []).filter(o => !o.profileId || o.profileId === p.id || profileById(o.profileId) && cardDigits(profileById(o.profileId).cardNumber).slice(-4) === last4);
-    const c = tally(onCard), houses = new Set(onCard.filter(isCancelled).map(oHouse).filter(Boolean));
-    if (c.dead >= 4 && c.stuck === 0 && houses.size >= 2) { bump('bad'); reasons.push(`Card •••• ${last4} was cancelled ${c.dead} times at ${houses.size} different addresses`); fixes.add('card'); }
+  // 4. the card: cancelled (not for limits) at several different houses and never through
+  const l4 = cardDigits(p.cardNumber).slice(-4);
+  if (l4) {
+    const onCard = (ix.byCard.get(l4) || []).filter(o => !o.profileId || o.profileId === p.id || profileById(o.profileId) && cardDigits(profileById(o.profileId).cardNumber).slice(-4) === l4);
+    const bad = onCard.filter(o => isCancelled(o) && cancelKind(o) !== 'limit'), houses = new Set(bad.map(oHouse).filter(Boolean));
+    if (bad.length >= 4 && !onCard.some(isStuck) && houses.size >= 2) { bump('bad'); reasons.push(`Card •••• ${l4} was cancelled ${bad.length} times at ${houses.size} different addresses`); fixes.add('card'); }
   }
-  // details that stop a checkout outright
+  // 5. details that stop a checkout outright
   const h = health(p).filter(x => !/^Same (card|email) as/.test(x)), severe = h.filter(x => SEVERE.test(x)); // sharing a card or inbox is normal
   if (severe.length) { bump('bad'); reasons.push(...severe); fixes.add('data'); }
   else if (h.length) { bump('watch'); reasons.push(...h); fixes.add('data'); }
   if (level === 'good' && !cur.length) level = 'new'; // nothing placed with the current details yet
-  return { level, reasons, fixes: [...fixes], stuck: tAll.stuck, dead: tAll.dead, pending: tAll.pending, curStuck: t.stuck, curDead: t.dead, orders: all.length };
+  if (level === 'good' && ck.limitPlain) reasons.push(`${plural(ck.limitPlain, 'quantity-limit cancel')} where that address had already got the item — expected, it was maxed`);
+  return { level, reasons, fixes: [...fixes], stuck: tAll.stuck, dead: tAll.dead, pending: tAll.pending, curStuck: t.stuck, curDead: t.dead, orders: all.length,
+    demand: ckAll.demand, flag: ckAll.flag, limit: ckAll.limit, limitJig: ckAll.limitJig, limitPlain: ckAll.limitPlain };
 }
 const LEVEL = { bad: { l: 'Change it', c: 'var(--danger)' }, watch: { l: 'Watch', c: 'var(--warn)' }, good: { l: 'Good', c: 'var(--ok)' }, new: { l: 'Not used yet', c: 'var(--faint)' } };
 let _verd = null;
@@ -83,7 +164,7 @@ function verdicts() {
   _verd = new Map(state.profiles.map(p => [p.id, profileVerdict(p)]));
   return _verd;
 }
-function invalidateDoctor() { _doc = null; _verd = null; _globalStyles = null; }
+function invalidateDoctor() { _doc = null; _verd = null; _globalStyles = null; _cinfo = null; }
 const verdictOf = p => verdicts().get(p.id) || profileVerdict(p);
 
 /* ---------- smart line 2 ---------- */
@@ -200,6 +281,6 @@ function doctorBanner() {
   if (!state.profiles.length) return '';
   const { c, badL2 } = doctorSummary();
   if (!c.bad && !c.watch) return '';
-  return `<div class="docbar ${c.bad ? 'bad' : 'watch'}"><div class="docmsg"><b>${c.bad ? plural(c.bad, 'profile') + ' should be changed' : plural(c.watch, 'profile') + ' to keep an eye on'}</b><span class="small">${c.bad ? (badL2.length ? `${badL2.length} of them keep getting cancelled on the same address — a new line 2 usually fixes that.` : 'They have problems that will stop a checkout.') : 'Some recent cancellations, nothing serious yet.'}${c.bad && c.watch ? ' · ' + c.watch + ' more to watch' : ''}</span></div>
+  return `<div class="docbar ${c.bad ? 'bad' : 'watch'}"><div class="docmsg"><b>${c.bad ? plural(c.bad, 'profile') + ' should be changed' : plural(c.watch, 'profile') + ' to keep an eye on'}</b><span class="small">${c.bad ? (badL2.length ? `${badL2.length} of them need a new line 2 — the store keeps cancelling it, or tied it to the house at the quantity limit.` : 'They have problems that will stop a checkout.') : 'Some recent cancellations, nothing serious yet.'}${c.bad && c.watch ? ' · ' + c.watch + ' more to watch' : ''}</span></div>
     <div class="docacts">${c.bad ? `<button class="sm" data-pf="bad">Show them</button>` : `<button class="sm" data-pf="watch">Show them</button>`}${badL2.length ? `<button class="sm primary" id="docFixAll">New line 2 for ${badL2.length}</button>` : ''}</div></div>`;
 }
