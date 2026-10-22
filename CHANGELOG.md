@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.8 — Cleaner Checkout card (2026-10-22)
+
+- Simplified the Checkout card.
+
 ## v0.9.7 — Checkout card upgrades (2026-10-22)
 
 - Use your own photo as the Checkout card background, and save it as PNG or JPG.

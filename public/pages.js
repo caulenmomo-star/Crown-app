@@ -374,9 +374,9 @@ function drawShareCard(cv, d, img) {
   // the big number
   const big = SHARE.money ? fmtMoney(s.spent, s.spent >= 100000) : String(s.live.length);
   ctx.fillStyle = '#fff'; fitFont(ctx, big, CW, 800, SHARE.money ? 150 : 170, F); ctx.fillText(big, L - 6, 336);
-  ctx.fillStyle = 'rgba(255,255,255,.72)'; ctx.font = `500 30px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), L, 392);
+  ctx.fillStyle = 'rgba(255,255,255,.72)'; ctx.font = `500 30px ${F}`; ctx.fillText(SHARE.money ? 'spent' : (s.live.length === 1 ? 'order secured' : 'orders secured'), L, 392);
   // stat tiles
-  const boxes = [[SHARE.money ? String(s.live.length) : String(s.items), SHARE.money ? 'Orders' : 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [SHARE.money ? USD0.format(Math.round(s.avg || 0)) : String(s.dead.length), SHARE.money ? 'Avg order' : 'Cancelled'], [String(s.items), 'Items']].slice(0, SHARE.money ? 4 : 3);
+  const boxes = SHARE.money ? [[String(s.live.length), 'Orders'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [String(s.items), 'Items']] : [[String(s.items), 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [String(s.dead.length), 'Cancelled']];
   const gap = 20, bw = (CW - (boxes.length - 1) * gap) / boxes.length, by = 438, bh = 140;
   boxes.forEach(([v, l], i) => { const x = L + i * (bw + gap); ctx.fillStyle = 'rgba(255,255,255,.09)'; rr(ctx, x, by, bw, bh, 24); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 44, 750, 52, F); ctx.fillText(v, x + 24, by + 76); ctx.fillStyle = 'rgba(255,255,255,.64)'; ctx.font = `500 23px ${F}`; ctx.fillText(l, x + 24, by + 114); });
   let y = by + bh + 26;
