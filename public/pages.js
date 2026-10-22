@@ -79,25 +79,9 @@ PAGES.dashboard = {
       (() => { const n = suggestedDuplicates().length; return n && [`${plural(n, 'possible duplicate order')} to review`, 'orders', () => setTimeout(() => { cleanTab = 'dupes'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
       (() => { const n = state.orders.filter(isSuspicious).length; return n && [`${plural(n, 'order')} that don’t look like real store orders`, 'orders', () => setTimeout(() => { cleanTab = 'junk'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
     ].filter(Boolean);
-    // checkout overview (profiles / accounts / cards) — shown at the very top
-    const profTotal = (state.profiles || []).length;
-    const dsum = doctorSummary().c;
-    const accTotal = (state.accounts || []).length;
-    const accBad = (state.accounts || []).filter(a => a.status === 'needs' || a.status === 'locked' || a.status === 'banned').length;
-    const cardTotal = (state.cards || []).length;
-    const cardDead = (state.cards || []).filter(c => c.status === 'dead').length;
-    const cardGroups = (state.cardGroups || []).length;
-    const liveCards = (state.cards || []).filter(c => c.status === 'active' || c.status === 'unused').length;
-    const chkCard = `<div class="card chkcard">
-      <h3>Checkout<span class="spacer"></span><button class="ghost sm" data-nav="profiles">Profiles ›</button></h3>
-      <div class="chkkpis">
-        <div class="kpi click" data-nav="profiles"><div class="l">Profiles</div><div class="v">${profTotal}</div><div class="d"${dsum.bad ? ' style="color:var(--warn)"' : ''}>${dsum.bad ? plural(dsum.bad, 'profile') + ' to change' : dsum.watch ? plural(dsum.watch, 'profile') + ' to watch' : profTotal ? 'all good' : 'none yet'}</div></div>
-        <div class="kpi click" data-nav="accounts"><div class="l">Accounts</div><div class="v">${accTotal}</div><div class="d"${accBad ? ' style="color:var(--warn)"' : ''}>${accBad ? accBad + ' need attention' : accTotal ? 'all working' : 'none yet'}</div></div>
-        <div class="kpi click" data-nav="cards"><div class="l">Cards</div><div class="v">${cardTotal}</div><div class="d"${cardDead ? ' style="color:var(--warn)"' : ''}>${cardDead ? plural(cardDead, 'card') + ' dead' : cardTotal ? liveCards + ' live' + (cardGroups ? ' · ' + plural(cardGroups, 'group') : '') : 'none yet'}</div></div>
-      </div></div>`;
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
-      ${chkCard}
+      ${recapCardHtml()}
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
         <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
@@ -122,6 +106,7 @@ PAGES.dashboard = {
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
     if ($('#dSync')) $('#dSync').onclick = () => syncAll(true);
+    wireRecapCard(() => PAGES.dashboard.render());
     const dsave = () => { try { localStorage.setItem('crown.dash', JSON.stringify(DASH)); } catch (_) { } PAGES.dashboard.render(); };
     $('#dDays').onclick = e => { const b = e.target.closest('[data-dd]'); if (b) { DASH.days = +b.dataset.dd; DASH.from = DASH.to = ''; dsave(); } };
     $('#dN').onchange = e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 400) { DASH.days = n; DASH.from = DASH.to = ''; dsave(); } };
@@ -204,6 +189,7 @@ function rangeLabel(spec) {
     const [, a, b] = spec.split(':'); const f = d => parseDay(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     return a && b ? (a === b ? f(a) : f(a) + ' – ' + f(b)) : a ? 'Since ' + f(a) : b ? 'Through ' + f(b) : 'All time';
   }
+  if (/^\d+$/.test(spec) && ![7, 30, 90, 365].includes(+spec)) return +spec === 1 ? 'Today' : `Last ${spec} days`;
   return { today: 'Today', yesterday: 'Yesterday', 7: 'Last 7 days', 30: 'Last 30 days', 90: 'Last 90 days', month: 'This month', lastmonth: 'Last month', year: 'This year', 365: 'Last 12 months', all: 'All time' }[spec] || spec;
 }
 function ordersInRange(spec) { const [a, b] = rangeSpan(spec); return state.orders.filter(o => { const d = toDate(o.orderDate); if (!d) return spec === 'all'; return (!a || d >= a) && (!b || d < b); }); }
@@ -245,7 +231,6 @@ function spBuckets(list) {
 PAGES.spending = {
   render() {
     const pg = $('#pg-spending'); const list = spOrders(); const s = spStats(list); const { buckets, unit } = spBuckets(list);
-    const cardSpec = SHARE.range === 'page' ? SP.range : SHARE.range; const cs = cardSpec === SP.range ? s : spStats(ordersInRange(cardSpec));
     const months = []; const n = new Date(); for (let i = 0; i < 24; i++) { const d = new Date(n.getFullYear(), n.getMonth() - i, 1); months.push([`m:${d.getFullYear()}-${pad2(d.getMonth() + 1)}`, d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })]); }
     pg.innerHTML = `<div class="pagehead"><h1>Spending</h1><span class="sub">${esc(spRangeLabel())}</span><div class="spacer"></div>
       <div class="chips">${SP_RANGES.map(([k, l]) => `<button class="chip ${SP.range === k ? 'on' : ''}" data-sr="${k}">${l}</button>`).join('')}</div>
@@ -265,31 +250,17 @@ PAGES.spending = {
         <div class="card"><h3>By profile</h3>${hbars(s.byProfile.slice(0, 10).map(g => ({ name: g.name, v: g.v, n: g.n, c: 'var(--ok)' })), { fmt: r => fmtMoney(r.v) + ' · ' + r.n })}</div>
         <div class="card"><h3>By card</h3>${hbars(s.byCard.slice(0, 10).map(g => ({ name: g.name, v: g.v, n: g.n, c: 'var(--gold)' })), { fmt: r => fmtMoney(r.v) + ' · ' + r.n })}</div>
       </div>
-      <div class="card" style="margin-bottom:14px"><h3>Top items</h3>${s.topItems.length ? `<div class="list">${s.topItems.map(i => `<div class="li"><div class="badge">${i.qty}×</div><div style="flex:1;min-width:0" class="ellipsis">${esc(i.name)}</div><div class="muted">${i.v ? fmtMoney(i.v) : ''}</div></div>`).join('')}</div>` : '<div class="empty sm">No item details yet.</div>'}</div>
-      <div class="card"><h3>Checkout card <span class="faint" style="font-weight:400">— a shareable recap</span></h3>
-        <div class="sharewrap"><canvas id="shareCanvas" width="1080" height="1350"></canvas><div>
-          <div class="section" style="margin-top:0">Date range</div>
-          <div class="chips" id="shRange">${[['page', 'Same as page'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['all', 'All time']].map(([k, l]) => `<button class="chip ${SHARE.range === k ? 'on' : ''}" data-shr="${k}">${l}</button>`).join('')}</div>
-          <div class="hstack" style="gap:6px;margin-top:8px"><input type="date" id="shFrom" style="width:auto" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[1] : ''}"><span class="faint">to</span><input type="date" id="shTo" style="width:auto" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[2] : ''}"></div>
-          <div class="small faint" style="margin-top:6px">${esc(rangeLabel(cardSpec))} · ${plural(cs.list.length, 'order')}</div>
-          <div class="section">Theme</div><div class="chips">${Object.keys(THEMES).map(t => `<button class="chip ${SP.theme === t ? 'on' : ''}" data-th="${t}">${THEMES[t].name}</button>`).join('')}</div>
-          <div class="section">Show</div><div class="chips">${[['money', 'Dollar amounts'], ['items', 'Top items'], ['store', 'Top store']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${l}</button>`).join('')}</div>
-          <div class="hstack" style="margin-top:16px"><button class="primary" id="shDl">Download PNG</button><button id="shCopy">Copy image</button></div>
-          <div class="small faint" style="margin-top:10px">The card never includes addresses, names, emails or card numbers.</div></div></div></div>`;
+      <div class="card"><h3>Top items</h3>${s.topItems.length ? `<div class="list">${s.topItems.map(i => `<div class="li"><div class="badge">${i.qty}×</div><div style="flex:1;min-width:0" class="ellipsis">${esc(i.name)}</div><div class="muted">${i.v ? fmtMoney(i.v) : ''}</div></div>`).join('')}</div>` : '<div class="empty sm">No item details yet.</div>'}</div>`;
     pg.querySelector('.pagehead .chips').onclick = e => { const b = e.target.closest('[data-sr]'); if (b) { SP.range = b.dataset.sr; PAGES.spending.render(); } };
     $('#spMonth').onchange = e => { if (e.target.value) { SP.range = e.target.value; PAGES.spending.render(); } };
-    pg.querySelectorAll('[data-th]').forEach(b => b.onclick = () => { SP.theme = b.dataset.th; PAGES.spending.render(); });
-    pg.querySelectorAll('[data-sh]').forEach(b => b.onclick = () => { SHARE[b.dataset.sh] = !SHARE[b.dataset.sh]; PAGES.spending.render(); });
-    drawShareCard($('#shareCanvas'), cs, rangeLabel(cardSpec));
     const custom = (a, b) => { const f = $(a).value, t = $(b).value; if (!f && !t) return null; return 'c:' + (f || '') + ':' + (t || ''); };
     $('#spFrom').onchange = $('#spTo').onchange = () => { const c = custom('#spFrom', '#spTo'); if (c) { SP.range = c; PAGES.spending.render(); } };
-    $('#shFrom').onchange = $('#shTo').onchange = () => { const c = custom('#shFrom', '#shTo'); if (c) { SHARE.range = c; PAGES.spending.render(); } };
-    $('#shRange').onclick = e => { const b = e.target.closest('[data-shr]'); if (b) { SHARE.range = b.dataset.shr; PAGES.spending.render(); } };
-    $('#shDl').onclick = () => { $('#shareCanvas').toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
-    $('#shCopy').onclick = () => { $('#shareCanvas').toBlob(async b => { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Download instead.'); } }, 'image/png'); };
   },
 };
-const SHARE = { money: true, items: true, store: true, range: 'page' };
+/* ================= checkout card (shareable recap, top of the dashboard) ================= */
+// Settings are a per-device convenience: kept in this browser only.
+const SHARE = Object.assign({ money: true, items: true, store: true, range: 'page', theme: 'aurora' }, (() => { try { return JSON.parse(localStorage.getItem('crown.share') || '{}'); } catch (_) { return {}; } })());
+const saveShare = () => { try { localStorage.setItem('crown.share', JSON.stringify(SHARE)); } catch (_) { } };
 const THEMES = {
   aurora: { name: 'Aurora', bg: ['#0b1020', '#1b1748', '#0d3b3a'], blobs: ['#7c8cff', '#2dd4bf'], accent: '#a5b4fc' },
   ice: { name: 'Ice', bg: ['#07111f', '#0c2d4d', '#0a4f73'], blobs: ['#7dd3fc', '#e0f2fe'], accent: '#bae6fd' },
@@ -298,27 +269,80 @@ const THEMES = {
   gold: { name: 'Gold', bg: ['#0c0a05', '#231b07', '#3a2b08'], blobs: ['#f5c451', '#fff3c4'], accent: '#f5c451' },
   mono: { name: 'Mono', bg: ['#0a0a0a', '#151515', '#222222'], blobs: ['#9ca3af', '#4b5563'], accent: '#e5e7eb' },
 };
+const RECAP_RANGES = [['page', 'Match dashboard'], ['today', 'Today'], ['yesterday', 'Yesterday'], ['7', '7 days'], ['30', '30 days'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['all', 'All time']];
+// the dashboard's own range ("Show" bar) as a range spec
+function dashSpec() { if (DASH.from || DASH.to) return 'c:' + (DASH.from || '') + ':' + (DASH.to || ''); return DASH.days === 1 ? 'today' : String(DASH.days); }
+const recapSpec = () => SHARE.range === 'page' ? dashSpec() : SHARE.range;
+// "Pokémon Trading Card Game: Mega Evolution—…" -> "Mega Evolution—…" on the card
+const recapName = n => String(n || '').replace(/^(?:\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]?\s*)+/i, '').replace(/\s+/g, ' ').trim();
+function recapCardHtml() {
+  const spec = recapSpec(), cs = spStats(ordersInRange(spec));
+  return `<div class="card recap ${SHARE.open ? 'open' : ''}"><div class="recap-grid">
+      <div class="recap-prev"><canvas id="shareCanvas" width="1080" height="1350" aria-label="Checkout card preview"></canvas></div>
+      <div class="recap-head"><div class="recap-title"><h3>Checkout card</h3><div class="small muted">${esc(rangeLabel(spec))} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}</div></div>
+          <div class="recap-btns"><button class="primary sm" id="shDl">Download</button><button class="sm" id="shCopy">Copy image</button><button class="sm ghost recap-tog" id="shTog">${SHARE.open ? 'Done' : 'Customize'}</button></div></div>
+      <div class="recap-more">
+        <div class="recap-row"><div class="lbl">Range</div><div><div class="chips sm" id="shRange">${RECAP_RANGES.map(([k, l]) => `<button class="chip ${SHARE.range === k ? 'on' : ''}" data-shr="${k}">${l}</button>`).join('')}</div>
+          <div class="recap-dates"><input type="date" id="shFrom" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[1] : ''}" aria-label="From"><span class="faint">to</span><input type="date" id="shTo" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[2] : ''}" aria-label="To"></div></div></div>
+        <div class="recap-row"><div class="lbl">Theme</div><div class="swatches" id="shTheme">${Object.entries(THEMES).map(([k, t]) => `<button class="swatch ${SHARE.theme === k ? 'on' : ''}" data-th="${k}" title="${t.name}" style="--sw:linear-gradient(135deg,${t.bg[1]},${t.blobs[0]} 60%,${t.blobs[1]})"><i></i><span>${t.name}</span></button>`).join('')}</div></div>
+        <div class="recap-row"><div class="lbl">Show</div><div class="chips sm">${[['money', 'Dollar amounts'], ['store', 'Top store'], ['items', 'Top items']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${SHARE[k] ? '✓ ' : ''}${l}</button>`).join('')}</div></div>
+        <div class="small faint recap-note">Never includes addresses, names, emails or card numbers.</div>
+      </div></div></div>`;
+}
+function wireRecapCard(rerender) {
+  const cv = $('#shareCanvas'); if (!cv) return;
+  const spec = recapSpec(); drawShareCard(cv, spStats(ordersInRange(spec)), rangeLabel(spec));
+  const set = fn => { fn(); saveShare(); rerender(); };
+  $('#shTog').onclick = () => set(() => SHARE.open = !SHARE.open);
+  $('#shRange').onclick = e => { const b = e.target.closest('[data-shr]'); if (b) set(() => SHARE.range = b.dataset.shr); };
+  $('#shTheme').onclick = e => { const b = e.target.closest('[data-th]'); if (b) set(() => SHARE.theme = b.dataset.th); };
+  $$('.recap [data-sh]').forEach(b => b.onclick = () => set(() => SHARE[b.dataset.sh] = !SHARE[b.dataset.sh]));
+  $('#shFrom').onchange = $('#shTo').onchange = () => { const f = $('#shFrom').value, t = $('#shTo').value; if (f || t) set(() => SHARE.range = 'c:' + f + ':' + t); };
+  $('#shDl').onclick = () => cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png');
+  $('#shCopy').onclick = () => cv.toBlob(async b => { try { await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Download instead.'); } }, 'image/png');
+}
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function fitFont(ctx, text, maxW, weight, size, F) { let s = size; ctx.font = `${weight} ${s}px ${F}`; while (s > 18 && ctx.measureText(String(text)).width > maxW) { s -= 2; ctx.font = `${weight} ${s}px ${F}`; } return s; }
-function fitText(ctx, text, maxW) { text = String(text); if (ctx.measureText(text).width <= maxW) return text; while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1); return text + '…'; }
+function fitText(ctx, text, maxW) { text = String(text); if (ctx.measureText(text).width <= maxW) return text; while (text.length > 1 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1); return text.trim() + '…'; }
 function drawShareCard(cv, s, label) {
-  const ctx = cv.getContext('2d'); const W = cv.width, H = cv.height; const T = THEMES[SP.theme] || THEMES.aurora;
-  const F = '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", sans-serif';
+  const ctx = cv.getContext('2d'); const W = cv.width, H = cv.height; const T = THEMES[SHARE.theme] || THEMES.aurora;
+  const F = '-apple-system, BlinkMacSystemFont, "SF Pro Display", Inter, "Segoe UI", sans-serif', L = 84, R = W - 84, CW = R - L;
+  ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, T.bg[0]); g.addColorStop(0.55, T.bg[1]); g.addColorStop(1, T.bg[2]); ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  [[W * 0.85, H * 0.12, 520, T.blobs[0]], [W * 0.1, H * 0.78, 600, T.blobs[1]]].forEach(([x, y, r, c]) => { const rg = ctx.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, c + '55'); rg.addColorStop(1, c + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); });
-  ctx.fillStyle = '#f5c451'; ctx.save(); ctx.translate(80, 86); ctx.scale(2.6, 2.6); ctx.beginPath(); ctx.moveTo(3, 18); ctx.lineTo(21, 18); ctx.lineTo(22, 7); ctx.lineTo(16.5, 11); ctx.lineTo(12, 4); ctx.lineTo(7.5, 11); ctx.lineTo(2, 7); ctx.closePath(); ctx.fill(); ctx.fillRect(3, 19.5, 18, 2); ctx.restore();
-  ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.font = `700 34px ${F}`; ctx.textBaseline = 'alphabetic'; ctx.fillText('CHECKOUT RECAP', 160, 132);
-  ctx.fillStyle = T.accent; ctx.font = `500 30px ${F}`; ctx.fillText(label || spRangeLabel(), 80, 230);
+  [[W * 0.88, H * 0.1, 560, T.blobs[0]], [W * 0.08, H * 0.82, 640, T.blobs[1]]].forEach(([x, y, r, c]) => { const rg = ctx.createRadialGradient(x, y, 0, x, y, r); rg.addColorStop(0, c + '55'); rg.addColorStop(1, c + '00'); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); });
+  // header: crown + title on the left, the date range in a pill on the right
+  ctx.fillStyle = '#f5c451'; ctx.save(); ctx.translate(L, 84); ctx.scale(2.4, 2.4); ctx.beginPath(); ctx.moveTo(3, 18); ctx.lineTo(21, 18); ctx.lineTo(22, 7); ctx.lineTo(16.5, 11); ctx.lineTo(12, 4); ctx.lineTo(7.5, 11); ctx.lineTo(2, 7); ctx.closePath(); ctx.fill(); ctx.fillRect(3, 19.5, 18, 2); ctx.restore();
+  ctx.fillStyle = 'rgba(255,255,255,.94)'; ctx.font = `700 32px ${F}`; ctx.fillText('CHECKOUT RECAP', L + 76, 128);
+  const lab = String(label || ''); ctx.font = `600 26px ${F}`; const lw = Math.min(ctx.measureText(lab).width + 44, 420);
+  ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(ctx, R - lw, 90, lw, 54, 27); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(fitText(ctx, lab, lw - 40), R - lw / 2, 126); ctx.textAlign = 'left';
+  // the big number
   const big = SHARE.money ? fmtMoney(s.spent, s.spent >= 100000) : String(s.live.length);
-  ctx.fillStyle = '#fff'; fitFont(ctx, big, W - 160, 800, SHARE.money ? 150 : 170, F); ctx.fillText(big, 72, 392);
-  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 34px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), 80, 470);
-  const boxes = [[SHARE.money ? String(s.live.length) : String(s.items), SHARE.money ? 'Orders' : 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [SHARE.money ? USD0.format(Math.round(s.avg)) : String(s.dead.length), SHARE.money ? 'Avg order' : 'Cancelled'], [String(s.items), 'Items']].slice(0, SHARE.money ? 4 : 3);
-  const bw = (W - 160 - (boxes.length - 1) * 24) / boxes.length;
-  boxes.forEach(([v, l], i) => { const x = 80 + i * (bw + 24), y = 520; ctx.fillStyle = 'rgba(255,255,255,.08)'; rr(ctx, x, y, bw, 170, 26); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 48, 750, 56, F); ctx.fillText(v, x + 26, y + 92); ctx.fillStyle = 'rgba(255,255,255,.65)'; ctx.font = `500 26px ${F}`; ctx.fillText(l, x + 26, y + 138); });
-  let y = 770;
-  if (SHARE.store && s.byStore[0]) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `600 24px ${F}`; ctx.fillText('TOP STORE', 80, y); y += 56; ctx.fillStyle = Parser.storeInfo(s.byStore[0].k).color; ctx.beginPath(); ctx.arc(96, y - 14, 14, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.font = `700 44px ${F}`; ctx.fillText(s.byStore[0].name + '  ·  ' + plural(s.byStore[0].n, 'order'), 128, y); y += 74; }
-  if (SHARE.items && s.topItems.length) { ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `600 24px ${F}`; ctx.fillText('TOP ITEMS', 80, y); y += 50; s.topItems.slice(0, 4).forEach(it => { if (y > H - 150) return; ctx.fillStyle = T.accent; ctx.font = `700 34px ${F}`; ctx.fillText(it.qty + '×', 80, y); ctx.fillStyle = '#fff'; ctx.font = `500 34px ${F}`; ctx.fillText(fitText(ctx, it.name, W - 260), 160, y); y += 54; }); }
-  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = `500 24px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), 80, H - 70);
+  ctx.fillStyle = '#fff'; fitFont(ctx, big, CW, 800, SHARE.money ? 156 : 176, F); ctx.fillText(big, L - 6, 352);
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.font = `500 32px ${F}`; ctx.fillText(SHARE.money ? 'spent · cancellations not counted' : (s.live.length === 1 ? 'order secured' : 'orders secured'), L, 412);
+  // stat tiles
+  const boxes = [[SHARE.money ? String(s.live.length) : String(s.items), SHARE.money ? 'Orders' : 'Items'], [s.stick == null ? '—' : s.stick + '%', 'Stick rate'], [SHARE.money ? USD0.format(Math.round(s.avg || 0)) : String(s.dead.length), SHARE.money ? 'Avg order' : 'Cancelled'], [String(s.items), 'Items']].slice(0, SHARE.money ? 4 : 3);
+  const gap = 20, bw = (CW - (boxes.length - 1) * gap) / boxes.length, by = 466, bh = 150;
+  boxes.forEach(([v, l], i) => { const x = L + i * (bw + gap); ctx.fillStyle = 'rgba(255,255,255,.08)'; rr(ctx, x, by, bw, bh, 24); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.13)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 44, 750, 54, F); ctx.fillText(v, x + 24, by + 80); ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `500 24px ${F}`; ctx.fillText(l, x + 24, by + 120); });
+  let y = by + bh + 86;
+  const head = t => { ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `700 22px ${F}`; ctx.fillText(t.split('').join(String.fromCharCode(8202)), L, y); };
+  if (SHARE.store && s.byStore[0]) {
+    head('TOP STORE'); y += 58;
+    ctx.fillStyle = Parser.storeInfo(s.byStore[0].k).color; ctx.beginPath(); ctx.arc(L + 14, y - 14, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `700 42px ${F}`; const sn = s.byStore[0].name; ctx.fillText(sn, L + 44, y);
+    const w1 = ctx.measureText(sn).width; ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `500 34px ${F}`; ctx.fillText('·  ' + plural(s.byStore[0].n, 'order') + (SHARE.money ? '  ·  ' + fmtMoney(s.byStore[0].v, true) : ''), L + 44 + w1 + 18, y);
+    y += 92;
+  }
+  if (SHARE.items && s.topItems.length) {
+    head('TOP ITEMS'); y += 30;
+    const rows = Math.max(0, Math.min(5, Math.floor((H - 150 - y) / 70)));
+    s.topItems.slice(0, rows).forEach(it => {
+      const q = it.qty + '×'; ctx.font = `700 28px ${F}`; const qw = Math.max(72, ctx.measureText(q).width + 30);
+      ctx.fillStyle = 'rgba(255,255,255,.1)'; rr(ctx, L, y, qw, 50, 25); ctx.fill(); ctx.fillStyle = T.accent; ctx.textAlign = 'center'; ctx.fillText(q, L + qw / 2, y + 35); ctx.textAlign = 'left';
+      ctx.fillStyle = '#fff'; ctx.font = `500 32px ${F}`; ctx.fillText(fitText(ctx, recapName(it.name), CW - qw - 22), L + qw + 22, y + 36);
+      y += 70;
+    });
+  }
+  ctx.fillStyle = 'rgba(255,255,255,.42)'; ctx.font = `500 22px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), L, H - 64);
 }
 
 /* ================= inboxes ================= */

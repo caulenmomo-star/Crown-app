@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.6 — Checkout card on the dashboard (2026-10-22)
+
+- The shareable Checkout card now sits at the top of the dashboard, with a cleaner, more compact layout.
+
 ## v0.9.5 — Cards & profile groups (2026-10-22)
 
 - Adding cards makes a matching profile group, and each card shows which profile it’s on.
