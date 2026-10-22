@@ -9,6 +9,7 @@ Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 - Added saved addresses per profile group.
 - Added Accounts — save every store login and password.
 - Added Cards — save cards in groups, paste thousands at once, and spread a group across your profiles.
+- Tidied the menu into sections (Checkout, Orders, Reselling) so there’s less to dig through on a phone.
 
 ## v0.8.0 — New look (2026-10-21)
 

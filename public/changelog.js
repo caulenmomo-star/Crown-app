@@ -7,6 +7,7 @@ const CHANGELOG = [
     'Added saved addresses per profile group.',
     'Added Accounts — save every store login and password.',
     'Added Cards — save cards in groups, paste thousands at once, and spread a group across your profiles.',
+    'Tidied the menu into sections (Checkout, Orders, Reselling) so there’s less to dig through on a phone.',
   ] },
   { v: '0.8.0', date: '2026-10-21', title: 'New look', items: [
     'New default look plus nine themes to pick from in Settings.',

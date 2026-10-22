@@ -398,40 +398,45 @@ const ICONS = {
   checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
-// sidebar sections on computers: the label shows above the first page of each group
-const NAV_GROUP = { profiles: 'Checkout', orders: 'Orders', inventory: 'Selling', inboxes: 'Setup' };
+// Pages are grouped into a few hubs. The phone shows one bottom tab per hub, with the hub's pages as sub-tabs;
+// computers show the hubs as sidebar sections. Keeps the bottom bar short instead of a long "More" list.
+const HUBS = [
+  { k: 'home', l: 'Home', side: '', icon: 'dashboard', pages: [['dashboard', 'Dashboard']] },
+  { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards']] },
+  { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
+  { k: 'resell', l: 'Resell', side: 'Reselling', icon: 'inventory', pages: [['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending']] },
+  { k: 'setup', l: 'More', side: 'Setup', icon: 'more', pages: [['inboxes', 'Inboxes'], ['settings', 'Settings']] },
+];
+const NAV = HUBS.flatMap(h => h.pages);
+const PAGE_LABEL = Object.fromEntries(NAV);
+const hubOf = p => (HUBS.find(h => h.pages.some(x => x[0] === p)) || HUBS[0]).k;
+const hubByKey = k => HUBS.find(h => h.k === k) || HUBS[0];
+const hubLast = {};
 const PAGES = {};
 let route = { page: 'dashboard', arg: '' };
 function go(page, arg) { const h = '#' + page + (arg ? '/' + arg : ''); if (location.hash !== h) location.hash = h; else applyRoute(); }
 function applyRoute() {
   const [p, a] = (location.hash.slice(1) || 'dashboard').split('/');
   route = { page: PAGES[p] ? p : 'dashboard', arg: a ? decodeURIComponent(a) : '' };
+  hubLast[hubOf(route.page)] = route.page;
   $$('#main > section.page').forEach(s => s.hidden = s.dataset.page !== route.page);
   renderNav(); renderPage(); $('#main').scrollTop = 0;
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
+function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length }; }
+const navItem = (k, l, counts) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`;
 function renderNav() {
-  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length };
-  $('#navlist').innerHTML = NAV.map(([k, l]) => `${NAV_GROUP[k] ? `<div class="navgroup">${NAV_GROUP[k]}</div>` : ''}<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
-  // phones: bottom tab bar with the four most-used pages + More
-  const inMore = MORE_PAGES.includes(route.page);
-  $('#tabbar').innerHTML = TAB_PAGES.map(([k, l]) => `<button class="tabitem ${route.page === k ? 'active' : ''}" data-nav="${k}" aria-label="${l}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${l}</span></button>`).join('')
-    + `<button class="tabitem ${inMore ? 'active' : ''}" id="tabMore" aria-label="More"><svg viewBox="0 0 24 24">${ICONS.more}</svg><span>${inMore ? (NAV.find(n => n[0] === route.page) || [, 'More'])[1] : 'More'}</span></button>`;
-  $('#tabMore').onclick = openMore;
+  const counts = navCounts();
+  // computer sidebar: each hub is a section
+  $('#navlist').innerHTML = HUBS.map(h => (h.side ? `<div class="navgroup">${h.side}</div>` : '') + h.pages.map(([k, l]) => navItem(k, l, counts)).join('')).join('');
+  // phone bottom bar: one tab per hub
+  const curHub = hubOf(route.page);
+  $('#tabbar').innerHTML = HUBS.map(h => `<button class="tabitem ${curHub === h.k ? 'active' : ''}" data-hub="${h.k}" aria-label="${h.l}"><svg viewBox="0 0 24 24">${ICONS[h.icon]}</svg><span>${h.l}</span></button>`).join('');
+  // phone sub-tabs: the current hub's pages
+  const hub = hubByKey(curHub), sn = $('#subnav');
+  if (sn) { sn.hidden = hub.pages.length < 2; sn.innerHTML = hub.pages.length < 2 ? '' : hub.pages.map(([k, l]) => `<button class="subtab ${route.page === k ? 'on' : ''}" data-nav="${k}">${l}${counts[k] ? `<span class="n">${counts[k]}</span>` : ''}</button>`).join(''); }
 }
-const TAB_PAGES = [['dashboard', 'Home'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['inventory', 'Inventory']];
-const MORE_PAGES = ['accounts', 'cards', 'calendar', 'houses', 'sales', 'spending', 'inboxes', 'checkin', 'settings'];
-function openMore() {
-  const counts = { accounts: (state.accounts || []).length, inboxes: state.imapAccounts.length, houses: state.houses.filter(h => houseOrders(h.id).length).length };
-  $('#moreList').innerHTML = MORE_PAGES.map(k => `<button class="moreitem ${route.page === k ? 'active' : ''}" data-nav="${k}" data-close><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${NAV.find(n => n[0] === k)[1]}</span>${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}<span class="chev">›</span></button>`).join('')
-    + `<button class="moreitem" id="moreNews" data-close><svg viewBox="0 0 24 24">${ICONS.news}</svg><span>What’s new</span><span class="count">v${VERSION}</span><span class="chev">›</span></button>`
-    + `<button class="moreitem" id="moreLock" data-close><svg viewBox="0 0 24 24">${ICONS.lock}</svg><span>Lock Crown Tools</span><span class="chev">›</span></button>`;
-  $('#moreStat').innerHTML = [$('#syncStat'), $('#saveStat')].map(e => e ? e.outerHTML.replace(/ id="[^"]*"/, '') : '').join('');
-  $('#moreNews').onclick = () => typeof openChangelog === 'function' && openChangelog();
-  $('#moreLock').onclick = () => lock();
-  openDlg('dlgMore');
-}
+function openHub(k) { const h = hubByKey(k); const last = hubLast[k]; go(last && h.pages.some(p => p[0] === last) ? last : h.pages[0][0]); }
 // Page action buttons sit after the header's spacer. Group them so phones can show them as one swipeable row.
 function wrapActs(root) {
   (root || document).querySelectorAll('.pagehead').forEach(ph => {
@@ -445,7 +450,10 @@ function wrapActs(root) {
 new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1 && (n.matches('.pagehead') || n.querySelector('.pagehead'))) { wrapActs(m.target); return; } }).observe(document.getElementById('main') || document.body, { childList: true, subtree: true });
 function renderPage() { try { PAGES[route.page].render(route.arg); wrapActs($('#pg-' + route.page)); } catch (e) { console.error(e); $('#pg-' + route.page).innerHTML = `<div class="note bad">Something went wrong showing this page: ${esc(e.message)}</div>`; } }
 function refresh() { if (!cryptoKey) return; renderNav(); renderPage(); }
-document.addEventListener('click', e => { const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); if (n.classList.contains('navitem') && typeof resetPageFilters === 'function') resetPageFilters(p); go(p, a); } });
+document.addEventListener('click', e => {
+  const hb = e.target.closest('[data-hub]'); if (hb) { openHub(hb.dataset.hub); return; }
+  const n = e.target.closest('[data-nav]'); if (n) { const [p, a] = n.dataset.nav.split('/'); if ((n.classList.contains('navitem') || n.classList.contains('subtab')) && typeof resetPageFilters === 'function') resetPageFilters(p); go(p, a); }
+});
 
 /* ---------- lock / unlock ---------- */
 const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('crown') : null;

@@ -54,6 +54,7 @@
   </nav>
   <main id="main">
     <div class="banner annbar" id="annBar" hidden><span></span></div>
+    <div class="subnav" id="subnav" hidden></div>
     <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown Tools directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown Tools with <b>Start Crown Tools</b> to turn them on.</div>
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
     <section class="page" data-page="profiles" id="pg-profiles">
@@ -333,10 +334,6 @@
   <div class="dfoot"><button class="danger" id="expDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="expSave">Save</button></div>
 </dialog>
 
-<dialog id="dlgMore" class="sheet">
-  <div class="dhead">More<button class="ghost sm x" data-close>✕</button></div>
-  <div class="dbody"><div class="morelist" id="moreList"></div><div class="morestat" id="moreStat"></div></div>
-</dialog>
 
 <div class="toast" id="toast"><span id="toastMsg"></span><button class="sm" id="toastBtn" hidden>Undo</button></div>
 <input type="file" id="restoreFile" accept=".json" hidden>
