@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.5 — Cards & profile groups (2026-10-22)
+
+- Adding cards makes a matching profile group, and each card shows which profile it’s on.
+
 ## v0.9.4 — Discord checkouts & cancel reasons (2026-10-22)
 
 - Connect Discord to read your bots’ checkouts and link them to orders, profiles, houses and accounts.

@@ -266,7 +266,7 @@ function openProfile(id) {
   if ($('#profFixL2')) $('#profFixL2').onclick = () => { const p = state.profiles.find(x => x.id === editing.id); closeDlg('dlgProfile'); openFixLine2([p]); };
   const sync = () => { const same = $('#profBody [data-k=sameBilling]').checked; $$('#profBody [data-bill]').forEach(el => el.hidden = same); };
   $('#profBody [data-k=sameBilling]').onchange = sync; sync();
-  const brand = () => { const v = $('#profBody [data-k=cardNumber]').value; $('#brandLbl').textContent = v ? cardBrand(v) + (luhn(v) ? ' ✓' : ' — check number') : ''; };
+  const brand = () => { const v = $('#profBody [data-k=cardNumber]').value; const d = cardDigits(v), c = d && (state.cards || []).find(x => cardDigits(x.number) === d), g = c && cardGroupById(c.groupId); $('#brandLbl').textContent = v ? cardBrand(v) + (luhn(v) ? ' ✓' : ' — check number') + (g ? ` · saved card in “${g.name}”` : '') : ''; };
   $('#profBody [data-k=cardNumber]').oninput = brand; brand();
   const orders = isNew ? [] : state.orders.filter(o => o.profileId === editing.id).sort((a, b) => String(b.orderDate).localeCompare(String(a.orderDate)));
   $('#profTabs').innerHTML = `<button class="tab on" data-tab="details">Details</button><button class="tab" data-tab="orders" ${isNew ? 'hidden' : ''}>Orders (${orders.length})</button>`;

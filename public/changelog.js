@@ -1,6 +1,9 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.9.5', date: '2026-10-22', title: 'Cards & profile groups', items: [
+    'Adding cards makes a matching profile group, and each card shows which profile it’s on.',
+  ] },
   { v: '0.9.4', date: '2026-10-22', title: 'Discord checkouts & cancel reasons', items: [
     'Connect Discord to read your bots’ checkouts and link them to orders, profiles, houses and accounts.',
     'Cancelled orders now show why — quantity limit or item demand.',

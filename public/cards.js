@@ -22,7 +22,24 @@ function ensureCardGroup(name) {
   name = String(name || '').trim(); if (!name) return (state.cardGroups[0] || {}).id || '';
   let g = state.cardGroups.find(x => x.name.toLowerCase() === name.toLowerCase());
   if (!g) { g = newCardGroup(name); state.cardGroups.push(g); }
+  pairProfileGroup(g);
   return g.id;
+}
+// Every card group has a profile group with the same name, so its cards and the profiles that use them sit together.
+// Returns true when the profile group had to be made.
+function pairProfileGroup(g) {
+  if (!g) return false;
+  if (g.categoryId && state.categories.some(c => c.id === g.categoryId)) return false;
+  const had = state.categories.some(c => c.name.toLowerCase() === g.name.toLowerCase());
+  g.categoryId = ensureCategory(g.name); g.updatedAt = Date.now();
+  return !had;
+}
+// card number -> the profiles that use it
+function cardProfileIndex() { const m = new Map(); for (const p of state.profiles) { const d = cardDigits(p.cardNumber); if (!d) continue; const a = m.get(d); a ? a.push(p) : m.set(d, [p]); } return m; }
+function cardProfilesHtml(list) {
+  if (!list || !list.length) return '<span class="faint">Not on a profile</span>';
+  const first = list[0];
+  return `<a href="#" class="cplink" data-cprof="${first.id}">${esc(first.name || 'Untitled')}</a>${list.length > 1 ? `<span class="small faint" title="${esc(list.slice(1).map(p => p.name || 'Untitled').join(', '))}"> +${list.length - 1} more</span>` : ''}`;
 }
 
 /* ---------- parsing a pile of cards ---------- */
@@ -94,6 +111,7 @@ function visibleCards() {
     return [c.number.slice(-4), c.name, c.notes, cardExp(c)].some(v => String(v || '').toLowerCase().includes(q));
   });
 }
+let CPX = new Map();
 PAGES.cards = {
   render() {
     const pg = $('#pg-cards'); const all = state.cards || [];
@@ -111,11 +129,11 @@ PAGES.cards = {
         <div class="toolbar"><input class="search" data-search id="cdQ" placeholder="Search last 4, name, notes…  ( / )" value="${esc(CF.q)}">
           <div class="chips" id="cdStatus">${[['all', 'All']].concat(CARD_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${CF.status === k ? 'on' : ''}" data-cf="${k}">${esc(l)}</button>`).join('')}</div></div>
         ${cardSel.size ? `<div class="selbar"><strong>${cardSel.size} selected</strong><select id="cdMove" style="width:auto"><option value="">Move to group…</option>${state.cardGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><select id="cdSetStatus" style="width:auto"><option value="">Set status…</option>${CARD_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><button class="sm danger" id="cdDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="cdClr">Clear</button></div>` : ''}
-        ${list.length ? `<div class="tablewrap"><table class="atable ctable"><thead><tr><th class="cb"><input type="checkbox" id="cdAll" ${list.every(c => cardSel.has(c.id)) ? 'checked' : ''}></th><th>Card</th><th>Exp</th><th>CVV</th><th>Group</th><th>Health</th><th class="right">Orders</th></tr></thead><tbody>
-          ${list.map(c => { const v = cardVerdict(c), shown = CF.reveal.has(c.id), t = cardOrderTally(cardDigits(c.number).slice(-4)), g = cardGroupById(c.groupId); return `<tr data-card="${c.id}" class="${cardSel.has(c.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-ccb="${c.id}" ${cardSel.has(c.id) ? 'checked' : ''}></td>
+        ${list.length ? `<div class="tablewrap"><table class="atable ctable"><thead><tr><th class="cb"><input type="checkbox" id="cdAll" ${list.every(c => cardSel.has(c.id)) ? 'checked' : ''}></th><th>Card</th><th>Exp</th><th>CVV</th><th>Group · profile</th><th>Health</th><th class="right">Orders</th></tr></thead><tbody>
+          ${(() => { CPX = cardProfileIndex(); return ''; })()}${list.map(c => { const v = cardVerdict(c), shown = CF.reveal.has(c.id), t = cardOrderTally(cardDigits(c.number).slice(-4)), g = cardGroupById(c.groupId); return `<tr data-card="${c.id}" class="${cardSel.has(c.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-ccb="${c.id}" ${cardSel.has(c.id) ? 'checked' : ''}></td>
             <td class="c-num"><div class="cellflex"><span class="faint small">${esc(cardBrand(c.number))}</span> <span class="mono">${shown ? esc(c.number.replace(/(.{4})/g, '$1 ').trim()) : '•••• ' + esc(c.number.slice(-4))}</span><button class="ghost sm icopy" data-creveal="${c.id}">${shown ? 'Hide' : 'Show'}</button><button class="ghost sm icopy" data-ccopy="${c.id}" title="Copy number">⧉</button></div></td>
             <td class="c-exp ${cardExpired(c) ? 'bad' : ''}">${esc(cardExp(c)) || '<span class="faint">—</span>'}</td><td class="mono">${shown ? esc(c.cvv) : (c.cvv ? '•••' : '')}</td>
-            <td>${g ? esc(g.name) : '<span class="faint">—</span>'}</td><td><span class="hpill"><i style="background:${LEVEL[v.level] ? LEVEL[v.level].c : CARDS[v.level] ? CARDS[v.level].c : 'var(--faint)'}"></i>${esc(v.level === 'watch' ? 'Watch' : (CARDS[v.level] || {}).l || LEVEL[v.level].l)}</span>${v.why ? `<div class="small faint">${esc(v.why)}</div>` : ''}</td>
+            <td class="c-prof"><div class="ellipsis">${g ? esc(g.name) : '<span class="faint">—</span>'}</div><div class="small ellipsis">${cardProfilesHtml(CPX.get(cardDigits(c.number)))}</div></td><td><span class="hpill"><i style="background:${LEVEL[v.level] ? LEVEL[v.level].c : CARDS[v.level] ? CARDS[v.level].c : 'var(--faint)'}"></i>${esc(v.level === 'watch' ? 'Watch' : (CARDS[v.level] || {}).l || LEVEL[v.level].l)}</span>${v.why ? `<div class="small faint">${esc(v.why)}</div>` : ''}</td>
             <td class="right">${t.n ? `${t.n}<span class="small faint"> · ${t.stuck}✓ ${t.dead}✕</span>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
           : `<div class="empty">${all.length ? 'No cards match.' : 'No cards yet. Make a group like “Cap One VCCs”, then <b>Add cards</b> and paste them straight from your bank’s virtual-card page or a spreadsheet.'}</div>`}
       </div></div>`;
@@ -125,7 +143,7 @@ PAGES.cards = {
     if ($('#cdExp')) $('#cdExp').onclick = openCardExport;
     $('#cgList').onclick = async e => {
       const ren = e.target.dataset.cgren, del = e.target.dataset.cgdel;
-      if (ren) { const g = cardGroupById(ren); const n = await askText('Rename group', g.name); if (n && n.trim()) { g.name = n.trim(); save(); refresh(); } return; }
+      if (ren) { const g = cardGroupById(ren); const n = await askText('Rename group', g.name); if (n && n.trim()) { const c = state.categories.find(x => x.id === g.categoryId); if (c && c.name.toLowerCase() === g.name.toLowerCase() && !state.categories.some(x => x !== c && x.name.toLowerCase() === n.trim().toLowerCase())) c.name = n.trim(); g.name = n.trim(); g.updatedAt = Date.now(); save(); refresh(); } return; }
       if (del) { const n = cardGroupCount(del); if (!await ask(`Delete group “${cardGroupById(del).name}”${n ? ` and its ${plural(n, 'card')}` : ''}?`)) return; snapshot('delete card group'); state.cards = state.cards.filter(c => c.groupId !== del); state.cardGroups = state.cardGroups.filter(g => g.id !== del); if (cardGroupView === del) cardGroupView = 'all'; save(); refresh(); toast('Group deleted', { undo: true }); return; }
       const row = e.target.closest('[data-cg]'); if (row) { cardGroupView = row.dataset.cg; cardSel.clear(); PAGES.cards.render(); }
     };
@@ -138,6 +156,7 @@ PAGES.cards = {
     if ($('#cdDel')) $('#cdDel').onclick = async () => { const n = cardSel.size; if (!await ask(`Delete ${plural(n, 'card')}?`)) return; snapshot('delete cards'); state.cards = state.cards.filter(c => !cardSel.has(c.id)); cardSel.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'card')}`, { undo: true }); };
     pg.querySelector('tbody') && pg.querySelector('tbody').addEventListener('click', e => {
       const cb = e.target.dataset.ccb; if (cb) { e.target.checked ? cardSel.add(cb) : cardSel.delete(cb); PAGES.cards.render(); return; }
+      const pl = e.target.closest('[data-cprof]'); if (pl) { e.preventDefault(); openProfile(pl.dataset.cprof); return; }
       const rv = e.target.closest('[data-creveal]'); if (rv) { const id = rv.dataset.creveal; CF.reveal.has(id) ? CF.reveal.delete(id) : CF.reveal.add(id); PAGES.cards.render(); return; }
       const cp = e.target.closest('[data-ccopy]'); if (cp) { const c = cardById(cp.dataset.ccopy); if (c) copyText(c.number, 'Card number'); return; }
       const tr = e.target.closest('tr[data-card]'); if (!tr) return;
@@ -151,7 +170,7 @@ PAGES.cards = {
 let curCard = null, cardIsNew = false;
 function openCard(id) {
   const c = cardById(id); cardIsNew = !c; curCard = Object.assign({}, c || newCard({ groupId: cardGroupView !== 'all' ? cardGroupView : (state.cardGroups[0] || {}).id }));
-  const used = state.profiles.filter(p => cardDigits(p.cardNumber) === cardDigits(curCard.number)).length;
+  const usedBy = curCard.number ? state.profiles.filter(p => cardDigits(p.cardNumber) === cardDigits(curCard.number)) : [], used = usedBy.length;
   $('#cardTitle').textContent = cardIsNew ? 'New card' : (cardBrand(curCard.number) + ' ' + curCard.number.slice(-4));
   $('#cardBody').innerHTML = `<div class="fgrid">
       <div class="s4"><label>Card number</label><input id="cNum" inputmode="numeric" autocomplete="off" value="${esc(curCard.number)}"></div>
@@ -162,7 +181,8 @@ function openCard(id) {
       <div class="s2"><label>Group</label><select id="cGroup">${state.cardGroups.map(g => `<option value="${g.id}" ${curCard.groupId === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('') || '<option value="">(no groups)</option>'}</select></div>
       <div class="s2"><label>Name on card (optional)</label><input id="cName" value="${esc(curCard.name)}" autocomplete="off"></div>
       <div class="s4"><label>Notes</label><input id="cNotes" value="${esc(curCard.notes)}"></div></div>
-    ${used ? `<div class="small muted" style="margin-top:10px">On ${plural(used, 'profile')}. ${(() => { const t = cardOrderTally(cardDigits(curCard.number).slice(-4)); return t.n ? `${t.stuck} stuck · ${t.dead} cancelled across its orders.` : ''; })()}</div>` : ''}`;
+    ${!cardIsNew ? `<div class="cardlinks"><div class="small muted">${used ? `This card is linked to ${used === 1 ? 'profile' : plural(used, 'profile')}:` : 'This card isn’t on any profile yet — use <b>Assign to profiles</b>.'}</div>${used ? `<div class="chips" style="margin-top:6px">${usedBy.map(p => `<button class="chip" data-cprof="${p.id}">${esc(p.name || 'Untitled')}${p.categoryId ? ` <span class="faint">· ${esc(catName(p.categoryId))}</span>` : ''}</button>`).join('')}</div>` : ''}${used ? (() => { const t = cardOrderTally(cardDigits(curCard.number).slice(-4)); return t.n ? `<div class="small muted" style="margin-top:6px">${t.stuck} stuck · ${t.dead} cancelled across its orders.</div>` : ''; })() : ''}</div>` : ''}`;
+  $$('#cardBody [data-cprof]').forEach(b => b.onclick = () => { closeDlg('dlgCard'); openProfile(b.dataset.cprof); });
   $('#cardDelete').hidden = cardIsNew; openDlg('dlgCard');
 }
 function wireCardDlg() {
@@ -198,7 +218,9 @@ function wireCardAdd() {
     const existing = new Set((state.cards || []).map(c => cardDigits(c.number)));
     const fresh = cardAdd.cards.filter(c => !existing.has(c.number)); if (!fresh.length) return;
     snapshot('add cards'); fresh.forEach(c => state.cards.push(newCard(Object.assign({ groupId: gid, status: 'unused' }, c))));
-    cardGroupView = gid; save(); closeDlg('dlgCardAdd'); refresh(); toast(`Added ${plural(fresh.length, 'card')}`, { undo: true });
+    const g = cardGroupById(gid), made = pairProfileGroup(g);
+    cardGroupView = gid; save(); closeDlg('dlgCardAdd'); refresh();
+    toast(`Added ${plural(fresh.length, 'card')} to ${g ? g.name : 'the group'}${made ? ` · made a profile group “${g.name}” to match` : ''}`, { undo: true });
   };
 }
 
@@ -213,7 +235,9 @@ function assignTargets() {
   return list;
 }
 function openCardAssign(groupId) {
-  cardAssign = { group: groupId || (state.cardGroups[0] || {}).id || '', scope: (typeof selected !== 'undefined' && selected.size) ? 'selected' : 'all', per: 1 };
+  const g0 = cardGroupById(groupId || (state.cardGroups[0] || {}).id || ''); pairProfileGroup(g0);
+  const paired = g0 && g0.categoryId && state.profiles.some(p => p.categoryId === g0.categoryId) ? 'cat:' + g0.categoryId : 'all';
+  cardAssign = { group: g0 ? g0.id : '', scope: (typeof selected !== 'undefined' && selected.size) ? 'selected' : paired, per: 1 };
   renderCardAssign(); openDlg('dlgCardAssign');
 }
 function renderCardAssign() {
@@ -228,7 +252,7 @@ function renderCardAssign() {
     <div class="note ${cards.length >= need ? '' : 'warn'} small" style="margin-top:12px">${targets.length} profiles · ${plural(cards.length, 'usable card')} in the group · ${cardAssign.per} per card.${cards.length < need ? ` Not enough cards — need ${need}. Add cards or raise profiles per card.` : ' Cards are spread evenly; each profile’s old card is replaced.'}</div>`;
   $('#caaGo').disabled = !cards.length || !targets.length || cards.length < need;
   $('#caaGo').textContent = targets.length ? `Put cards on ${plural(targets.length, 'profile')}` : 'Assign';
-  $('#caaGroup').onchange = e => { cardAssign.group = e.target.value; renderCardAssign(); };
+  $('#caaGroup').onchange = e => { cardAssign.group = e.target.value; const g = cardGroupById(e.target.value); if (g && g.categoryId && cardAssign.scope !== 'selected' && state.profiles.some(p => p.categoryId === g.categoryId)) cardAssign.scope = 'cat:' + g.categoryId; renderCardAssign(); };
   $('#caaScope').onchange = e => { cardAssign.scope = e.target.value; renderCardAssign(); };
   $('#caaPer').oninput = e => { cardAssign.per = Math.max(1, Math.round(+e.target.value || 1)); const c = cardsForAssign(), t = assignTargets(), nd = Math.ceil(t.length / Math.max(1, cardAssign.per)); $('#caaGo').disabled = !c.length || !t.length || c.length < nd; };
 }

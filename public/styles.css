@@ -704,6 +704,7 @@ html[data-theme=cherry] dialog{box-shadow:var(--shadow)}
   .ctable td.cb{display:none}
   .ctable .c-num{grid-column:1 / 3}
   .ctable .c-exp{grid-column:1}.ctable td:nth-child(4){grid-column:2;justify-self:end}
+  .ctable .c-prof{grid-column:1 / 3;max-width:none}
 }
 /* ---------- hub sub-tabs (phone) ---------- */
 .subnav{display:none}
@@ -751,3 +752,9 @@ html[data-theme=cherry] dialog{box-shadow:var(--shadow)}
 #dscCard .li .mmain{flex:1;min-width:0}
 #dscCard .li{gap:10px}
 .dschow{margin-top:4px}.dschow summary{cursor:pointer;font-size:13px;color:var(--muted)}.dschow ol{margin:8px 0 0;padding-left:20px;line-height:1.6}
+
+/* cards: which profile a card is on */
+.ctable .c-prof{max-width:190px}
+.cplink{color:inherit;text-decoration:underline;text-decoration-color:var(--line2,#555);text-underline-offset:2px}
+.cardlinks{margin-top:12px;padding-top:10px;border-top:1px solid var(--line)}
+@media (min-width:1101px){.ctable td:nth-child(6){max-width:170px;white-space:normal}.ctable td:nth-child(6) .small{line-height:1.3}}
