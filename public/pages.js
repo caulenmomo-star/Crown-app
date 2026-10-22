@@ -79,8 +79,26 @@ PAGES.dashboard = {
       (() => { const n = suggestedDuplicates().length; return n && [`${plural(n, 'possible duplicate order')} to review`, 'orders', () => setTimeout(() => { cleanTab = 'dupes'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
       (() => { const n = state.orders.filter(isSuspicious).length; return n && [`${plural(n, 'order')} that don’t look like real store orders`, 'orders', () => setTimeout(() => { cleanTab = 'junk'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
     ].filter(Boolean);
+    // checkout overview (profiles / accounts / cards) — shown at the very top
+    const profTotal = (state.profiles || []).length;
+    const dsum = doctorSummary().c;
+    const accTotal = (state.accounts || []).length;
+    const accBad = (state.accounts || []).filter(a => a.status === 'needs' || a.status === 'locked' || a.status === 'banned').length;
+    const cardTotal = (state.cards || []).length;
+    const cardDead = (state.cards || []).filter(c => c.status === 'dead').length;
+    const cardGroups = (state.cardGroups || []).length;
+    const liveCards = (state.cards || []).filter(c => c.status === 'active' || c.status === 'unused').length;
+    const hasCheckout = profTotal || accTotal || cardTotal;
+    const chkCard = !hasCheckout ? '' : `<div class="card chkcard" style="margin-bottom:16px">
+      <h3>Checkout<span class="spacer"></span><button class="ghost sm" data-nav="profiles">Profiles ›</button></h3>
+      <div class="chkkpis">
+        <div class="kpi click" data-nav="profiles"><div class="l">Profiles</div><div class="v">${profTotal}</div><div class="d"${dsum.bad ? ' style="color:var(--warn)"' : ''}>${dsum.bad ? plural(dsum.bad, 'profile') + ' to change' : dsum.watch ? plural(dsum.watch, 'profile') + ' to watch' : profTotal ? 'all good' : 'none yet'}</div></div>
+        <div class="kpi click" data-nav="accounts"><div class="l">Accounts</div><div class="v">${accTotal}</div><div class="d"${accBad ? ' style="color:var(--warn)"' : ''}>${accBad ? accBad + ' need attention' : accTotal ? 'all working' : 'none yet'}</div></div>
+        <div class="kpi click" data-nav="cards"><div class="l">Cards</div><div class="v">${cardTotal}</div><div class="d"${cardDead ? ' style="color:var(--warn)"' : ''}>${cardDead ? plural(cardDead, 'card') + ' dead' : cardTotal ? liveCards + ' live' + (cardGroups ? ' · ' + plural(cardGroups, 'group') : '') : 'none yet'}</div></div>
+      </div></div>`;
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
+      ${chkCard}
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
         <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>

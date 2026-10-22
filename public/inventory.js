@@ -4,8 +4,8 @@ const INV = { q: '', sort: 'value', show: 'stock' };
 const invById = id => (state.inventory || []).find(x => x.id === id);
 const invKey = n => String(n || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/^\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]\s*/, '').replace(/[^a-z0-9]/g, '');
 function newItem(f) { return Object.assign({ id: uid(), name: '', upc: '', sku: '', qty: 0, cost: null, value: null, image: '', location: '', notes: '', market: null, createdAt: Date.now(), updatedAt: Date.now() }, f || {}); }
-// The market price used for value: TCGplayer market (chosen printing), else low/mid, else the price you typed in
-function mPrice(m) { if (!m || !m.prices) return null; const p = m.prices[m.sub] || m.prices.Normal || Object.values(m.prices)[0] || {}; const v = p.market ?? p.mid ?? p.low; return v == null ? null : Number(v); }
+// The price used for value: TCGplayer median (mid) for the chosen printing, else market, else low, else the price you typed in
+function mPrice(m) { if (!m || !m.prices) return null; const p = m.prices[m.sub] || m.prices.Normal || Object.values(m.prices)[0] || {}; const v = p.mid ?? p.market ?? p.low; return v == null ? null : Number(v); }
 const unitValue = it => { const m = mPrice(it.market); return m != null ? m : (it.value != null && it.value !== '' ? Number(it.value) : null); };
 const itemValue = it => { const v = unitValue(it); return v == null ? null : v * (Number(it.qty) || 0); };
 const itemCost = it => it.cost == null || it.cost === '' ? null : Number(it.cost) * (Number(it.qty) || 0);
@@ -119,7 +119,7 @@ async function refreshPrices(force, quiet) {
   if (!linked.length || !SERVER) return 0;
   if (pricesBusy) { if (!force) return 0; await new Promise(res => { const t = setInterval(() => { if (!pricesBusy) { clearInterval(t); res(); } }, 150); }); }
   const last = state.settings.pricesAt || 0;
-  if (!force && Date.now() - last < 12 * 3600e3) return 0;
+  if (!force && Date.now() - last < 6 * 3600e3) return 0;
   pricesBusy = true;
   try {
     const r = await api('/api/market/prices', { fresh: !!force, items: linked.map(i => ({ cat: i.market.cat, group: i.market.group, id: i.market.id })) });
@@ -190,17 +190,17 @@ function renderItem() {
       <div><label>Location</label><input id="iLoc" value="${esc(it.location)}" placeholder="Shelf, bin, house…"></div></div>
     <div style="margin-top:10px"><label>Picture link</label><input id="iImg" value="${esc(it.image)}" placeholder="https://…"></div>
     <div style="margin-top:10px"><label>Notes</label><textarea id="iNotes" style="min-height:48px">${esc(it.notes)}</textarea></div>
-    <div class="section">Market price (TCGplayer)</div>
+    <div class="section">Median price (TCGplayer)</div>
     ${m && m.id ? `<div class="card mcard"><div class="hstack" style="align-items:flex-start;gap:12px">${thumb(m.image, 'sm')}<div style="flex:1;min-width:0"><div class="t2">${esc(m.name)}</div><div class="small muted">${esc(m.setName || '')}${m.at ? ' · updated ' + esc(ago(m.at)) : ''}</div>
         ${subs.length > 1 ? `<select id="iSub" style="width:auto;margin-top:6px">${subs.map(s => `<option ${s === (m.sub || subs[0]) ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}</div>
-        <div class="dright"><div class="mprice">${fmtMoney(mp)}</div><div class="small faint">market each</div>${(() => { const p = (m.prices || {})[m.sub] || (m.prices || {}).Normal || Object.values(m.prices || {})[0] || {}; return `<div class="small faint">low ${fmtMoney(p.low)} · mid ${fmtMoney(p.mid)}</div>`; })()}</div></div>
+        <div class="dright"><div class="mprice">${fmtMoney(mp)}</div><div class="small faint">median each</div>${(() => { const p = (m.prices || {})[m.sub] || (m.prices || {}).Normal || Object.values(m.prices || {})[0] || {}; return `<div class="small faint">low ${fmtMoney(p.low)} · mid ${fmtMoney(p.mid)}</div>`; })()}</div></div>
         ${priceChart(m.history)}
         <div class="hstack" style="margin-top:8px;flex-wrap:wrap">${m.url ? `<a class="small" href="${esc(m.url)}" target="_blank" rel="noopener">Open on TCGplayer ↗</a>` : ''}<span class="spacer"></span><button class="ghost sm" id="iUnlink">Unlink</button><button class="sm" id="iRelink">Change</button></div></div>` : ''}
     <div id="iMarket" ${m && m.id && !mSearch.open ? 'hidden' : ''}>
-      <div class="small muted" style="margin-bottom:6px">Link this item to its TCGplayer product to track the market price and its history every day.</div>
+      <div class="small muted" style="margin-bottom:6px">Link this item to its TCGplayer product to track the median price and its history. Prices refresh every 6 hours.</div>
       <div class="hstack" style="flex-wrap:wrap;gap:6px"><select id="mCat" style="width:auto;max-width:180px"><option value="">Loading games…</option></select><input id="mQ" value="${esc(mSearch.q)}" placeholder="Search: prismatic etb, 151 booster bundle…" style="flex:1;min-width:180px"><button id="mGo">Search</button></div>
       <label class="check small" style="margin-top:6px"><input type="checkbox" id="mSealed" ${mSearch.sealed ? 'checked' : ''}> Sealed products only</label>
-      <div id="mRes" style="margin-top:8px">${mSearch.busy ? '<div class="small muted">Searching TCGplayer…</div>' : mSearch.err ? `<div class="err">${esc(mSearch.err)}</div>` : mSearch.results ? (mSearch.results.length ? `<div class="list mres">${mSearch.results.map((r, i) => { const p = r.prices.Normal || Object.values(r.prices)[0] || {}; return `<div class="li click dli" data-mpick="${i}">${thumb(r.image, 'sm')}<div class="mmain"><div class="t2">${esc(r.name)}</div><div class="small muted ellipsis">${esc(r.setName)}</div></div><div class="dright"><b>${fmtMoney(p.market ?? p.mid ?? p.low)}</b><div class="small faint">market</div></div></div>`; }).join('')}</div>` : '<div class="small muted">Nothing found. Try fewer words, or untick “Sealed products only”.</div>') : ''}</div>
+      <div id="mRes" style="margin-top:8px">${mSearch.busy ? '<div class="small muted">Searching TCGplayer…</div>' : mSearch.err ? `<div class="err">${esc(mSearch.err)}</div>` : mSearch.results ? (mSearch.results.length ? `<div class="list mres">${mSearch.results.map((r, i) => { const p = r.prices.Normal || Object.values(r.prices)[0] || {}; return `<div class="li click dli" data-mpick="${i}">${thumb(r.image, 'sm')}<div class="mmain"><div class="t2">${esc(r.name)}</div><div class="small muted ellipsis">${esc(r.setName)}</div></div><div class="dright"><b>${fmtMoney(p.mid ?? p.market ?? p.low)}</b><div class="small faint">median</div></div></div>`; }).join('')}</div>` : '<div class="small muted">Nothing found. Try fewer words, or untick “Sealed products only”.</div>') : ''}</div>
     </div>
     ${!itemIsNew && (it.sources || []).length ? `<div class="section">From orders</div><div class="small muted">${(it.sources || []).slice(-6).reverse().map(s => { const o = state.orders.find(x => x.id === s.orderId); return o ? `<a href="#" data-iorder="${o.id}">${esc(Parser.storeInfo(o.store).label)} #${esc(o.orderNumber || '—')}</a> (${s.qty})` : ''; }).filter(Boolean).join(' · ')}</div>` : ''}`;
   $('#itemDelete').hidden = itemIsNew; $('#itemSell').hidden = itemIsNew || typeof openSale !== 'function';
@@ -264,14 +264,14 @@ PAGES.inventory = {
       <div class="kpis">
         <div class="kpi"><div class="l">Units in stock</div><div class="v">${st.units}</div><div class="d">${plural(all.filter(i => (Number(i.qty) || 0) > 0).length, 'product')}</div></div>
         <div class="kpi"><div class="l">Cost</div><div class="v">${fmtMoney(st.cost, true)}</div><div class="d">what you paid</div></div>
-        <div class="kpi"><div class="l">Market value</div><div class="v">${fmtMoney(st.value, true)}</div><div class="d">${st.priced ? plural(st.priced, 'product') + ' priced' : 'link items to TCGplayer'}</div></div>
+        <div class="kpi"><div class="l">Median value</div><div class="v">${fmtMoney(st.value, true)}</div><div class="d">${st.priced ? plural(st.priced, 'product') + ' priced' : 'link items to TCGplayer'}</div></div>
         <div class="kpi"><div class="l">Unrealized gain</div><div class="v ${st.gain >= 0 ? 'pos' : 'neg'}">${st.priced ? (st.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(st.gain), true) : '—'}</div><div class="d">on priced items</div></div>
       </div>
       <div class="toolbar"><input class="search" data-search id="invQ" placeholder="Search name, barcode, location…  ( / )" value="${esc(INV.q)}">
         <div class="chips" id="invShow">${[['stock', 'In stock'], ['out', 'Sold out'], ['all', 'All']].map(([k, l]) => `<button class="chip ${INV.show === k ? 'on' : ''}" data-is="${k}">${l}</button>`).join('')}</div>
         <select id="invSort" style="width:auto">${[['value', 'Most value'], ['gain', 'Biggest gain'], ['qty', 'Most units'], ['recent', 'Recently changed'], ['az', 'A–Z']].map(([k, l]) => `<option value="${k}" ${INV.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
       ${list.length ? `<div class="list invlist">${list.map(i => { const uv = unitValue(i), v = itemValue(i), c = itemCost(i); const g = v != null && c != null ? v - c : null; return `<div class="li click dli inv" data-item="${i.id}">${thumb(i.image || (i.market && i.market.image), 'sm')}
-          <div class="mmain"><div class="t2">${esc(i.name || 'Untitled')}</div><div class="small muted ellipsis">${i.cost != null ? 'cost ' + fmtMoney(i.cost) + ' · ' : ''}${uv != null ? (i.market && mPrice(i.market) != null ? 'market ' : 'value ') + fmtMoney(uv) : 'no price'}${i.location ? ' · ' + esc(i.location) : ''}</div></div>
+          <div class="mmain"><div class="t2">${esc(i.name || 'Untitled')}</div><div class="small muted ellipsis">${i.cost != null ? 'cost ' + fmtMoney(i.cost) + ' · ' : ''}${uv != null ? (i.market && mPrice(i.market) != null ? 'median ' : 'value ') + fmtMoney(uv) : 'no price'}${i.location ? ' · ' + esc(i.location) : ''}</div></div>
           ${i.market ? sparkline(i.market.history, 64, 24) : ''}
           <div class="dright"><div class="qtyb">×${esc(i.qty || 0)}</div>${v != null ? `<div class="small">${fmtMoney(v)}</div>` : ''}${g != null ? `<div class="small ${g >= 0 ? 'pos' : 'neg'}">${g >= 0 ? '+' : '−'}${fmtMoney(Math.abs(g))}</div>` : ''}</div></div>`; }).join('')}</div>`
         : `<div class="empty">${all.length ? 'Nothing matches.' : 'No inventory yet. Tap <b>Scan</b> to scan product barcodes, <b>Add item</b> to type one in, or add the items from your delivered orders.'}</div>`}`;

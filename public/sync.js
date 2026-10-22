@@ -188,6 +188,9 @@ function onUnlocked() {
   if (state.syncVer !== 1) { if (!state.settings.autoSyncMin) state.settings.autoSyncMin = 5; state.syncVer = 1; save(); }
   setTimeout(() => refreshStaleTracking(), 4000);
   setTimeout(() => { if (cryptoKey && typeof refreshPrices === 'function') refreshPrices(false, true); }, 9000);
+  // keep TCGplayer median prices fresh on a 6-hour cycle while the app is open.
+  // The heartbeat ticks every 30 min; refreshPrices self-gates on the 6h throttle, so it only fetches once 6h have passed.
+  if (!window._priceTimer) window._priceTimer = setInterval(() => { if (cryptoKey && typeof refreshPrices === 'function') refreshPrices(false, true); }, 30 * 60e3);
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
   // always catch up when Crown Tools is opened (the schedule only controls checks while it stays open)
@@ -233,7 +236,7 @@ async function rereadAll(auto) {
 }
 function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 // catch up right away when you come back to Crown Tools
-document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); if (typeof refreshPrices === 'function') refreshPrices(false, true); });
 $('#syncNowNav').onclick = () => syncAll(true);
 $('#scanNav').onclick = () => openUniversalScanner();
 Scan.wire(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);

@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.1 — Dashboard & prices (2026-10-22)
+
+- Added a Checkout card to the top of the dashboard — profiles, accounts and cards at a glance.
+- Inventory now tracks the TCGplayer median price and refreshes it every 6 hours.
+
 ## v0.9.0 — Profiles, accounts, cards (2026-10-21)
 
 - Reworked the Profiles section: every profile now gets a health rating from its real order results, and the ones that keep getting cancelled can be fixed with a new address line 2 in one tap (nothing else on the profile changes).
