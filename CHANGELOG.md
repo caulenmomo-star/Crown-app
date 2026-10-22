@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.8.0 — A new look (2026-10-21)
+
+- New default look, Crown: warm graphite with gold, matching the crown logo.
+- Nine looks to choose from in Settings → Look — Crown, Daylight, Midnight, Ember, Royal, Forest, Mono, Ocean and Cherry — or let it follow your device’s light/dark setting. Your choice follows you to every device.
+- Cleaner layout on computers: the sidebar is grouped into Buying, Selling and Setup; the numbers at the top of each page sit in one strip; bigger headings; pages stay a comfortable width on big screens.
+- The orders table fits the screen on laptops: the order number sits under the store, and tracking is one click away in the order.
+
 ## v0.7.0 — Inventory, live TCGplayer prices, sales and profit (2026-10-21)
 
 - New Inventory page: scan any product barcode with your phone camera (or a USB/Bluetooth scanner) to look it up, restock it or add it. Add the items from delivered orders in one tap, with what you paid as the cost.

@@ -214,7 +214,7 @@ function openProfile(id) {
   if (!editing || !editing.id) return;
   $('#profTitle').textContent = isNew ? 'New profile' : (editing.name || 'Edit profile');
   const h = isNew ? [] : health(editing);
-  $('#profHealth').innerHTML = h.length ? `<span class="badge" style="border-color:#5a4520;color:#ecc87c" title="${esc(h.join('\n'))}">⚠ ${plural(h.length, 'issue')}</span>` : (isNew ? '' : '<span class="badge" style="color:#7fe0b2">✓ Looks good</span>');
+  $('#profHealth').innerHTML = h.length ? `<span class="badge" style="border-color:var(--warnLine);color:var(--warnText)" title="${esc(h.join('\n'))}">⚠ ${plural(h.length, 'issue')}</span>` : (isNew ? '' : '<span class="badge" style="color:#7fe0b2">✓ Looks good</span>');
   $('#profDelete').hidden = isNew;
   let html = `<div class="fgrid"><div class="s2"><label>Category</label><select data-k="categoryId">${catOptions(editing.categoryId)}</select></div><div class="s2"><label>Notes</label><input data-k="notes" value="${esc(editing.notes)}" placeholder="Anything to remember about this profile"></div></div>`;
   for (const g of ['General', 'Shipping', 'Billing', 'Payment']) {

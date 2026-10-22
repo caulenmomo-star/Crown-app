@@ -1,7 +1,24 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.7.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.8.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
+/* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
+const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
+  ['royal', 'Royal', 'Deep purple and violet'], ['forest', 'Forest', 'Dark green and lime'], ['mono', 'Mono', 'Black and white'], ['ocean', 'Ocean', 'Light with teal'], ['cherry', 'Cherry', 'Light with red'],
+  ['auto', 'Match my device', 'Daylight by day, Crown at night']];
+const THEME_BAR = { crown: '#17181b', daylight: '#f3f4f6', midnight: '#0d1526', ember: '#161314', royal: '#140f22', forest: '#0f1914', mono: '#111111', ocean: '#eef3f4', cherry: '#f6f3f3' };
+const DEFAULT_THEME = 'crown';
+function applyTheme(t) {
+  t = THEMES_UI.some(x => x[0] === t) ? t : DEFAULT_THEME;
+  const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const real = t === 'auto' ? (dark ? 'crown' : 'daylight') : t;
+  document.documentElement.dataset.theme = real;
+  const m = document.querySelector('meta[name=theme-color]'); if (m) m.content = THEME_BAR[real] || '#17181b';
+  try { localStorage.setItem('crown.theme', t); } catch (_) { }
+  return t;
+}
+applyTheme((() => { try { return localStorage.getItem('crown.theme') || DEFAULT_THEME; } catch (_) { return DEFAULT_THEME; } })());
+if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { let t; try { t = localStorage.getItem('crown.theme'); } catch (_) { } if (t === 'auto') applyTheme('auto'); });
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -87,7 +104,7 @@ let CLOUD = false, cloudInfo = {}, authKey = null, acctEmail = null, rev = 0, ba
 function showOutdated() {
   if (document.getElementById('outdatedBar')) return;
   const d = document.createElement('div'); d.id = 'outdatedBar';
-  d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;background:#2a2112;border:1px solid #5a4520;color:#ecc87c;padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
+  d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;background:var(--panel2);border:1px solid var(--warnLine);color:var(--warnText);padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
   d.innerHTML = '<span>Crown Tools was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
   d.querySelector('button').onclick = () => location.reload(); document.body.appendChild(d);
 }
@@ -379,7 +396,9 @@ const ICONS = {
   checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['houses', 'Houses'], ['calendar', 'Calendar'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['checkin', 'Check-in'], ['settings', 'Settings']];
+const NAV = [['dashboard', 'Dashboard'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['profiles', 'Profiles'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
+// sidebar sections on computers: the label shows above the first page of each group
+const NAV_GROUP = { orders: 'Buying', inventory: 'Selling', profiles: 'Setup' };
 const PAGES = {};
 let route = { page: 'dashboard', arg: '' };
 function go(page, arg) { const h = '#' + page + (arg ? '/' + arg : ''); if (location.hash !== h) location.hash = h; else applyRoute(); }
@@ -392,7 +411,7 @@ function applyRoute() {
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
 function renderNav() {
   const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)) };
-  $('#navlist').innerHTML = NAV.map(([k, l]) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
+  $('#navlist').innerHTML = NAV.map(([k, l]) => `${NAV_GROUP[k] ? `<div class="navgroup">${NAV_GROUP[k]}</div>` : ''}<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
   // phones: bottom tab bar with the four most-used pages + More
   const inMore = MORE_PAGES.includes(route.page);
   $('#tabbar').innerHTML = TAB_PAGES.map(([k, l]) => `<button class="tabitem ${route.page === k ? 'active' : ''}" data-nav="${k}" aria-label="${l}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${l}</span></button>`).join('')

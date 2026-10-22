@@ -1,6 +1,12 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.8.0', date: '2026-10-21', title: 'A new look', items: [
+    'New default look, Crown: warm graphite with gold, matching the crown logo.',
+    'Nine looks to choose from in Settings → Look — Crown, Daylight, Midnight, Ember, Royal, Forest, Mono, Ocean and Cherry — or let it follow your device’s light/dark setting. Your choice follows you to every device.',
+    'Cleaner layout on computers: the sidebar is grouped into Buying, Selling and Setup; the numbers at the top of each page sit in one strip; bigger headings; pages stay a comfortable width on big screens.',
+    'The orders table fits the screen on laptops: the order number sits under the store, and tracking is one click away in the order.',
+  ] },
   { v: '0.7.0', date: '2026-10-21', title: 'Inventory, live TCGplayer prices, sales and profit', items: [
     'New Inventory page: scan any product barcode with your phone camera (or a USB/Bluetooth scanner) to look it up, restock it or add it. Add the items from delivered orders in one tap, with what you paid as the cost.',
     'Live TCGplayer market prices for sealed product (and singles): link an item once and its market, low and mid prices update every day, with a price history chart. The Inventory page shows your cost, market value and unrealized gain.',
@@ -136,7 +142,7 @@ const CHANGELOG = [
   ] },
 ];
 function renderChangelog() {
-  $('#newsBody').innerHTML = CHANGELOG.map((r, i) => `<div class="card" style="padding:14px 16px;margin-bottom:10px${i ? '' : ';border-color:#5a4520'}">
+  $('#newsBody').innerHTML = CHANGELOG.map((r, i) => `<div class="card" style="padding:14px 16px;margin-bottom:10px${i ? '' : ';border-color:var(--warnLine)'}">
     <div class="hstack"><b>v${esc(r.v)}</b><span class="muted">${esc(r.title)}</span><div class="spacer"></div><span class="small faint">${esc(r.date)}</span></div>
     <ul style="margin:8px 0 0 18px;padding:0">${r.items.map(t => `<li class="small" style="margin:4px 0">${esc(t)}</li>`).join('')}</ul></div>`).join('');
 }

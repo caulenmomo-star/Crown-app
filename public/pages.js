@@ -80,7 +80,7 @@ PAGES.dashboard = {
     ].filter(Boolean);
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
-      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:#2b3863;background:linear-gradient(135deg,#161c33,#141821)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
+      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
         <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
       <div class="kpis">
@@ -88,8 +88,7 @@ PAGES.dashboard = {
         <div class="kpi"><div class="l">Orders · ${esc(dLabel)}</div><div class="v">${dOrders}</div><div class="d">${dDead} cancelled · ${dItems} items</div></div>
         <div class="kpi"><div class="l">In transit</div><div class="v">${transit.length}</div><div class="d">${soon.length ? soon.length + ' arriving by tomorrow' : '&nbsp;'}</div></div>
         ${(() => { const si = stickInfo(inSel); return `<div class="kpi"><div class="l">Stick rate · ${esc(dLabel)}</div><div class="v">${si.rate == null ? '—' : si.rate + '%'}</div><div class="d">${inSel.length ? `${si.stuck} shipped · ${si.dead} cancelled${si.pending ? ' · ' + si.pending + ' pending' : ''}` : '&nbsp;'}</div></div>`; })()}
-        <div class="kpi"><div class="l">Profiles</div><div class="v">${state.profiles.length}</div><div class="d">${state.categories.length} categories</div></div>
-        <div class="kpi"><div class="l">Houses</div><div class="v">${state.houses.filter(h => houseOrders(h.id).length).length}</div><div class="d">&nbsp;</div></div>
+
         ${(state.inventory || []).length ? (() => { const st = invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)); return `<div class="kpi click" data-nav="inventory"><div class="l">Inventory</div><div class="v">${fmtMoney(st.value || st.cost, true)}</div><div class="d">${st.units} units${st.priced ? ' · ' + (st.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(st.gain), true) : ''}</div></div>`; })() : ''}
         ${(state.sales || []).length ? (() => { const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)); const ss = state.sales.filter(x => x.date >= m0), ex = (state.expenses || []).filter(x => x.date >= m0); const p = sum(ss, saleProfit) - sum(ex, x => x.amount); return `<div class="kpi click" data-nav="sales"><div class="l">Profit this month</div><div class="v ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '' : '−'}${fmtMoney(Math.abs(p), true)}</div><div class="d">${plural(ss.length, 'sale')}</div></div>`; })() : ''}
       </div>
@@ -396,6 +395,7 @@ PAGES.settings = {
     const trackAll = !S.trackedStores || !S.trackedStores.length;
     pg.innerHTML = `<div class="pagehead"><h1>Settings</h1></div>
       ${CLOUD && typeof Account !== 'undefined' ? Account.card() : ''}
+      <div class="card" id="themeCard" style="margin-bottom:14px"><h3>Look</h3><div class="themes">${THEMES_UI.map(([k, l, d]) => `<button class="themeopt ${(S.theme || DEFAULT_THEME) === k ? 'on' : ''}" data-theme-pick="${k}"><span class="tswatch t-${k}"><i></i><i></i><i></i></span><span class="tname">${esc(l)}</span><span class="small faint">${esc(d)}</span></button>`).join('')}</div></div>
       <div class="cols2">
         <div class="card"><h3>Security</h3>
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
@@ -470,6 +470,7 @@ PAGES.settings = {
     });
     $$('#carrierCard [data-cdel]').forEach(b => b.onclick = () => { const c = Object.assign({}, S.carriers); delete c[b.dataset.cdel]; S.carriers = c; save(); PAGES.settings.render(); });
     $('#stTrackNow').onclick = () => refreshAllTracking();
+    $$('[data-theme-pick]').forEach(b => b.onclick = () => { S.theme = applyTheme(b.dataset.themePick); save(); PAGES.settings.render(); });
     $('#alSave').onclick = async () => {
       const url = $('#alUrl').value.trim(); if (!url) { toast('Paste the webhook link from Discord'); return; }
       const b = $('#alSave'); b.disabled = true; b.textContent = 'Testing…';
