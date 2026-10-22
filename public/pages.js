@@ -6,20 +6,25 @@
 function statusDot(st) { const S = STATUS[st] || {}; return `<span class="stdot" style="background:${S.c || 'var(--faint)'}" title="${esc(S.l || st)}" aria-label="${esc(S.l || st)}"></span>`; }
 function dashSub(o) { const h = o.houseId && houseById(o.houseId); return [o.total != null ? fmtMoney(o.total) : '', h ? '→ ' + esc(houseLabel(h)) : '', esc(Parser.storeInfo(o.store).label)].filter(Boolean).join(' · '); }
 function svgBars(buckets, opts) {
-  // buckets: [{label, value, title}]
-  const ph = isPhone(), W = ph ? 380 : 900, H = ph ? 200 : 220, P = { l: ph ? 40 : 46, r: 6, t: 10, b: 24 };
-  const max = Math.max(1, ...buckets.map(b => b.value));
-  const nice = (() => { const e = Math.pow(10, Math.floor(Math.log10(max))); const f = max / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; })();
+  // buckets: [{label, value, title}]; opts.signed draws losses below a zero line
+  const ph = isPhone(), W = ph ? 380 : 900, H = ph ? 200 : 220, P = { l: ph ? 44 : 50, r: 6, t: 10, b: 24 };
+  const signed = !!(opts && opts.signed) && buckets.some(b => b.value < 0);
+  const nice0 = m => { m = Math.max(1, m); const e = Math.pow(10, Math.floor(Math.log10(m))); const f = m / e; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * e; };
+  const maxV = nice0(Math.max(0, ...buckets.map(b => b.value))), minV = signed ? nice0(Math.max(0, ...buckets.map(b => -b.value))) : 0;
   const iw = W - P.l - P.r, ih = H - P.t - P.b, bw = iw / Math.max(1, buckets.length);
+  const yOf = v => P.t + ih * (maxV - v) / (maxV + minV);
   const every = Math.max(1, Math.ceil(buckets.length / (ph ? 6 : 12)));
   let g = '';
-  for (let i = 0; i <= 4; i++) { const y = P.t + ih - ih * i / 4; g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${P.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--faint)">${esc(fmtMoney(nice * i / 4, true).replace('.00', ''))}</text>`; }
+  const ticks = signed ? [-minV, -minV / 2, 0, maxV / 2, maxV] : [0, maxV / 4, maxV / 2, maxV * 3 / 4, maxV];
+  for (const v of ticks) { const y = yOf(v); g += `<line x1="${P.l}" x2="${W - P.r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="${v === 0 && signed ? 1.5 : 1}"/><text x="${P.l - 6}" y="${y + 4}" text-anchor="end" font-size="11" fill="var(--faint)">${esc((v < 0 ? '−' : '') + fmtMoney(Math.abs(v), true).replace('.00', ''))}</text>`; }
+  const y0 = yOf(0);
   buckets.forEach((b, i) => {
-    const h = b.value / nice * ih, x = P.l + i * bw;
-    g += `<rect x="${x + bw * 0.14}" y="${P.t + ih - h}" width="${Math.max(1, bw * 0.72)}" height="${Math.max(0, h)}" rx="${Math.min(4, bw * 0.2)}" fill="${(opts && opts.color) || 'var(--accent)'}" opacity="${b.value ? 0.95 : 0}"><title>${esc(b.title || b.label + ': ' + fmtMoney(b.value))}</title></rect>`;
+    const x = P.l + i * bw, yv = yOf(b.value), top = Math.min(yv, y0), h = Math.abs(y0 - yv);
+    const col = b.value < 0 ? 'var(--danger)' : ((opts && opts.color) || 'var(--accent)');
+    g += `<rect x="${x + bw * 0.14}" y="${top}" width="${Math.max(1, bw * 0.72)}" height="${Math.max(0, h)}" rx="${Math.min(4, bw * 0.2)}" fill="${col}" opacity="${b.value ? 0.95 : 0}"><title>${esc(b.title || b.label + ': ' + fmtMoney(b.value))}</title></rect>`;
     if (i % every === 0) g += `<text x="${x + bw / 2}" y="${H - 8}" text-anchor="middle" font-size="11" fill="var(--faint)">${esc(b.label)}</text>`;
   });
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Spending chart">${g}</svg>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc((opts && opts.label) || 'Chart')}">${g}</svg>`;
 }
 function hbars(rows, opts) {
   if (!rows.length) return '<div class="empty sm">Nothing yet.</div>';
@@ -85,6 +90,8 @@ PAGES.dashboard = {
         ${(() => { const si = stickInfo(inSel); return `<div class="kpi"><div class="l">Stick rate · ${esc(dLabel)}</div><div class="v">${si.rate == null ? '—' : si.rate + '%'}</div><div class="d">${inSel.length ? `${si.stuck} shipped · ${si.dead} cancelled${si.pending ? ' · ' + si.pending + ' pending' : ''}` : '&nbsp;'}</div></div>`; })()}
         <div class="kpi"><div class="l">Profiles</div><div class="v">${state.profiles.length}</div><div class="d">${state.categories.length} categories</div></div>
         <div class="kpi"><div class="l">Houses</div><div class="v">${state.houses.filter(h => houseOrders(h.id).length).length}</div><div class="d">&nbsp;</div></div>
+        ${(state.inventory || []).length ? (() => { const st = invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)); return `<div class="kpi click" data-nav="inventory"><div class="l">Inventory</div><div class="v">${fmtMoney(st.value || st.cost, true)}</div><div class="d">${st.units} units${st.priced ? ' · ' + (st.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(st.gain), true) : ''}</div></div>`; })() : ''}
+        ${(state.sales || []).length ? (() => { const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)); const ss = state.sales.filter(x => x.date >= m0), ex = (state.expenses || []).filter(x => x.date >= m0); const p = sum(ss, saleProfit) - sum(ex, x => x.amount); return `<div class="kpi click" data-nav="sales"><div class="l">Profit this month</div><div class="v ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '' : '−'}${fmtMoney(Math.abs(p), true)}</div><div class="d">${plural(ss.length, 'sale')}</div></div>`; })() : ''}
       </div>
       <div class="cols2" style="margin-bottom:14px">
         <div class="card"><h3>Upcoming deliveries<span class="spacer"></span><button class="ghost sm" data-nav="calendar">Calendar ›</button></h3>
@@ -399,22 +406,39 @@ PAGES.settings = {
           <div class="chips"><button class="chip ${S.notify ? 'on' : ''}" id="stNotify">${S.notify ? 'On' : 'Off'}</button></div>
           ${S.notify && typeof Notification !== 'undefined' && Notification.permission === 'denied' ? '<div class="note warn">Your browser is blocking notifications for Crown Tools. Allow them in the browser’s site settings.</div>' : ''}</div>
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
-          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS and FedEx directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown Tools data.</div>
+          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS, FedEx and USPS directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown Tools data.</div>
           ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
-             ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `
+             ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.'],
+             ['usps', 'USPS', 'https://developers.usps.com', 'Sign in at developers.usps.com with a free USPS Business account → Apps → Add App → add the <b>Tracking</b> API → copy the Consumer Key (Client ID) and Consumer Secret.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `
           <div class="section" style="margin-top:6px">${label} ${c.id ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
           <div class="small faint" style="margin-bottom:6px">${how} <a href="${url}" target="_blank" rel="noopener">Open ${label} developer site ↗</a></div>
           <div class="hstack" style="flex-wrap:wrap"><input id="c_${k}_id" autocomplete="off" placeholder="${label} Client ID / API key" value="${esc(c.id || '')}" style="flex:1;min-width:180px"><input id="c_${k}_sec" type="password" autocomplete="off" placeholder="Client Secret" value="${esc(c.secret || '')}" style="flex:1;min-width:160px"><button data-csave="${k}">Save &amp; test</button>${c.id ? `<button class="ghost" data-cdel="${k}">Remove</button>` : ''}</div>`; }).join('')}
-          <div class="section">EasyPost (optional, any carrier)</div>
+          <div class="section">EasyPost (optional — DHL, OnTrac, LaserShip, Canada Post, Purolator, Asendia and 100+ more)</div>
           <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div>
           <div class="hstack" style="margin-top:12px"><button id="stTrackNow">Check all packages now</button></div></div>
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
-          <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
+          <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').sort((a, b) => a.label.localeCompare(b.label)).concat([{ key: '__shopify', label: 'Any Shopify store' }]).map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
           <div class="section">Stores Crown Tools doesn’t recognize</div>
           <div class="small muted" style="margin-bottom:8px">Off by default, so food delivery, app receipts and other non-store emails don’t become orders.</div>
           <div class="chips"><button class="chip ${S.trackUnknown ? '' : 'on'}" id="stUnkOff">Ignore them</button><button class="chip ${S.trackUnknown ? 'on' : ''}" id="stUnkOn">Track them too</button></div>
           ${(S.ignoredSenders || []).length ? `<div class="section">Ignored senders</div><div class="chips">${S.ignoredSenders.map(k => `<button class="chip" data-unign="${esc(k)}" title="Stop ignoring">${esc(k)} ✕</button>`).join('')}</div>` : ''}</div>
+        <div class="card" id="alertCard"><h3>Discord alerts</h3>
+          <div class="small muted" style="margin-bottom:10px">Post to a Discord channel when a package is out for delivery, delivered or cancelled. Give a house its own webhook to send that house’s alerts to its own channel. Alerts go out whenever Crown Tools checks your email on any of your devices.</div>
+          ${(() => { const A = S.alerts || {}; return `
+          <div class="hstack" style="flex-wrap:wrap"><input id="alUrl" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/…" value="${esc(A.url || '')}" style="flex:1;min-width:220px"><button id="alSave">Save &amp; test</button>${A.url ? '<button class="ghost" id="alDel">Remove</button>' : ''}</div>
+          <div class="small faint" style="margin-top:6px">In Discord: Server Settings → Integrations → Webhooks → New Webhook → pick the channel → Copy Webhook URL.</div>
+          <div class="section">Send an alert when an order is</div>
+          <div class="chips" id="alEv">${[['out', 'Out for delivery'], ['delivered', 'Delivered'], ['cancelled', 'Cancelled'], ['checkin', 'Checked in']].map(([k, l]) => `<button class="chip ${A[k] ? 'on' : ''}" data-al="${k}">${l}</button>`).join('')}</div>
+          <div class="section">Per-house channels</div>
+          ${state.houses.filter(h => houseOrders(h.id).length).length ? `<div class="list">${state.houses.filter(h => houseOrders(h.id).length).sort((a, b) => houseLabel(a).localeCompare(houseLabel(b), undefined, { numeric: true })).slice(0, 60).map(h => `<div class="li"><div class="mmain" style="min-width:120px"><div class="t2">${esc(houseLabel(h))}</div></div><input type="password" autocomplete="off" data-hook="${h.id}" placeholder="${A.url ? 'Uses the main webhook' : 'Webhook link'}" value="${esc(h.discord || '')}" style="flex:1;min-width:140px"></div>`).join('')}</div>` : '<div class="small faint">Houses show up here once orders have addresses.</div>'}
+          ${A.lastError ? `<div class="note warn small" style="margin-top:8px">Last alert failed (${esc(ago(A.lastErrorAt))}): ${esc(A.lastError)}</div>` : ''}`; })()}</div>
+        <div class="card"><h3>Inventory & check-in</h3>
+          <div class="section" style="margin-top:0">Check-in</div>
+          <div class="small muted" style="margin-bottom:8px">Optional. Scan shipping labels as boxes arrive to mark them as in hand. Nothing is flagged or nagged about either way.</div>
+          <div class="chips"><button class="chip ${S.checkinSince ? 'on' : ''}" id="stCiOn">${S.checkinSince ? 'Check-in on' : 'Check-in off'}</button><button class="chip ${S.invOnCheckin ? 'on' : ''}" id="stInvCi">Add items to inventory when checked in</button></div>
+          <div class="section">Selling fees (estimates — match them to your accounts)</div>
+          <div class="feegrid">${PLATFORMS.filter(p => p.pct || p.flat || (S.platformFees || {})[p.k]).map(p => { const f = feeFor(p.k); return `<div class="feerow"><span>${esc(p.l)}</span><input data-fee="${p.k}" data-ff="pct" inputmode="decimal" value="${esc(f.pct)}"><span class="faint">% +</span><input data-fee="${p.k}" data-ff="flat" inputmode="decimal" value="${esc(f.flat)}"><span class="faint">$</span></div>`; }).join('')}</div></div>
         <div class="card"><h3>Backups</h3>
           <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Crown Tools Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Crown Tools saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Crown Tools with Start Crown Tools to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
           <div class="hstack"><button id="stBackup">Download backup</button><button id="stRestore">Restore from file…</button></div>
@@ -441,11 +465,29 @@ PAGES.settings = {
       const k = b.dataset.csave, id = $('#c_' + k + '_id').value.trim(), secret = $('#c_' + k + '_sec').value.trim();
       if (!id || !secret) { toast('Paste both the Client ID and the Client Secret'); return; }
       b.disabled = true; b.textContent = 'Testing…';
-      try { await api('/api/carriertest', { carrier: k, id, secret }); S.carriers = Object.assign({}, S.carriers, { [k]: { id, secret } }); save(); toast((k === 'ups' ? 'UPS' : 'FedEx') + ' connected — checking your packages…'); PAGES.settings.render(); refreshStaleTracking(true); }
+      try { await api('/api/carriertest', { carrier: k, id, secret }); S.carriers = Object.assign({}, S.carriers, { [k]: { id, secret } }); save(); toast(({ ups: 'UPS', fedex: 'FedEx', usps: 'USPS' }[k]) + ' connected — checking your packages…'); PAGES.settings.render(); refreshStaleTracking(true); }
       catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save & test'; }
     });
     $$('#carrierCard [data-cdel]').forEach(b => b.onclick = () => { const c = Object.assign({}, S.carriers); delete c[b.dataset.cdel]; S.carriers = c; save(); PAGES.settings.render(); });
     $('#stTrackNow').onclick = () => refreshAllTracking();
+    $('#alSave').onclick = async () => {
+      const url = $('#alUrl').value.trim(); if (!url) { toast('Paste the webhook link from Discord'); return; }
+      const b = $('#alSave'); b.disabled = true; b.textContent = 'Testing…';
+      try { await Alerts.test(url); const A = Object.assign({ out: true, delivered: true, cancelled: false, checkin: false }, S.alerts || {}); S.alerts = Object.assign(A, { url, on: true, since: (S.alerts || {}).since || Date.now(), lastError: '' }); save(); toast('Connected — check your Discord channel'); PAGES.settings.render(); }
+      catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save & test'; }
+    };
+    if ($('#alDel')) $('#alDel').onclick = () => { S.alerts = Object.assign({}, S.alerts, { url: '' }); if (!state.houses.some(h => h.discord)) S.alerts.on = false; save(); PAGES.settings.render(); };
+    $('#alEv').onclick = e => { const b = e.target.closest('[data-al]'); if (!b) return; const A = Object.assign({}, S.alerts); A[b.dataset.al] = !A[b.dataset.al]; if (!A.since) A.since = Date.now(); S.alerts = A; save(); PAGES.settings.render(); };
+    $$('#alertCard [data-hook]').forEach(inp => inp.onchange = async () => {
+      const h = houseById(inp.dataset.hook); if (!h) return; const url = inp.value.trim();
+      if (url) { try { await Alerts.test(url, h); toast('Connected — test sent to Discord'); } catch (e) { toast(e.message); inp.value = h.discord || ''; return; } }
+      h.discord = url; h.updatedAt = Date.now();
+      if (url) S.alerts = Object.assign({ out: true, delivered: true }, S.alerts, { on: true, since: (S.alerts || {}).since || Date.now() });
+      save();
+    });
+    $('#stCiOn').onclick = () => { S.checkinSince = S.checkinSince ? '' : todayKey(); save(); PAGES.settings.render(); };
+    $('#stInvCi').onclick = () => { S.invOnCheckin = !S.invOnCheckin; save(); PAGES.settings.render(); };
+    $$('[data-fee]').forEach(inp => inp.onchange = () => { const k = inp.dataset.fee; const f = Object.assign({}, (S.platformFees || {})[k]); f[inp.dataset.ff] = Math.max(0, Number(inp.value) || 0); S.platformFees = Object.assign({}, S.platformFees, { [k]: f }); save(); });
     $('#stStores').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s; if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; } save(); PAGES.settings.render(); };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
     $('#stRestore').onclick = () => $('#restoreFile').click();

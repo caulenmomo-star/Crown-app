@@ -59,7 +59,7 @@ async function syncAccount(a, totals, opts) {
     try { p = Parser.parseOrderEmail(m); } catch (e) { console.error('parse failed', e); addUnparsed(m, 'reader error'); return; }
     if (!p) return;
     res.found++;
-    if (tracked && !tracked.has(p.store)) return;
+    if (tracked && !tracked.has(p.store) && !(String(p.store).startsWith('shop:') && tracked.has('__shopify'))) return;
     const out = applyEmail(p, label, { reapply: !!opts.reapply });
     if (out.ignored) { res.found--; return; }
     if (out.skipped) { addUnparsed(m, out.skipped, p.store); return; }
@@ -140,7 +140,9 @@ async function syncAll(manual, ids, opts) {
   lastUndo = null; invalidateStats();
   const after = accs.map(a => JSON.stringify([a.lastResult && a.lastResult.error, a.uidValidity, a.lastSync ? 1 : 0])).join();
   if (foundAny || before !== after || pendingSave || manual) save(); // nothing new = nothing to save
+  if (typeof rematchScans === 'function' && rematchScans()) save();
   scheduleSync(); setSyncStat(); softRefresh();
+  if (typeof Alerts !== 'undefined') Alerts.run();
   setTimeout(() => refreshStaleTracking(), 1500);
   const parts = [];
   if (totals.created) parts.push(plural(totals.created, 'new order'));
@@ -184,6 +186,7 @@ function onUnlocked() {
   if (needReread) { if (SERVER && state.imapAccounts.some(a => a.enabled !== false)) setTimeout(() => rereadAll(true), 1500); else if (!state.imapAccounts.length) state.readerVer = READER_VER; }
   if (state.syncVer !== 1) { if (!state.settings.autoSyncMin) state.settings.autoSyncMin = 5; state.syncVer = 1; save(); }
   setTimeout(() => refreshStaleTracking(), 4000);
+  setTimeout(() => { if (cryptoKey && typeof refreshPrices === 'function') refreshPrices(false, true); }, 9000);
   setSyncStat(); scheduleSync();
   const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false);
   // always catch up when Crown Tools is opened (the schedule only controls checks while it stays open)
@@ -231,12 +234,14 @@ function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 // catch up right away when you come back to Crown Tools
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); });
 $('#syncNowNav').onclick = () => syncAll(true);
+$('#scanNav').onclick = () => openUniversalScanner();
+Scan.wire(); wireItemDlg(); wireSaleDlg(); wireExpDlg();
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
-const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress' };
-const carrierKeys = () => { const c = state.settings.carriers || {}; return { ups: c.ups && c.ups.id ? c.ups : null, fedex: c.fedex && c.fedex.id ? c.fedex : null }; };
+const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress', OnTrac: 'OnTrac', 'Canada Post': 'CanadaPost' };
+const carrierKeys = () => { const c = state.settings.carriers || {}; return { ups: c.ups && c.ups.id ? c.ups : null, fedex: c.fedex && c.fedex.id ? c.fedex : null, usps: c.usps && c.usps.id ? c.usps : null }; };
 // Is there any way to look packages up? (UPS / FedEx developer keys, an EasyPost key, or the Mac helper trying ups.com)
-const trackingReady = () => { const k = carrierKeys(); return !!(k.ups || k.fedex || state.settings.easypostKey || (SERVER && !CLOUD)); };
+const trackingReady = () => { const k = carrierKeys(); return !!(k.ups || k.fedex || k.usps || state.settings.easypostKey || (SERVER && !CLOUD)); };
 const ymdOnly = v => { const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : (v ? dayKey(new Date(v)) : ''); };
 // Apply what the carrier says to the order: the real arrival date, out for delivery, delivered (and on which day).
 function applyTracking(o) {
@@ -261,7 +266,7 @@ async function liveTrack(orderId, idx, btn, quiet) {
   const t = o.tracking[idx];
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
-    const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || t.carrier || '' });
+    const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || '' });
     if (!cryptoKey) return false;
     const evs = r.events || [];
     const delDay = r.deliveredOn ? ymdOnly(r.deliveredOn) : r.status === 'delivered' ? ymdOnly((evs.slice(-1)[0] || {}).date) : '';
@@ -291,14 +296,14 @@ async function refreshStaleTracking(force) {
     jobs.sort((a, b) => a[2] - b[2]);
     let n = 0; const list = jobs.slice(0, force ? 150 : 60);
     for (let i = 0; i < list.length; i += 4) { if (!cryptoKey) return; const r = await Promise.all(list.slice(i, i + 4).map(([id, k]) => liveTrack(id, k, null, true))); n += r.filter(Boolean).length; }
-    if (n) { invalidateStats(); softRefresh(); }
+    if (n) { invalidateStats(); softRefresh(); if (typeof Alerts !== 'undefined') Alerts.run(); }
     return n;
   } finally { trackBusy = false; }
 }
 async function refreshAllTracking() {
   const total = state.orders.filter(o => isActive(o) && o.tracking.length).reduce((a, o) => a + o.tracking.length, 0);
   if (!total) { toast('No active orders with tracking numbers'); return; }
-  if (!trackingReady()) { toast('Add your free UPS / FedEx keys in Settings → Carrier tracking first'); return; }
+  if (!trackingReady()) { toast('Add your free UPS / FedEx / USPS keys in Settings → Carrier tracking first'); return; }
   toast(`Checking ${plural(Math.min(total, 150), 'package')}…`);
   const ok = await refreshStaleTracking(true) || 0;
   softRefresh(); const errs = state.orders.flatMap(o => o.tracking).filter(t => t.liveError && Date.now() - t.liveError.at < 120000);

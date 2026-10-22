@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.6.0"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.7.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -804,6 +804,8 @@ def ups_track(code):
 _TOKENS = {}
 UPS_BASE = os.environ.get("CROWN_UPS_URL", "https://onlinetools.ups.com")
 FEDEX_BASE = os.environ.get("CROWN_FEDEX_URL", "https://apis.fedex.com")
+USPS_BASE = os.environ.get("CROWN_USPS_URL", "https://apis.usps.com")
+CARRIER_NAMES = {"ups": "UPS", "fedex": "FedEx", "usps": "USPS"}
 
 
 def _api_json(url, data=None, headers=None, form=False, timeout=25):
@@ -846,15 +848,17 @@ def _token(kind, cid, secret):
         if kind == "ups":
             j = _api_json(UPS_BASE + "/security/v1/oauth/token", {"grant_type": "client_credentials"}, form=True,
                           headers={"Authorization": "Basic " + base64.b64encode(("%s:%s" % (cid, secret)).encode()).decode(), "x-merchant-id": cid})
+        elif kind == "usps":
+            j = _api_json(USPS_BASE + "/oauth2/v3/token", {"grant_type": "client_credentials", "client_id": cid, "client_secret": secret})
         else:
             j = _api_json(FEDEX_BASE + "/oauth/token", {"grant_type": "client_credentials", "client_id": cid, "client_secret": secret}, form=True)
     except CarrierError as e:
         if e.code in (400, 401, 403):
-            raise UserError("%s rejected the Client ID / Secret. Check them in Settings → Carrier tracking." % ("UPS" if kind == "ups" else "FedEx"))
-        raise UserError("%s sign-in failed (%s)." % ("UPS" if kind == "ups" else "FedEx", e))
+            raise UserError("%s rejected the Client ID / Secret. Check them in Settings → Carrier tracking." % CARRIER_NAMES.get(kind, kind))
+        raise UserError("%s sign-in failed (%s)." % (CARRIER_NAMES.get(kind, kind), e))
     tok = j.get("access_token")
     if not tok:
-        raise UserError("%s didn't return an access token." % ("UPS" if kind == "ups" else "FedEx"))
+        raise UserError("%s didn't return an access token." % CARRIER_NAMES.get(kind, kind))
     _TOKENS[k] = (tok, time.time() + int(j.get("expires_in") or 3000))
     return tok
 
@@ -930,9 +934,48 @@ def fedex_api_track(code, cid, secret):
             "publicUrl": "https://www.fedex.com/fedextrack/?trknbr=" + code, "source": "fedex-api"}
 
 
+def usps_api_track(code, cid, secret):
+    tok = _token("usps", cid, secret)
+    try:
+        j = _api_json(USPS_BASE + "/tracking/v3/tracking/" + urllib.parse.quote(code) + "?expand=DETAIL", headers={"Authorization": "Bearer " + tok})
+    except CarrierError as e:
+        if e.code == 404:
+            raise UserError("USPS has no information for this number yet.")
+        if e.code in (401, 403):
+            raise UserError("USPS refused the tracking request (%s). Make sure the Tracking API is added to your USPS app." % e.msg)
+        raise UserError("USPS tracking error (%s)." % e)
+    if isinstance(j, list):
+        j = j[0] if j else {}
+    if j.get("error") and not j.get("trackingEvents"):
+        err = j["error"] if isinstance(j["error"], dict) else {"message": str(j["error"])}
+        raise UserError("USPS: %s" % (err.get("message") or "no information yet"))
+    cat = str(j.get("statusCategory") or "").lower()
+    st = str(j.get("status") or j.get("statusSummary") or "")
+    evs = j.get("trackingEvents") or []
+    low = (cat + " " + st).lower()
+    delivered = "delivered" in low and "not delivered" not in low and "delivery attempt" not in low
+    status = "delivered" if delivered else "out_for_delivery" if "out for delivery" in low else \
+        "exception" if any(w in low for w in ("alert", "exception", "return to sender", "undeliverable", "notice left")) else \
+        "pre_transit" if any(w in low for w in ("pre-shipment", "label created", "shipping label", "pre shipment")) else "in_transit"
+    deliv_day = ""
+    if delivered:
+        for ev in evs:
+            if "delivered" in str(ev.get("eventType") or "").lower():
+                deliv_day = _ymd(ev.get("eventTimestamp") or ev.get("GMTTimestamp"))
+                break
+    est = _ymd(j.get("expectedDeliveryTimeStamp") or j.get("expectedDeliveryDate") or j.get("guaranteedDeliveryTimeStamp") or j.get("predictedDeliveryDate"))
+    events = []
+    for ev in evs[:20]:
+        events.append({"date": ev.get("eventTimestamp") or ev.get("GMTTimestamp") or "", "message": ev.get("eventType") or "", "status": "",
+                       "location": ", ".join(x for x in [ev.get("eventCity"), ev.get("eventState")] if x)})
+    events.reverse()
+    return {"ok": True, "status": status, "carrier": "USPS", "est": "" if delivered else est, "deliveredOn": deliv_day,
+            "statusText": st or cat, "events": events, "publicUrl": "https://tools.usps.com/go/TrackConfirmAction?tLabels=" + code, "source": "usps-api"}
+
+
 def carrier_test(req):
     kind = str(req.get("carrier") or "").lower()
-    if kind not in ("ups", "fedex"):
+    if kind not in ("ups", "fedex", "usps"):
         raise UserError("Unknown carrier.")
     cid, sec = str(req.get("id") or "").strip(), str(req.get("secret") or "").strip()
     if not cid or not sec:
@@ -940,6 +983,263 @@ def carrier_test(req):
     _TOKENS.pop((kind, cid, hashlib.sha256(sec.encode()).hexdigest()), None)
     _token(kind, cid, sec)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Discord alerts
+DISCORD_RE = re.compile(r"^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/api/webhooks/\d{5,30}/[A-Za-z0-9_\-]{20,120}$")
+
+
+def _clip(v, n):
+    return str(v or "")[:n]
+
+
+def _clean_embed(e):
+    if not isinstance(e, dict):
+        return None
+    out = {"title": _clip(e.get("title"), 250), "description": _clip(e.get("description"), 3500)}
+    if isinstance(e.get("color"), int):
+        out["color"] = e["color"] & 0xFFFFFF
+    if e.get("url") and str(e["url"]).startswith("https://"):
+        out["url"] = _clip(e["url"], 500)
+    th = (e.get("thumbnail") or {}).get("url") if isinstance(e.get("thumbnail"), dict) else None
+    if th and str(th).startswith("https://"):
+        out["thumbnail"] = {"url": _clip(th, 800)}
+    if e.get("timestamp"):
+        out["timestamp"] = _clip(e["timestamp"], 40)
+    fields = []
+    for f in (e.get("fields") or [])[:12]:
+        if isinstance(f, dict) and f.get("name") and f.get("value"):
+            fields.append({"name": _clip(f["name"], 250), "value": _clip(f["value"], 1000), "inline": bool(f.get("inline"))})
+    if fields:
+        out["fields"] = fields
+    if e.get("footer"):
+        out["footer"] = {"text": _clip((e["footer"] or {}).get("text") if isinstance(e["footer"], dict) else e["footer"], 200)}
+    return out
+
+
+def discord_send(req):
+    url = str(req.get("url") or "").strip()
+    if not DISCORD_RE.match(url):
+        raise UserError("That isn't a Discord webhook link. In Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.")
+    p = req.get("payload") or {}
+    body = {"username": _clip(p.get("username") or "Crown Tools", 80), "allowed_mentions": {"parse": []}}
+    if p.get("content"):
+        body["content"] = _clip(p["content"], 1900)
+    embeds = [x for x in (_clean_embed(e) for e in (p.get("embeds") or [])[:10]) if x]
+    if embeds:
+        body["embeds"] = embeds
+    if not embeds and not body.get("content"):
+        raise UserError("Nothing to send.")
+    dbg = os.environ.get("CROWN_DISCORD_DEBUG")
+    if dbg:
+        with open(dbg, "a") as f:
+            f.write(json.dumps({"url": url, "body": body}) + "\n")
+        return {"ok": True}
+    data = json.dumps(body).encode()
+    for attempt in range(3):
+        r = urllib.request.Request(url + "?wait=true", data=data, method="POST", headers={"Content-Type": "application/json", "User-Agent": "CrownTools (crowntools.vercel.app, %s)" % VERSION})
+        try:
+            with urllib.request.urlopen(r, timeout=20, context=ssl_context()) as resp:
+                resp.read()
+            return {"ok": True}
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                try:
+                    wait = float(json.loads(e.read().decode() or "{}").get("retry_after") or 1)
+                except Exception:
+                    wait = 1.0
+                time.sleep(min(5.0, wait))
+                continue
+            if e.code in (401, 403, 404):
+                raise UserError("Discord says this webhook doesn't exist anymore. Make a new one and paste it in again.")
+            raise UserError("Discord error %s." % e.code)
+        except urllib.error.URLError as e:
+            raise UserError("Couldn't reach Discord (%s)." % e.reason)
+    raise UserError("Discord is rate-limiting this webhook — try again in a minute.")
+
+
+# ---------------------------------------------------------------- barcode (UPC) lookup
+UPC_URL = os.environ.get("CROWN_UPC_URL", "https://api.upcitemdb.com/prod/trial/lookup")
+
+
+def upc_lookup(req):
+    code = re.sub(r"\D", "", str(req.get("code") or ""))
+    if not 8 <= len(code) <= 14:
+        raise UserError("That doesn't look like a product barcode.")
+    r = urllib.request.Request(UPC_URL + "?upc=" + code, headers={"Accept": "application/json", "User-Agent": "CrownTools/%s" % VERSION})
+    try:
+        with urllib.request.urlopen(r, timeout=15, context=ssl_context()) as resp:
+            j = json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            raise UserError("The free barcode lookup has hit its daily limit — type the product name instead.")
+        if e.code in (400, 404):
+            return {"ok": True, "found": False, "code": code}
+        raise UserError("Barcode lookup error %s." % e.code)
+    except urllib.error.URLError as e:
+        raise UserError("Couldn't reach the barcode lookup (%s)." % e.reason)
+    items = j.get("items") or []
+    if not items:
+        return {"ok": True, "found": False, "code": code}
+    it = items[0]
+    imgs = [u for u in (it.get("images") or []) if str(u).startswith("https://")]
+    prices = [o.get("price") for o in (it.get("offers") or []) if isinstance(o.get("price"), (int, float)) and o.get("price") > 0]
+    return {"ok": True, "found": True, "code": code, "name": _clip(it.get("title"), 200), "brand": _clip(it.get("brand"), 80),
+            "image": imgs[0] if imgs else "", "msrp": it.get("highest_recorded_price") or (max(prices) if prices else None),
+            "category": _clip(it.get("category"), 120)}
+
+
+# ---------------------------------------------------------------- market prices (TCGplayer data via tcgcsv.com)
+TCG_BASE = os.environ.get("CROWN_TCGCSV_URL", "https://tcgcsv.com/tcgplayer")
+_MCACHE = {}
+
+
+def _mget(path, ttl, fresh=False):
+    hit = _MCACHE.get(path)
+    if hit and hit[0] > time.time() and not fresh:
+        return hit[1]
+    r = urllib.request.Request(TCG_BASE + path, headers={"Accept": "application/json", "User-Agent": "CrownTools/%s (+https://crowntools.vercel.app)" % VERSION})
+    try:
+        with urllib.request.urlopen(r, timeout=25, context=ssl_context()) as resp:
+            j = json.loads(resp.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        if hit:
+            return hit[1]
+        raise UserError("TCGplayer price data error %s." % e.code)
+    except (urllib.error.URLError, socket.timeout) as e:
+        if hit:
+            return hit[1]
+        raise UserError("Couldn't reach TCGplayer price data (%s)." % getattr(e, "reason", e))
+    res = j.get("results") if isinstance(j, dict) else j
+    res = res if isinstance(res, list) else []
+    if len(_MCACHE) > 400:
+        _MCACHE.clear()
+    _MCACHE[path] = (time.time() + ttl, res)
+    return res
+
+
+def _cat(v):
+    c = re.sub(r"\D", "", str(v or ""))
+    if not c:
+        raise UserError("Pick a game.")
+    return c
+
+
+def market_categories(req=None):
+    rows = _mget("/categories", 86400)
+    return {"ok": True, "categories": [{"id": c.get("categoryId"), "name": c.get("displayName") or c.get("name") or ""} for c in rows if c.get("categoryId")]}
+
+
+def _groups(cat):
+    rows = _mget("/%s/groups" % cat, 6 * 3600)
+    out = [{"id": g.get("groupId"), "name": g.get("name") or "", "abbr": g.get("abbreviation") or "", "date": str(g.get("publishedOn") or "")[:10]} for g in rows if g.get("groupId")]
+    out.sort(key=lambda g: g["date"], reverse=True)
+    return out
+
+
+def market_groups(req):
+    return {"ok": True, "groups": _groups(_cat(req.get("cat")))}
+
+
+def _is_sealed(p):
+    ext = {str(x.get("name") or "").lower() for x in (p.get("extendedData") or []) if isinstance(x, dict)}
+    return not ({"number", "rarity"} & ext)
+
+
+def _products(cat, group):
+    rows = _mget("/%s/%s/products" % (cat, group), 6 * 3600)
+    return [{"id": p.get("productId"), "name": p.get("name") or p.get("cleanName") or "", "clean": (p.get("cleanName") or p.get("name") or "").lower(),
+             "image": p.get("imageUrl") or "", "url": p.get("url") or "", "group": int(group), "cat": int(cat), "sealed": _is_sealed(p)} for p in rows if p.get("productId")]
+
+
+def _prices(cat, group, ttl=3600):
+    rows = _mget("/%s/%s/prices" % (cat, group), max(ttl, 600), fresh=ttl == 0)
+    out = {}
+    for x in rows:
+        pid = x.get("productId")
+        if not pid:
+            continue
+        out.setdefault(pid, {})[x.get("subTypeName") or "Normal"] = {"market": x.get("marketPrice"), "low": x.get("lowPrice"), "mid": x.get("midPrice"), "high": x.get("highPrice")}
+    return out
+
+
+# what people type -> how TCGplayer names it
+MARKET_ALIASES = {"etb": "elite trainer box", "pcetb": "elite trainer box", "bb": "booster box", "upc": "ultra premium collection",
+                  "spc": "super premium collection", "bndl": "booster bundle", "blister": "blister", "tin": "tin", "151": "151"}
+
+
+def market_search(req):
+    cat = _cat(req.get("cat"))
+    q = re.sub(r"\s+", " ", str(req.get("q") or "").lower()).strip()
+    toks = [t for t in re.split(r"[^a-z0-9]+", q) if t]
+    sealed_only = req.get("sealed", True) is not False
+    group = re.sub(r"\D", "", str(req.get("group") or ""))
+    groups = _groups(cat)
+    if group:
+        cand = [g for g in groups if str(g["id"]) == group] or [{"id": int(group), "name": "", "date": ""}]
+    else:
+        if not toks:
+            raise UserError("Type what you're looking for.")
+        named = [g for g in groups if any(t in g["name"].lower() for t in toks if len(t) >= 3)][:12]
+        cand = named + [g for g in groups[:24] if g not in named]
+    import concurrent.futures as _cf
+    found = []
+    with _cf.ThreadPoolExecutor(max_workers=12) as ex:
+        futs = {ex.submit(_products, cat, g["id"]): g for g in cand}
+        for f in _cf.as_completed(futs):
+            g = futs[f]
+            try:
+                prods = f.result()
+            except UserError:
+                continue
+            for p in prods:
+                if sealed_only and not p["sealed"]:
+                    continue
+                hay = re.sub(r"[^a-z0-9]+", " ", p["clean"] + " " + g["name"].lower())
+                if toks and not all(t in hay or (t in MARKET_ALIASES and MARKET_ALIASES[t] in hay) for t in toks):
+                    continue
+                found.append(dict(p, setName=g["name"], setDate=g.get("date") or ""))
+    found.sort(key=lambda p: (p["setDate"], p["name"]), reverse=True)
+    found = found[:40]
+    gids = sorted({p["group"] for p in found})
+    prices = {}
+    with _cf.ThreadPoolExecutor(max_workers=8) as ex:
+        for gid, pr in zip(gids, ex.map(lambda gid: _safe_prices(cat, gid), gids)):
+            prices.update(pr)
+    for p in found:
+        p.pop("clean", None)
+        p["prices"] = prices.get(p["id"], {})
+    return {"ok": True, "results": found, "searched": len(cand)}
+
+
+def _safe_prices(cat, gid, ttl=3600):
+    try:
+        return _prices(cat, gid, ttl)
+    except UserError:
+        return {}
+
+
+def market_prices(req):
+    want = req.get("items") or []
+    by = {}
+    for it in want[:400]:
+        try:
+            by.setdefault((_cat(it.get("cat")), int(it.get("group"))), set()).add(int(it.get("id")))
+        except (TypeError, ValueError, UserError):
+            continue
+    out, errors = {}, 0
+    import concurrent.futures as _cf
+    keys = list(by.keys())[:80]
+    ttl = 0 if req.get("fresh") else 3600
+    with _cf.ThreadPoolExecutor(max_workers=10) as ex:
+        res = list(ex.map(lambda k: _safe_prices(k[0], k[1], ttl), keys))
+    for k, pr in zip(keys, res):
+        if not pr:
+            errors += 1
+        for pid in by[k]:
+            if pid in pr:
+                out[str(pid)] = pr[pid]
+    return {"ok": True, "prices": out, "failedSets": errors, "at": time.time()}
 
 
 def free_track(code, carrier):
@@ -959,7 +1259,10 @@ def track(req):
     is_ups = carrier == "UPS" or code0.startswith("1Z")
     is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
     keys = req.get("carriers") or {}
-    ups, fx = keys.get("ups") or {}, keys.get("fedex") or {}
+    ups, fx, us = keys.get("ups") or {}, keys.get("fedex") or {}, keys.get("usps") or {}
+    is_usps = carrier == "USPS" or (not is_ups and re.fullmatch(r"(92|93|94|95)\d{18,24}|[A-Z]{2}\d{9}US", code0) is not None)
+    if is_usps and us.get("id") and us.get("secret"):
+        return usps_api_track(code0, us["id"], us["secret"])
     if is_ups and ups.get("id") and ups.get("secret"):
         return ups_api_track(code0, ups["id"], ups["secret"])
     if is_fedex and fx.get("id") and fx.get("secret"):
@@ -972,7 +1275,7 @@ def track(req):
                 raise
             except Exception:
                 raise UserError("Add your free UPS developer keys in Settings → Carrier tracking to get UPS delivery dates.")
-        raise UserError("Add your free %s developer keys in Settings → Carrier tracking to get delivery dates." % ("FedEx" if is_fedex else "carrier"))
+        raise UserError("Add your free %s developer keys in Settings → Carrier tracking to get delivery dates." % ("FedEx" if is_fedex else "USPS" if is_usps else "carrier"))
     key = str(req.get("apiKey") or "").strip()
     code = re.sub(r"\s+", "", str(req.get("tracking") or ""))
     if not key:
@@ -1118,6 +1421,12 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/imap/bodies": imap_bodies,
             "/api/track": track,
             "/api/carriertest": carrier_test,
+            "/api/discord": discord_send,
+            "/api/upc": upc_lookup,
+            "/api/market/categories": market_categories,
+            "/api/market/groups": market_groups,
+            "/api/market/search": market_search,
+            "/api/market/prices": market_prices,
         }
         fn = routes.get(self.path)
         if not fn:
@@ -1922,6 +2231,28 @@ class handler(BaseHTTPRequestHandler):
                         "price": {"cents": int(s["priceCents"]), "currency": s["currency"], "trialDays": int(s.get("trialDays") or 0)},
                         "signupsOpen": bool(s.get("signupsOpen")), "announcement": s.get("announcement") or "", "billingReady": billing_ready()}
             return self._run(ping)
+        if r == "/market/status":  # public health check of the outside data sources (rate-limited)
+            def mstatus():
+                rate_limit("mstat", client_ip(h), 20, 3600)
+                out = {"ok": True}
+                try:
+                    out["tcgplayer"] = len(market_categories()["categories"])
+                except UserError as e:
+                    out["tcgplayer"] = str(e)
+                q = self._query()
+                if q.get("upc"):
+                    try:
+                        out["upc"] = upc_lookup({"code": q.get("upc")})
+                    except UserError as e:
+                        out["upc"] = str(e)
+                if q.get("search"):
+                    try:
+                        res = market_search({"cat": q.get("cat") or "3", "q": q.get("search")})
+                        out["search"] = [[x["name"], x["setName"], (x["prices"].get("Normal") or next(iter(x["prices"].values()), {})).get("market")] for x in res["results"][:5]]
+                    except UserError as e:
+                        out["search"] = str(e)
+                return out
+            return self._run(mstatus)
         if not self._guard():
             return
         if r.startswith("/admin"):
@@ -2224,6 +2555,12 @@ class handler(BaseHTTPRequestHandler):
             "/imap/bodies": imap_bodies,
             "/track": track,
             "/carriertest": carrier_test,
+            "/discord": discord_send,
+            "/upc": upc_lookup,
+            "/market/categories": market_categories,
+            "/market/groups": market_groups,
+            "/market/search": market_search,
+            "/market/prices": market_prices,
         }
         fn = routes.get(r)
         if not fn:
@@ -2231,7 +2568,10 @@ class handler(BaseHTTPRequestHandler):
 
         def go():
             b = self._body()
-            require_user(h)
+            u = require_user(h)
+            limits = {"/discord": (300, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
+            if r in limits:
+                rate_limit("u" + r.replace("/", ""), u["id"], *limits[r])
             if r.startswith("/imap/"):
                 check_mail_host((b.get("account") or {}).get("host"))
             return fn(b)

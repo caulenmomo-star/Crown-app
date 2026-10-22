@@ -174,6 +174,7 @@ function regroupHouses() {
       merged.set(h.id, keep.id);
       keep.keys = Array.from(new Set([...(keep.keys || []), ...(h.keys || [])]));
       if (!keep.nickname && h.nickname) keep.nickname = h.nickname;
+      if (!keep.discord && h.discord) keep.discord = h.discord;
       if (h.notes && !(keep.notes || '').includes(h.notes)) keep.notes = [keep.notes, h.notes].filter(Boolean).join('\n');
     } else kept.push(h);
   }
@@ -464,7 +465,7 @@ PAGES.orders = {
       <div class="toolbar"><div class="searchrow"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}"><button class="phoneonly" id="oSelMode">${oSelMode || oSelected.size ? 'Done' : 'Select'}</button></div>
         <div class="chips">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
       <div class="toolbar">
-        <select id="oStore"><option value="">All stores</option>${stores.map(s => `<option value="${s}" ${OF.store === s ? 'selected' : ''}>${esc(Parser.storeInfo(s).label)}</option>`).join('')}</select>
+        <select id="oStore"><option value="">All stores</option>${stores.map(s => `<option value="${esc(s)}" ${OF.store === s ? 'selected' : ''}>${esc(Parser.storeInfo(s).label)}</option>`).join('')}</select>
         <select id="oProf"><option value="">All profiles</option><option value="__none" ${OF.profile === '__none' ? 'selected' : ''}>Not linked (${unlinked})</option>${state.profiles.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })).map(p => `<option value="${p.id}" ${OF.profile === p.id ? 'selected' : ''}>${esc(p.name || 'Untitled')}</option>`).join('')}</select>
         <select id="oHouse"><option value="">All houses</option><option value="__none" ${OF.house === '__none' ? 'selected' : ''}>No address</option>${usedHouses.map(h => `<option value="${h.id}" ${OF.house === h.id ? 'selected' : ''}>${esc(houseLabel(h))}</option>`).join('')}</select>
         <select id="oRange">${RANGE_OPTS.map(([v, l]) => `<option value="${v}" ${OF.range === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -569,6 +570,7 @@ function renderOrderDlg() {
     </div><div>
       <div class="section" style="margin-top:0">Items (${itemCount(o)}${cancelledCount(o) ? ' · ' + cancelledCount(o) + ' cancelled' : ''})</div>
       ${o.items.length ? `<div class="list">${o.items.map(i => `<div class="li">${thumb(i.image)}<div class="badge">${qtyOf(i)}×</div><div style="flex:1;min-width:0" class="ellipsis" title="${esc(i.name)}">${esc(i.name)}${i.cancelledQty ? ` <span class="small" style="color:var(--bad,#ef5b5b)">· ${i.cancelledQty} cancelled</span>` : ''}</div><div class="muted">${i.price != null ? fmtMoney(i.price) + (qtyOf(i) + (Number(i.cancelledQty) || 0) > 1 ? ' <span class="faint small">ea</span>' : '') : ''}</div></div>`).join('')}</div>` : '<div class="faint small">No items detected. Add them on the Edit tab.</div>'}
+      ${o.items.length && !isDead(o) ? `<div class="hstack" style="margin-top:8px;flex-wrap:wrap;gap:6px">${o.invAdded ? '<span class="small faint">✓ In inventory</span>' : `<button class="sm" id="ovInv">＋ Add to inventory</button>`}${state.settings.checkinSince && o.status === 'delivered' ? (orderCheckedIn(o) ? '<span class="small faint">· ✓ Checked in</span>' : '<button class="ghost sm" id="ovCi">Check in</button>') : ''}</div>` : ''}
       <div class="section">Tracking</div>
       ${o.tracking.length ? o.tracking.map((t, i) => `<div class="card" style="padding:10px 12px;margin-bottom:8px"><div class="hstack"><b>${esc(t.carrier || 'Carrier')}</b><a class="mono small" href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener">${esc(t.number)} ↗</a><div class="spacer"></div>${SERVER ? `<button class="sm" data-live="${i}">${t.live ? '↻ Refresh' : 'Live tracking'}</button>` : ''}</div>
         ${t.liveError && (!t.live || t.liveError.at > t.live.checkedAt) ? `<div class="small" style="margin-top:6px;color:var(--warn)">${esc(t.liveError.msg)}</div>` : ''}
@@ -579,6 +581,8 @@ function renderOrderDlg() {
     $('#ovStatus').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('change status'); setStatus(real, e.target.value, null, 'manual'); real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
     $('#ovProf').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('link profile'); real.profileId = e.target.value; real.profileLink = e.target.value ? 'manual' : ''; if (!e.target.value) autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
     if ($('#ovAuto')) $('#ovAuto').onclick = () => { const real = state.orders.find(x => x.id === o.id); real.profileLink = ''; real.profileId = ''; autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
+    if ($('#ovInv')) $('#ovInv').onclick = () => { const real = state.orders.find(x => x.id === o.id); snapshot('add to inventory'); const n = addOrderToInventory(real); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); toast(`Added ${plural(n, 'unit')} to inventory`, { undo: true }); };
+    if ($('#ovCi')) $('#ovCi').onclick = () => { const real = state.orders.find(x => x.id === o.id); checkIn(real, null, 'manual'); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); Alerts.run(); };
     $('#ovNotes').onchange = e => { const real = state.orders.find(x => x.id === o.id); real.notes = e.target.value; curOrder.notes = real.notes; save(); };
     $$('#ordBody [data-live]').forEach(btn => btn.onclick = () => liveTrack(o.id, +btn.dataset.live, btn));
     $$('#ordBody [data-closeorder]').forEach(a => a.onclick = () => closeDlg('dlgOrder'));
@@ -586,7 +590,7 @@ function renderOrderDlg() {
     const v = k => esc(o[k] ?? '');
     const dt = toDate(o.orderDate) || new Date();
     b.innerHTML = `<div class="fgrid">
-      <div><label>Store</label><select id="oeStore">${Parser.STORES.map(s => `<option value="${s.key}" ${o.store === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select></div>
+      <div><label>Store</label><select id="oeStore">${(String(o.store || '').startsWith('shop:') ? [Parser.storeInfo(o.store)] : []).concat(Parser.STORES.slice().sort((a, b) => a.key === 'other' ? 1 : b.key === 'other' ? -1 : a.label.localeCompare(b.label))).map(s => `<option value="${esc(s.key)}" ${o.store === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('')}</select></div>
       <div><label>Order #</label><input id="oeNo" value="${v('orderNumber')}"></div>
       <div><label>Status</label><select id="oeStatus">${STATUSES.map(s => `<option value="${s.k}" ${o.status === s.k ? 'selected' : ''}>${s.l}</option>`).join('')}</select></div>
       <div><label>Total ($)</label><input id="oeTotal" inputmode="decimal" value="${o.total ?? ''}"></div>
@@ -831,6 +835,7 @@ function renderHouse(id) {
     if (!await ask(`Move all ${plural(s.n, 'order')} from “${houseLabel(h)}” into “${houseLabel(to)}”? Future emails for this address will go there too.`)) { e.target.value = ''; return; }
     snapshot('merge houses'); s.os.forEach(o => o.houseId = to.id); to.keys = Array.from(new Set([...(to.keys || []), ...(h.keys || [])]));
     if (h.notes) to.notes = [to.notes, h.notes].filter(Boolean).join('\n');
+    if (!to.discord && h.discord) to.discord = h.discord;
     state.houses = state.houses.filter(x => x.id !== h.id); save(); go('houses', to.id); toast('Houses merged', { undo: true });
   };
   pg.querySelectorAll('[data-prof]').forEach(b => b.onclick = () => openProfile(b.dataset.prof));

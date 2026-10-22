@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.6.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.7.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -62,9 +62,9 @@ function stickInfo(list) {
 }
 
 /* ---------- state ---------- */
-const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [] };
+const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -72,6 +72,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
+  for (const k of ['inventory', 'sales', 'expenses', 'unmatchedScans']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -229,7 +230,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'orders', 'houses', 'imapAccounts']) {
+  for (const k of ['categories', 'profiles', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];
@@ -282,7 +283,7 @@ function dedupeHousesOnly() {
   const hk = new Map(), remap = new Map();
   for (const h of state.houses) for (const k of h.keys || []) { if (hk.has(k) && hk.get(k) !== h) remap.set(h.id, hk.get(k)); else hk.set(k, h); }
   if (remap.size) {
-    for (const [from, to] of remap) { const fh = state.houses.find(h => h.id === from); if (fh) { to.keys = Array.from(new Set([...(to.keys || []), ...(fh.keys || [])])); if (!to.nickname) to.nickname = fh.nickname; if (fh.notes && !to.notes) to.notes = fh.notes; } }
+    for (const [from, to] of remap) { const fh = state.houses.find(h => h.id === from); if (fh) { to.keys = Array.from(new Set([...(to.keys || []), ...(fh.keys || [])])); if (!to.nickname) to.nickname = fh.nickname; if (!to.discord && fh.discord) to.discord = fh.discord; if (fh.notes && !to.notes) to.notes = fh.notes; } }
     state.orders.forEach(o => { if (remap.has(o.houseId)) o.houseId = remap.get(o.houseId).id; });
     state.houses = state.houses.filter(h => !remap.has(h.id));
   }
@@ -373,9 +374,12 @@ const ICONS = {
   more: '<circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/>',
   news: '<path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
+  inventory: '<path d="M4 8.5L12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7M8 6.3l8 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
+  sales: '<path d="M3 17l5.5-5.5 4 4L21 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+  checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['houses', 'Houses'], ['calendar', 'Calendar'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['houses', 'Houses'], ['calendar', 'Calendar'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['checkin', 'Check-in'], ['settings', 'Settings']];
 const PAGES = {};
 let route = { page: 'dashboard', arg: '' };
 function go(page, arg) { const h = '#' + page + (arg ? '/' + arg : ''); if (location.hash !== h) location.hash = h; else applyRoute(); }
@@ -387,7 +391,7 @@ function applyRoute() {
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
 function renderNav() {
-  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length };
+  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)) };
   $('#navlist').innerHTML = NAV.map(([k, l]) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
   // phones: bottom tab bar with the four most-used pages + More
   const inMore = MORE_PAGES.includes(route.page);
@@ -395,10 +399,10 @@ function renderNav() {
     + `<button class="tabitem ${inMore ? 'active' : ''}" id="tabMore" aria-label="More"><svg viewBox="0 0 24 24">${ICONS.more}</svg><span>${inMore ? (NAV.find(n => n[0] === route.page) || [, 'More'])[1] : 'More'}</span></button>`;
   $('#tabMore').onclick = openMore;
 }
-const TAB_PAGES = [['dashboard', 'Home'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses']];
-const MORE_PAGES = ['profiles', 'spending', 'inboxes', 'settings'];
+const TAB_PAGES = [['dashboard', 'Home'], ['orders', 'Orders'], ['inventory', 'Inventory'], ['calendar', 'Calendar']];
+const MORE_PAGES = ['houses', 'sales', 'profiles', 'spending', 'inboxes', 'checkin', 'settings'];
 function openMore() {
-  const counts = { profiles: state.profiles.length, inboxes: state.imapAccounts.length };
+  const counts = { profiles: state.profiles.length, inboxes: state.imapAccounts.length, houses: state.houses.filter(h => houseOrders(h.id).length).length };
   $('#moreList').innerHTML = MORE_PAGES.map(k => `<button class="moreitem ${route.page === k ? 'active' : ''}" data-nav="${k}" data-close><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${NAV.find(n => n[0] === k)[1]}</span>${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}<span class="chev">›</span></button>`).join('')
     + `<button class="moreitem" id="moreNews" data-close><svg viewBox="0 0 24 24">${ICONS.news}</svg><span>What’s new</span><span class="count">v${VERSION}</span><span class="chev">›</span></button>`
     + `<button class="moreitem" id="moreLock" data-close><svg viewBox="0 0 24 24">${ICONS.lock}</svg><span>Lock Crown Tools</span><span class="chev">›</span></button>`;

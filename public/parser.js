@@ -25,10 +25,65 @@
     { key: 'lego', label: 'LEGO', color: '#f6c400', domains: ['lego.com'] },
     { key: 'nike', label: 'Nike', color: '#e7e7e7', domains: ['nike.com'] },
     { key: 'footlocker', label: 'Foot Locker', color: '#d6d6d6', domains: ['footlocker.com'] },
+    { key: 'apple', label: 'Apple', color: '#d6d6d6', domains: ['apple.com', 'email.apple.com'] },
+    { key: 'secretlair', label: 'Secret Lair', color: '#b07cff', domains: ['secretlair.wizards.com', 'wizards.com'], alias: ['secret lair'] },
+    { key: 'tcgplayer', label: 'TCGplayer', color: '#2e7cd6', domains: ['tcgplayer.com'] },
+    { key: 'ebay', label: 'eBay', color: '#e53238', domains: ['ebay.com'] },
+    { key: 'stockx', label: 'StockX', color: '#08a05c', domains: ['stockx.com'] },
+    { key: 'goat', label: 'GOAT', color: '#cfcfcf', domains: ['goat.com'] },
+    { key: 'adidas', label: 'adidas', color: '#cfcfcf', domains: ['adidas.com'] },
+    { key: 'newbalance', label: 'New Balance', color: '#e21836', domains: ['newbalance.com'] },
+    { key: 'finishline', label: 'Finish Line', color: '#4fb3e8', domains: ['finishline.com'] },
+    { key: 'jdsports', label: 'JD Sports', color: '#9fd356', domains: ['jdsports.com'] },
+    { key: 'champs', label: 'Champs Sports', color: '#3f6fd8', domains: ['champssports.com'], alias: ['champs sports'] },
+    { key: 'dicks', label: "Dick's", color: '#2f9c6b', domains: ['dickssportinggoods.com', 'dcsg.com'], alias: ["dick's sporting goods", 'dicks sporting goods'] },
+    { key: 'hibbett', label: 'Hibbett', color: '#2b6cd4', domains: ['hibbett.com'] },
+    { key: 'snipes', label: 'SNIPES', color: '#e8e8e8', domains: ['snipesusa.com', 'snipes.com'] },
+    { key: 'hottopic', label: 'Hot Topic', color: '#d6336c', domains: ['hottopic.com'], alias: ['hot topic'] },
+    { key: 'boxlunch', label: 'BoxLunch', color: '#e8962b', domains: ['boxlunch.com'] },
+    { key: 'disney', label: 'Disney Store', color: '#3b82f6', domains: ['shopdisney.com', 'disneystore.com', 'disney.com'], alias: ['shopdisney', 'disney store'] },
+    { key: 'mattel', label: 'Mattel Creations', color: '#e4002b', domains: ['creations.mattel.com', 'mattel.com'], alias: ['mattel creations'] },
+    { key: 'hasbro', label: 'Hasbro Pulse', color: '#2f6fd6', domains: ['hasbropulse.com', 'hasbro.com'], alias: ['hasbro pulse'] },
+    { key: 'bandai', label: 'Premium Bandai', color: '#e4002b', domains: ['p-bandai.com', 'bandai.com', 'bandainamcoent.com'], alias: ['premium bandai'] },
+    { key: 'nintendo', label: 'Nintendo', color: '#e60012', domains: ['nintendo.com', 'nintendo.net'] },
+    { key: 'microsoft', label: 'Microsoft', color: '#3fb950', domains: ['microsoft.com', 'xbox.com'] },
+    { key: 'dell', label: 'Dell', color: '#2f87d4', domains: ['dell.com'] },
+    { key: 'homedepot', label: 'Home Depot', color: '#f96302', domains: ['homedepot.com'], alias: ['the home depot'] },
+    { key: 'lowes', label: "Lowe's", color: '#2f6fd6', domains: ['lowes.com'], alias: ['lowes'] },
+    { key: 'macys', label: "Macy's", color: '#e21a2c', domains: ['macys.com'], alias: ['macys'] },
+    { key: 'meijer', label: 'Meijer', color: '#e2231a', domains: ['meijer.com'] },
+    { key: 'bjs', label: "BJ's", color: '#e2231a', domains: ['bjs.com'], alias: ["bj's wholesale"] },
+    { key: 'fivebelow', label: 'Five Below', color: '#5aa0e8', domains: ['fivebelow.com'], alias: ['five below'] },
+    { key: 'cvs', label: 'CVS', color: '#cc0000', domains: ['cvs.com'] },
+    { key: 'fanatics', label: 'Fanatics', color: '#d22630', domains: ['fanatics.com', 'fanaticsinc.com'] },
+    { key: 'panini', label: 'Panini', color: '#d6a400', domains: ['paniniamerica.net', 'panini.com'] },
+    { key: 'upperdeck', label: 'Upper Deck', color: '#2f5fd0', domains: ['upperdeck.com', 'upperdeckstore.com'], alias: ['upper deck'] },
+    { key: 'entertainmentearth', label: 'Entertainment Earth', color: '#4aa3ff', domains: ['entertainmentearth.com'], alias: ['entertainment earth'] },
+    { key: 'bbts', label: 'BigBadToyStore', color: '#e8962b', domains: ['bigbadtoystore.com'], alias: ['big bad toy store'] },
+    { key: 'zavvi', label: 'Zavvi', color: '#a855f7', domains: ['zavvi.com'] },
+    { key: 'crunchyroll', label: 'Crunchyroll', color: '#f47521', domains: ['crunchyroll.com'] },
     { key: 'other', label: 'Other', color: '#8b93a7', domains: [] },
   ];
   const STORE_BY_KEY = Object.fromEntries(STORES.map(s => [s.key, s]));
-  const storeInfo = k => STORE_BY_KEY[k] || STORE_BY_KEY.other;
+  // Any Shopify store: the key is "shop:" + the store's name, so each one shows under its own name.
+  const SHOP_COLOR = '#7ab55c';
+  const storeInfo = k => STORE_BY_KEY[k] || (typeof k === 'string' && k.startsWith('shop:') && k.length > 5 ? { key: k, label: k.slice(5), color: SHOP_COLOR, shopify: true } : STORE_BY_KEY.other);
+  // Shopify's standard order emails, recognisable from the subject alone (so they're downloaded even from unknown senders)
+  const SHOPIFY_SUBJECT = /\border\s*#?\s*[a-z0-9\-]{2,}\s+(?:is\s+)?confirmed\b|\ba shipment from order\s*#|\bshipping update for order\s*#|\border\s*#\s*[a-z0-9\-]{2,}\s+(?:has been |was |is )?(?:delivered|out for delivery|on (?:its|the) way|shipped|ready for pickup|(?:has been |was )?cancel+ed)\b|\bitems? in your order\s*#\s*[a-z0-9\-]{2,}\s+(?:are|is) on the way\b/i;
+  const isShopifySubject = s => SHOPIFY_SUBJECT.test(String(s || ''));
+  // Shopify order emails load their pictures and links from Shopify
+  const SHOPIFY_BODY = /cdn\.shopify\.com|\.myshopify\.com|shopifycdn|shopify\.com\/[^"'\s]*\/(?:orders|account)|email\.shopify\.com|shopifyemail/i;
+  function shopName(from) {
+    const f = String(from || '');
+    let n = (f.match(/^\s*"?([^"<@]+?)"?\s*</) || [])[1] || '';
+    n = n.replace(/\s+(?:orders?|support|team|shop|store|customer service|notifications?)$/i, '').trim();
+    if (!n || /no-?reply|do-?not-?reply|mailer/i.test(n)) {
+      const d = (f.toLowerCase().match(/@([a-z0-9.\-]+)/) || [])[1] || '';
+      const base = d.replace(/^(?:mail|email|e|shop|store|orders?|info|hello|support|em\d*|m)\./, '').split('.').slice(0, -1).join('.') || d;
+      n = base ? base.charAt(0).toUpperCase() + base.slice(1) : '';
+    }
+    return n.replace(/[^\p{L}\p{N} &'.\-]/gu, '').slice(0, 40).trim();
+  }
 
   // ---------------------------------------------------------------- status
   // Subjects that are never real order updates: surveys, reviews, promos.
@@ -130,6 +185,13 @@
         if (names.some(n => new RegExp('(^|[^a-z])' + n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^a-z]|$)').test(t))) return s.key;
       }
     }
+    return 'other';
+  }
+  // A known store wins; otherwise an email from a Shopify store becomes "shop:<store name>".
+  function detectStoreFull(from, subject, text, html) {
+    const k = detectStore(from, subject, text);
+    if (k !== 'other') return k;
+    if (SHOPIFY_BODY.test(String(html || '')) || SHOPIFY_BODY.test(String(text || ''))) { const n = shopName(from); if (n) return 'shop:' + n; }
     return 'other';
   }
 
@@ -399,9 +461,18 @@
     if (!n) return '';
     if (/^1Z[0-9A-Z]{16}$/.test(n)) return 'UPS';
     if (/^(92|93|94|95|00)\d{18,24}$/.test(n) || /^[A-Z]{2}\d{9}US$/.test(n)) return 'USPS';
+    if (/^TBA\d{9,12}$/.test(n)) return 'Amazon';
+    if (/^[CD]\d{14}$/.test(n)) return 'OnTrac';
+    if (/^(1LS[0-9A-Z]{10,16}|LX\d{8,10}|1LSC[0-9A-Z]{8,16})$/.test(n)) return 'LaserShip';
+    if (/^GM\d{16,20}$/.test(n)) return 'DHL eCommerce';
+    if (/^JJD\d{18}$/.test(n) || /^JVGL\d{16}$/.test(n)) return 'DHL';
+    if (/^(?:UUS|UNI)[0-9A-Z]{10,20}$/.test(n)) return 'UniUni';
+    if (/^GF[0-9A-Z]{10,20}$/.test(n)) return 'GOFO';
+    if (/^(?:ASUS|ASGB)[0-9A-Z]{10,24}$/.test(n)) return 'Asendia';
+    if (/^EPG[0-9A-Z]{8,24}$/.test(n)) return 'EPG';
     if (/^(\d{12}|\d{15}|\d{20}|\d{22})$/.test(n)) return 'FedEx';
     if (/^\d{10,11}$/.test(n)) return 'DHL';
-    if (/^TBA\d{9,12}$/.test(n)) return 'Amazon';
+    if (/^\d{16}$/.test(n)) return 'Canada Post';
     return '';
   }
   function trackingUrl(num, carrier) {
@@ -413,6 +484,9 @@
       case 'FedEx': return 'https://www.fedex.com/fedextrack/?trknbr=' + e;
       case 'DHL': return 'https://www.dhl.com/us-en/home/tracking.html?tracking-id=' + e;
       case 'Amazon': return 'https://track.amazon.com/tracking/' + e;
+      case 'OnTrac': case 'LaserShip': return 'https://www.ontrac.com/tracking/?number=' + e;
+      case 'DHL eCommerce': return 'https://webtrack.dhlecs.com/?trackingnumber=' + e;
+      case 'Canada Post': return 'https://www.canadapost-postescanada.ca/track-reperage/en#/search?searchFor=' + e;
       default: return 'https://parcelsapp.com/en/tracking/' + e;
     }
   }
@@ -423,6 +497,9 @@
     (t.match(/\b9[2-5]\d{18,24}\b/g) || []).forEach(add);
     (t.match(/\b[A-Z]{2}\d{9}US\b/g) || []).forEach(add);
     (t.match(/\bTBA\d{9,12}\b/g) || []).forEach(add);
+    (t.match(/\b[CD]\d{14}\b/g) || []).forEach(add);
+    (t.match(/\b(?:1LS[0-9A-Z]{10,16}|LX\d{8,10})\b/g) || []).forEach(add);
+    (t.match(/\bGM\d{16,20}\b/g) || []).forEach(add);
     const re = /tracking\s*(?:number|no\.?|#|id)?\s*[:#]?\s*([A-Z0-9 ]{10,34})/gi; let m;
     while ((m = re.exec(t))) {
       const cand = m[1].trim().split(/\s{2,}/)[0].replace(/\s+/g, '');
@@ -549,10 +626,14 @@
       if (am) items = [{ name: am[2].trim(), qty: +am[1] || 1, price: null, each: false, image: '' }];
     }
     const sub = first(extractSubtotal);
+    const store = detectStoreFull(m.from, subject, text, m.html);
+    // Shopify stores number orders from #1001, too short for the general reader; take it from "Order #1042"
+    let orderNo = orderNumber;
+    if (!orderNo && store.startsWith('shop:')) { const sm = (subject + '\n' + text).match(/\border\s*#\s*([A-Z0-9][A-Z0-9\-]{1,20})\b/i); if (sm && /\d/.test(sm[1])) orderNo = sm[1].toUpperCase(); }
     return {
       status,
-      store: detectStore(m.from, subject, text),
-      orderNumber,
+      store,
+      orderNumber: orderNo,
       subject,
       from: m.from || '',
       to: (m.to || [])[0] || '',
@@ -586,13 +667,14 @@
   // Relay / personal addresses return false - those need the email body to tell which store sent them.
   function isNonStoreSender(from, subject) {
     const k = senderKey(from); if (!k || k.includes('@')) return false;
+    if (isShopifySubject(subject)) return false; // could be any Shopify store - the body decides
     return detectStore(from, subject, '') === 'other';
   }
   // Worth showing under "couldn't read": a known store's email whose subject is clearly about an order.
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

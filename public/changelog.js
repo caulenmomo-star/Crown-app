@@ -1,6 +1,16 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.7.0', date: '2026-10-21', title: 'Inventory, live TCGplayer prices, sales and profit', items: [
+    'New Inventory page: scan any product barcode with your phone camera (or a USB/Bluetooth scanner) to look it up, restock it or add it. Add the items from delivered orders in one tap, with what you paid as the cost.',
+    'Live TCGplayer market prices for sealed product (and singles): link an item once and its market, low and mid prices update every day, with a price history chart. The Inventory page shows your cost, market value and unrealized gain.',
+    'New Sales page: record a sale from your inventory (or scan it), with platform fees worked out for eBay, TCGplayer, Whatnot, Mercari and more, plus shipping. Expenses for bots, proxies and supplies. Profit by day or month, by platform and by item, and a CSV export.',
+    'Discord alerts: post to a channel when a package is out for delivery, delivered or cancelled — and give each house its own webhook so its alerts go to its own channel.',
+    'Scan shipping labels at the door to check boxes in (optional — turn it on in Settings; nothing is flagged unless you want it).',
+    'Free USPS tracking keys, next to UPS and FedEx, for real USPS delivery dates.',
+    'Reads order emails from about 55 stores now — Apple, Secret Lair, TCGplayer, eBay, StockX, Hot Topic, Disney, Mattel Creations, Hasbro Pulse, Premium Bandai, Nintendo, Fanatics, Panini, Topps and more — plus any Shopify store, shown under the store’s own name.',
+    'Recognizes OnTrac, LaserShip, DHL eCommerce, Canada Post and other tracking numbers (live tracking for those through EasyPost).',
+  ] },
   { v: '0.6.0', date: '2026-10-21', title: 'Accounts and subscriptions', items: [
     'Crown Tools Online now has accounts: anyone can sign up with their email and a password, and each account’s data is kept separate and encrypted with that person’s own password.',
     'The sign-up screen shows the monthly price up front, and people tick a box to agree before their account is made. After signing up they confirm their email, then subscribe on a separate screen to get access.',
