@@ -62,7 +62,7 @@ const HEADER_MAP = {};
 for (const f of FIELDS) { HEADER_MAP[norm(f.k)] = f.k; HEADER_MAP[norm(fullLabel(f))] = f.k; }
 for (const [k, arr] of Object.entries(ALIASES)) arr.forEach(a => HEADER_MAP[a] = k);
 
-let view = 'all', selected = new Set(), search = '', issuesOnly = false, psort = { key: '', dir: 1 };
+let view = 'all', selected = new Set(), search = '', issuesOnly = false, pFilter = 'all', psort = { key: '', dir: 1 };
 const catName = id => (state.categories.find(c => c.id === id) || {}).name || '—';
 const catOptions = sel => state.categories.map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
 function ensureCategory(name) { name = String(name).trim(); if (!name) return null; let c = state.categories.find(c => c.name.toLowerCase() === name.toLowerCase()); if (!c) { c = { id: uid(), name }; state.categories.push(c); } return c.id; }
@@ -108,13 +108,15 @@ function visibleProfiles() {
   const q = search.trim().toLowerCase();
   let list = state.profiles.filter(p => {
     if (view !== 'all' && p.categoryId !== view) return false;
-    if (issuesOnly && !health(p).length) return false;
+    if (issuesOnly && !health(p).filter(x => !/^Same (card|email) as/.test(x)).length) return false;
+    if (pFilter !== 'all' && typeof verdictOf === 'function' && verdictOf(p).level !== pFilter) return false;
     if (!q) return true;
     return [p.name, p.email, p.shipFirst, p.shipLast, p.shipAddr1, p.shipAddr2, p.shipCity, p.shipState, p.shipZip, p.phone, cardDigits(p.cardNumber).slice(-4), p.notes].some(v => String(v || '').toLowerCase().includes(q));
   });
   if (psort.key) {
     const st = profileStats();
-    const val = p => ({ name: p.name, email: p.email, ship: shipName(p), city: p.shipCity, state: p.shipState, orders: (st[p.id] || {}).n || 0, spent: (st[p.id] || {}).spent || 0 }[psort.key]);
+    const HR = { bad: 3, watch: 2, good: 1, new: 0 };
+    const val = p => ({ health: HR[verdictOf(p).level], name: p.name, email: p.email, ship: shipName(p), city: p.shipCity, state: p.shipState, orders: (st[p.id] || {}).n || 0, spent: (st[p.id] || {}).spent || 0 }[psort.key]);
     list = list.slice().sort((a, b) => { const x = val(a), y = val(b); return (typeof x === 'number' ? x - y : String(x || '').localeCompare(String(y || ''), undefined, { numeric: true })) * psort.dir; });
   }
   return list;
@@ -128,7 +130,7 @@ function profileStats() {
   for (const o of state.orders) if (o.profileId) { const s = m[o.profileId] = m[o.profileId] || { n: 0, spent: 0, live: 0 }; s.n++; s.spent += orderSpend(o); if (!isDead(o)) s.live++; }
   _pstats = m; return m;
 }
-function invalidateStats() { _pstats = null; }
+function invalidateStats() { _pstats = null; if (typeof invalidateDoctor === 'function') invalidateDoctor(); }
 
 /* ---------- render ---------- */
 PAGES.profiles = { render() { invalidateStats(); buildDupIndex(); renderCats(); renderTable(); } };
@@ -144,9 +146,12 @@ function renderTable() {
   const list = visibleProfiles(); const st = profileStats();
   for (const id of [...selected]) if (!state.profiles.some(p => p.id === id)) selected.delete(id);
   const showCat = view === 'all';
-  const issues = state.profiles.filter(p => health(p).length).length;
+  const realIssue = p => health(p).filter(x => !/^Same (card|email) as/.test(x)).length;
+  const issues = state.profiles.filter(realIssue).length;
   $('#issuesChip').classList.toggle('on', issuesOnly);
-  $('#issuesChip').innerHTML = `⚠ Issues only<span class="n">${issues}</span>`;
+  $('#issuesChip').innerHTML = `⚠ Details missing or wrong<span class="n">${issues}</span>`;
+  { const sm = doctorSummary().c; $$('#pfChips [data-pf]').forEach(b => { const k = b.dataset.pf; b.classList.toggle('on', pFilter === k); const n = k === 'all' ? state.profiles.length : sm[k]; b.innerHTML = `${{ all: 'All', bad: 'Change it', watch: 'Watch', good: 'Good' }[k]}<span class="n">${n}</span>`; }); }
+  $('#docBanner').innerHTML = doctorBanner();
   $('#profSub').textContent = (view === 'all' ? 'All categories' : catName(view)) + ' · ' + plural(list.length, 'profile');
   $$('#pg-profiles th.sort').forEach(th => { th.querySelector('.arr')?.remove(); if (th.dataset.sort === psort.key) th.insertAdjacentHTML('beforeend', `<span class="arr">${psort.dir > 0 ? '▲' : '▼'}</span>`); });
   $('#rows').innerHTML = list.map(p => {
@@ -154,14 +159,15 @@ function renderTable() {
     return `<tr data-id="${p.id}" class="${selected.has(p.id) ? 'sel' : ''}">
     <td class="cb"><input type="checkbox" data-cb="${p.id}" ${selected.has(p.id) ? 'checked' : ''} aria-label="Select"></td>
     <td class="c-name"><strong>${esc(p.name) || '<span class="muted">Untitled</span>'}</strong>${h.length ? ` <span class="warnicon" title="${esc(h.join('\n'))}">⚠</span>` : ''}</td>
+    ${(() => { const v = verdictOf(p), L = LEVEL[v.level]; return `<td class="c-health"><span class="hpill h-${v.level}" title="${esc(v.reasons.join('\n') || (v.level === 'new' ? 'No orders yet' : 'Orders are getting through'))}"><i style="background:${L.c}"></i>${L.l}</span>${v.orders ? `<span class="small faint hrec">${v.stuck}✓ ${v.dead}✕</span>` : ''}</td>`; })()}
     <td class="c-email">${esc(p.email)}</td><td class="c-ship">${esc(shipName(p))}</td>
-    <td class="c-city">${esc(p.shipCity)}</td><td class="c-state">${esc(p.shipState)}</td><td class="c-card">${p.cardNumber ? `<span class="faint small">${cardBrand(p.cardNumber)}</span> ${cardMask(p.cardNumber)}` : ''}</td>
+    <td class="c-city">${esc(p.shipCity)}</td><td class="c-state">${esc(p.shipState)}</td><td class="c-card">${p.cardNumber ? `<span class="faint small">${cardBrand(p.cardNumber)}</span> ${cardMask(p.cardNumber)}${p.cardExpMonth || p.cardExpYear ? `<span class="faint small c-exp2">${esc(`${p.cardExpMonth}/${String(p.cardExpYear).slice(-2)}`)}</span>` : ''}` : ''}</td>
     <td class="c-exp">${p.cardExpMonth || p.cardExpYear ? esc(`${p.cardExpMonth}/${String(p.cardExpYear).slice(-2)}`) : ''}</td>
     <td class="right c-n">${s.n ? `<span class="phoneonly-i">${plural(s.n, 'order')}</span><span class="deskonly-i">${s.n}</span>` : ''}</td><td class="right c-spent">${s.n ? fmtMoney(s.spent) : ''}</td>
     ${showCat ? `<td class="c-cat"><span class="badge">${esc(catName(p.categoryId))}</span></td>` : ''}</tr>`;
   }).join('');
   const empty = $('#empty');
-  if (!list.length) { empty.hidden = false; empty.innerHTML = search ? 'No profiles match your search.' : issuesOnly ? 'No profiles with issues. 👑' : 'No profiles here yet. Use <b>Mass import</b> to paste a batch, or <b>+ Add profile</b>.'; } else empty.hidden = true;
+  if (!list.length) { empty.hidden = false; empty.innerHTML = search ? 'No profiles match your search.' : issuesOnly ? 'No profiles with missing or wrong details. 👑' : pFilter !== 'all' ? 'No profiles here. 👑' : 'No profiles here yet. Use <b>Mass import</b> to paste a batch, or <b>+ Add profile</b>.'; } else empty.hidden = true;
   $('#selAll').checked = list.length > 0 && list.every(p => selected.has(p.id));
   $('#selbar').hidden = selected.size === 0;
   $('#pTableWrap').classList.toggle('selmode', !!(pSelMode || selected.size)); $('#pSelMode').textContent = pSelMode || selected.size ? 'Done' : 'Select';
@@ -170,6 +176,7 @@ function renderTable() {
 }
 $('#cats').onclick = async e => {
   const ren = e.target.dataset.ren, del = e.target.dataset.del;
+  if (e.target.dataset.addrs) { openAddresses(e.target.dataset.addrs); return; }
   if (ren) { const c = state.categories.find(c => c.id === ren); const n = await askText('Rename category', c.name); if (n && n.trim()) { c.name = n.trim(); save(); refresh(); } return; }
   if (del) {
     const n = state.profiles.filter(p => p.categoryId === del).length;
@@ -195,6 +202,11 @@ $('#pSelMode').onclick = () => { if (pSelMode || selected.size) { pSelMode = fal
 $('#selAll').onchange = e => { visibleProfiles().forEach(p => e.target.checked ? selected.add(p.id) : selected.delete(p.id)); renderTable(); };
 $('#search').oninput = debounce(e => { search = e.target.value; renderTable(); }, 120);
 $('#issuesChip').onclick = () => { issuesOnly = !issuesOnly; renderTable(); };
+$('#pfChips').addEventListener('click', e => { const b = e.target.closest('[data-pf]'); if (!b) return; pFilter = b.dataset.pf; issuesOnly = false; renderTable(); });
+$('#docBanner').addEventListener('click', e => {
+  const b = e.target.closest('[data-pf]'); if (b) { pFilter = b.dataset.pf; issuesOnly = false; renderTable(); return; }
+  if (e.target.id === 'docFixAll') openFixLine2(doctorSummary().badL2);
+});
 $('#clearSel').onclick = () => { selected.clear(); renderTable(); };
 $$('#pg-profiles th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (psort.key === k) { if (psort.dir === -1) psort = { key: '', dir: 1 }; else psort.dir = -1; } else psort = { key: k, dir: ['orders', 'spent'].includes(k) ? -1 : 1 }; renderTable(); });
 $('#moveSel').onchange = e => { const to = e.target.value; if (!to) return; snapshot('move profiles'); const n = selected.size; state.profiles.forEach(p => { if (selected.has(p.id)) p.categoryId = to; }); save(); refresh(); toast(`Moved ${plural(n, 'profile')} to ${catName(to)}`, { undo: true }); };
@@ -218,7 +230,9 @@ function openProfile(id) {
   $('#profDelete').hidden = isNew;
   let html = `<div class="fgrid"><div class="s2"><label>Category</label><select data-k="categoryId">${catOptions(editing.categoryId)}</select></div><div class="s2"><label>Notes</label><input data-k="notes" value="${esc(editing.notes)}" placeholder="Anything to remember about this profile"></div></div>`;
   for (const g of ['General', 'Shipping', 'Billing', 'Payment']) {
-    html += `<div class="section">${g}</div><div class="fgrid">`;
+    html += `<div class="section">${g}</div>`;
+    if (g === 'Shipping') { const opts = savedAddressOptions(editing.categoryId); html += `<div class="hstack addrpick">${opts ? `<select id="pfAddrPick" style="flex:1;min-width:0"><option value="">Use a saved address…</option>${opts}</select>` : ''}<button class="sm" id="pfAddrSave">Save address to group</button><button class="sm" id="pfL2Gen" title="A line 2 no other profile at this address has used">Unique line 2</button></div>`; }
+    html += `<div class="fgrid">`;
     for (const f of FIELDS.filter(f => f.g === g)) {
       if (f.bool) { html += `<div class="s4"><label class="check"><input type="checkbox" data-k="${f.k}" ${editing[f.k] ? 'checked' : ''}> ${f.l}</label></div>`; continue; }
       const extra = ['cardNumber', 'cardCvv', 'cardExpMonth', 'cardExpYear', 'phone', 'shipZip', 'billZip'].includes(f.k) ? 'inputmode="numeric" autocomplete="off"' : 'autocomplete="off"';
@@ -227,7 +241,29 @@ function openProfile(id) {
     html += '</div>';
   }
   if (h.length) html += `<div class="note warn">${h.map(esc).join('<br>')}</div>`;
+  if (!isNew && typeof profileAccountsHtml === 'function') html += profileAccountsHtml(editing);
+  if (!isNew) {
+    const v = verdictOf(editing), L = LEVEL[v.level];
+    html = `<div class="healthcard h-${v.level}"><div class="hstack" style="gap:10px;flex-wrap:wrap"><span class="hpill h-${v.level}"><i style="background:${L.c}"></i>${L.l}</span><span class="small muted">${v.orders ? `${v.stuck} stuck · ${v.dead} cancelled${v.pending ? ' · ' + v.pending + ' pending' : ''}${editing.l2ChangedAt ? ' · line 2 changed ' + esc(fmtDate(editing.l2ChangedAt)) : ''}` : 'No orders linked yet'}</span><span class="spacer"></span>${v.fixes.includes('l2') || v.level === 'watch' ? '<button class="sm" id="profFixL2">New line 2</button>' : ''}</div>
+      ${v.reasons.length ? `<ul class="hreasons">${v.reasons.map(r => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+      ${v.fixes.includes('card') ? '<div class="small" style="margin-top:4px">Try a different card on this profile.</div>' : ''}
+      ${(editing.l2History || []).length ? `<div class="small faint" style="margin-top:6px">Earlier line 2s: ${editing.l2History.slice().reverse().map(x => esc(x.old || '(empty)')).join(' · ')}</div>` : ''}</div>` + html;
+  }
   $('#profBody').innerHTML = html;
+  const fv = k => $(`#profBody [data-k=${k}]`);
+  if ($('#pfAddrPick')) $('#pfAddrPick').onchange = e => { const a = findSavedAddress(e.target.value); if (!a) return; fv('shipAddr1').value = a.addr1; fv('shipCity').value = a.city; fv('shipState').value = a.state; fv('shipZip').value = a.zip; if (!fv('shipCountry').value) fv('shipCountry').value = 'US'; toast('Address filled in — line 2 left for you'); };
+  $('#pfAddrSave').onclick = () => {
+    const cat = $('#profBody [data-k=categoryId]').value; const raw = { addr1: fv('shipAddr1').value, city: fv('shipCity').value, state: fv('shipState').value, zip: fv('shipZip').value };
+    const a = cleanAddr(raw); if (!a.addr1 || !a.zip) { toast('Fill in the street and ZIP first'); return; }
+    const before = groupAddresses(cat).length; saveGroupAddress(cat, raw); save();
+    toast(groupAddresses(cat).length > before ? `Saved ${a.addr1} to ${catName(cat)}` : `${a.addr1} is already saved in ${catName(cat)}`);
+  };
+  $('#pfL2Gen').onclick = () => {
+    const a1 = fv('shipAddr1').value, zip = fv('shipZip').value; if (!a1 || !zip) { toast('Fill in the street and ZIP first'); return; }
+    const hu = houseUnits(Parser.houseKey(a1, zip)); const v = makeUnit(pickStyle({ shipAddr2: fv('shipAddr2').value }, hu.good, 'auto'), hu.used, new Set());
+    if (v) { fv('shipAddr2').value = v; toast('Line 2: ' + v); } else toast('Couldn’t find an unused line 2');
+  };
+  if ($('#profFixL2')) $('#profFixL2').onclick = () => { const p = state.profiles.find(x => x.id === editing.id); closeDlg('dlgProfile'); openFixLine2([p]); };
   const sync = () => { const same = $('#profBody [data-k=sameBilling]').checked; $$('#profBody [data-bill]').forEach(el => el.hidden = same); };
   $('#profBody [data-k=sameBilling]').onchange = sync; sync();
   const brand = () => { const v = $('#profBody [data-k=cardNumber]').value; $('#brandLbl').textContent = v ? cardBrand(v) + (luhn(v) ? ' ✓' : ' — check number') : ''; };
@@ -250,6 +286,7 @@ $('#profSave').onclick = () => {
   editing.updatedAt = Date.now();
   snapshot('edit profile');
   const i = state.profiles.findIndex(p => p.id === editing.id);
+  if (i >= 0) noteL2Change(editing, state.profiles[i].shipAddr2);
   if (i >= 0) state.profiles[i] = editing; else state.profiles.push(editing);
   autoLinkAll(); closeDlg('dlgProfile'); save(); refresh(); toast('Saved', { undo: true });
 };
@@ -455,13 +492,20 @@ $('#l2Body').addEventListener('click', e => {
 });
 $('#l2Body').addEventListener('change', e => { const k = e.target.dataset.sel; if (!k) return; L2[k] = k === 'range' ? e.target.value : +e.target.value; l2Render(); });
 $('#l2Btn').onclick = () => { if (!selectedTargets().length) { toast('No profiles to edit yet — import or add some first'); return; } $('#l2Count').textContent = targetLabel(); l2Render(); openDlg('dlgL2'); };
+// Remember old line 2s: orders placed with them still link to the profile, they're never reused, and the profile's
+// record starts fresh from the change.
+function noteL2Change(p, was) {
+  if ((was || '') === (p.shipAddr2 || '')) return;
+  p.l2History = (p.l2History || []).concat([{ old: was || '', new: p.shipAddr2 || '', at: Date.now() }]).slice(-20);
+  p.l2ChangedAt = Date.now();
+}
 function copyShipToBill(p) { ['First', 'Last', 'Addr1', 'Addr2', 'City', 'State', 'Zip', 'Country'].forEach(s => p['bill' + s] = p['ship' + s]); p.sameBilling = false; }
 $('#l2Go').onclick = () => {
   const tg = selectedTargets(), target = L2.target, skip = L2.exist === 'skip'; let changed = 0;
   snapshot('address line 2');
   tg.forEach((p, i) => {
     const v = l2Gen[i]; if (v == null) return; let did = false;
-    if (target === 'ship' || target === 'both') { if (!(skip && p.shipAddr2)) { p.shipAddr2 = v; did = true; } }
+    if (target === 'ship' || target === 'both') { if (!(skip && p.shipAddr2)) { const was = p.shipAddr2; p.shipAddr2 = v; noteL2Change(p, was); did = true; } }
     if (target === 'bill' || (target === 'both' && !p.sameBilling)) { if (p.sameBilling) copyShipToBill(p); if (!(skip && p.billAddr2)) { p.billAddr2 = v; did = true; } }
     if (did) { changed++; p.updatedAt = Date.now(); }
   });

@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.8.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.9.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -81,7 +81,7 @@ function stickInfo(list) {
 /* ---------- state ---------- */
 const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 0, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -89,7 +89,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-  for (const k of ['inventory', 'sales', 'expenses', 'unmatchedScans']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['accounts', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -247,7 +247,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses']) {
+  for (const k of ['categories', 'profiles', 'accounts', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];
@@ -393,12 +393,14 @@ const ICONS = {
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
   inventory: '<path d="M4 8.5L12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7M8 6.3l8 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   sales: '<path d="M3 17l5.5-5.5 4 4L21 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
+  accounts: '<rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="11" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.8 16.2c.6-1.7 1.8-2.5 3.2-2.5s2.6.8 3.2 2.5M14.5 10h3.5M14.5 13.5h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
+  cards: '<rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 9.5h18M6.5 14.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
-const NAV = [['dashboard', 'Dashboard'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['profiles', 'Profiles'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards'], ['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in'], ['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending'], ['inboxes', 'Inboxes'], ['settings', 'Settings']];
 // sidebar sections on computers: the label shows above the first page of each group
-const NAV_GROUP = { orders: 'Buying', inventory: 'Selling', profiles: 'Setup' };
+const NAV_GROUP = { profiles: 'Checkout', orders: 'Orders', inventory: 'Selling', inboxes: 'Setup' };
 const PAGES = {};
 let route = { page: 'dashboard', arg: '' };
 function go(page, arg) { const h = '#' + page + (arg ? '/' + arg : ''); if (location.hash !== h) location.hash = h; else applyRoute(); }
@@ -410,7 +412,7 @@ function applyRoute() {
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
 function renderNav() {
-  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)) };
+  const counts = { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length };
   $('#navlist').innerHTML = NAV.map(([k, l]) => `${NAV_GROUP[k] ? `<div class="navgroup">${NAV_GROUP[k]}</div>` : ''}<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`).join('');
   // phones: bottom tab bar with the four most-used pages + More
   const inMore = MORE_PAGES.includes(route.page);
@@ -418,10 +420,10 @@ function renderNav() {
     + `<button class="tabitem ${inMore ? 'active' : ''}" id="tabMore" aria-label="More"><svg viewBox="0 0 24 24">${ICONS.more}</svg><span>${inMore ? (NAV.find(n => n[0] === route.page) || [, 'More'])[1] : 'More'}</span></button>`;
   $('#tabMore').onclick = openMore;
 }
-const TAB_PAGES = [['dashboard', 'Home'], ['orders', 'Orders'], ['inventory', 'Inventory'], ['calendar', 'Calendar']];
-const MORE_PAGES = ['houses', 'sales', 'profiles', 'spending', 'inboxes', 'checkin', 'settings'];
+const TAB_PAGES = [['dashboard', 'Home'], ['profiles', 'Profiles'], ['orders', 'Orders'], ['inventory', 'Inventory']];
+const MORE_PAGES = ['accounts', 'cards', 'calendar', 'houses', 'sales', 'spending', 'inboxes', 'checkin', 'settings'];
 function openMore() {
-  const counts = { profiles: state.profiles.length, inboxes: state.imapAccounts.length, houses: state.houses.filter(h => houseOrders(h.id).length).length };
+  const counts = { accounts: (state.accounts || []).length, inboxes: state.imapAccounts.length, houses: state.houses.filter(h => houseOrders(h.id).length).length };
   $('#moreList').innerHTML = MORE_PAGES.map(k => `<button class="moreitem ${route.page === k ? 'active' : ''}" data-nav="${k}" data-close><svg viewBox="0 0 24 24">${ICONS[k]}</svg><span>${NAV.find(n => n[0] === k)[1]}</span>${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}<span class="chev">›</span></button>`).join('')
     + `<button class="moreitem" id="moreNews" data-close><svg viewBox="0 0 24 24">${ICONS.news}</svg><span>What’s new</span><span class="count">v${VERSION}</span><span class="chev">›</span></button>`
     + `<button class="moreitem" id="moreLock" data-close><svg viewBox="0 0 24 24">${ICONS.lock}</svg><span>Lock Crown Tools</span><span class="chev">›</span></button>`;

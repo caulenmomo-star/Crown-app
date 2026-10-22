@@ -58,15 +58,16 @@
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
     <section class="page" data-page="profiles" id="pg-profiles">
       <div class="pagehead"><h1>Profiles</h1><span class="sub" id="profSub"></span><div class="spacer"></div>
-        <button id="importBtn">Mass import</button><button id="exportBtn">Export</button><button class="primary" id="addProfile">+ Add profile</button></div>
+        <button id="buildBtn">Build profiles</button><button id="importBtn">Mass import</button><button id="exportBtn">Export</button><button class="primary" id="addProfile">+ Add profile</button></div>
       <div class="split">
         <div class="catlist"><div id="cats"></div><button id="addCat" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New category</button></div>
         <div style="min-width:0">
+          <div id="docBanner"></div>
           <div class="toolbar">
             <div class="searchrow"><input class="search" id="search" placeholder="Search name, email, city, last 4…  ( / )"><button class="phoneonly" id="pSelMode">Select</button></div>
-            <div class="chips"><button class="chip" id="issuesChip">⚠ Issues only</button></div>
+            <div class="chips" id="pfChips"><button class="chip" data-pf="all">All</button><button class="chip" data-pf="bad">Change it</button><button class="chip" data-pf="watch">Watch</button><button class="chip" data-pf="good">Good</button><button class="chip" id="issuesChip">⚠ Details missing or wrong</button></div>
             <div class="spacer"></div>
-            <button id="bulkBtn">Bulk edit</button><button id="l2Btn">Address line 2</button><button id="quickBtn">Quick tools</button>
+            <button id="bulkBtn">Bulk edit</button><button id="addrBtn">Saved addresses</button><button id="l2Btn">Address line 2</button><button id="quickBtn">Quick tools</button>
           </div>
           <div class="selbar" id="selbar" hidden>
             <strong id="selCount"></strong>
@@ -79,13 +80,15 @@
           <div class="tablewrap" id="pTableWrap"><table class="ptable">
             <thead><tr>
               <th class="cb"><input type="checkbox" id="selAll" aria-label="Select all"></th>
-              <th class="sort" data-sort="name">Profile</th><th class="sort" data-sort="email">Email</th><th class="sort" data-sort="ship">Ship to</th><th class="sort" data-sort="city">City</th><th class="sort" data-sort="state">State</th><th>Card</th><th>Exp</th><th class="sort right" data-sort="orders">Orders</th><th class="sort right" data-sort="spent">Spent</th><th id="catCol">Category</th>
+              <th class="sort" data-sort="name">Profile</th><th class="sort" data-sort="health">Health</th><th class="sort" data-sort="email">Email</th><th class="sort" data-sort="ship">Ship to</th><th class="sort" data-sort="city">City</th><th class="sort" data-sort="state">State</th><th>Card</th><th>Exp</th><th class="sort right" data-sort="orders">Orders</th><th class="sort right" data-sort="spent">Spent</th><th id="catCol">Category</th>
             </tr></thead>
             <tbody id="rows"></tbody>
           </table><div class="empty" id="empty" hidden></div></div>
         </div>
       </div>
     </section>
+    <section class="page" data-page="accounts" id="pg-accounts"></section>
+    <section class="page" data-page="cards" id="pg-cards"></section>
     <section class="page" data-page="orders" id="pg-orders"></section>
     <section class="page" data-page="houses" id="pg-houses"></section>
     <section class="page" data-page="calendar" id="pg-calendar"></section>
@@ -130,6 +133,73 @@
     <div class="note">Tokens: <b>{n}</b> numbers profiles in order · <b>{r:1-999}</b> random number · <b>{name}</b> <b>{first}</b> <b>{last}</b> pull from each profile. Example: <code>{first}.{last}{r:10-99}@yourdomain.com</code></div>
   </div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="bulkGo">Apply</button></div>
+</dialog>
+
+<dialog id="dlgAcct">
+  <div class="dhead"><span id="acctTitle">Account</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="acctBody"></div>
+  <div class="dfoot"><button class="danger" id="acctDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="acctSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgAccImport">
+  <div class="dhead">Import store accounts<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div class="fgrid"><div class="s2"><label>Store (for lines that don’t say)</label><select id="aiStore"></select></div><div class="s2"><label>Or load a file</label><input type="file" id="aiFile" accept=".txt,.csv,.tsv"></div></div>
+    <div style="margin-top:12px"><label>Paste accounts — one per line (email:password), or a spreadsheet with email and password columns</label><textarea id="aiText" spellcheck="false" placeholder="name1@gmail.com:Password123&#10;name2@icloud.com:Hunter22!:Walmart"></textarea></div>
+    <div id="aiPreview" class="small muted" style="margin-top:10px"></div>
+    <div class="note small" style="margin-top:10px">Accounts that are already saved (same store and email) are updated, not doubled. Passwords are encrypted with your Crown Tools password.</div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="aiGo" disabled>Import</button></div>
+</dialog>
+
+<dialog id="dlgAccExport" class="narrow">
+  <div class="dhead">Export accounts <span class="muted" id="aeCount" style="font-weight:400"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="note warn small" style="margin-bottom:12px">These files contain your passwords as plain text. Keep them somewhere safe and delete them when you’re done.</div>
+    <div class="list"><button class="li click" id="aeCsv" style="width:100%;text-align:left;border:none;background:none"><div class="mmain"><div class="t2">Spreadsheet (.csv)</div><div class="small muted">Store, email, password, phone, status, profile, notes</div></div></button>
+    <button class="li click" id="aeTxt" style="width:100%;text-align:left;border:none;background:none"><div class="mmain"><div class="t2">email:password list (.txt)</div><div class="small muted">One account per line, for bots and account tools</div></div></button>
+    <button class="li click" id="aeCopy" style="width:100%;text-align:left;border:none;background:none"><div class="mmain"><div class="t2">Copy email:password</div><div class="small muted">To paste straight into a bot</div></div></button></div></div>
+  <div class="dfoot"><button data-close>Close</button></div>
+</dialog>
+
+<dialog id="dlgCard" class="narrow">
+  <div class="dhead"><span id="cardTitle">Card</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="cardBody"></div>
+  <div class="dfoot"><button class="danger" id="cardDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="cardSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgCardAdd">
+  <div class="dhead">Add cards<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div class="fgrid"><div class="s2"><label>Group</label><select id="caGroup"></select></div><div class="s2"><label>Or load a file</label><input type="file" id="caFile" accept=".txt,.csv,.tsv"></div></div>
+    <div style="margin-top:12px"><label>Paste cards — a spreadsheet, or whatever you copy off your bank’s virtual-card page</label><textarea id="caText" spellcheck="false" placeholder="4111 1111 1111 1111  12/29  123&#10;5555555555554444,01,2031,456"></textarea></div>
+    <div id="caPreview" class="small muted" style="margin-top:10px"></div>
+    <div class="note small" style="margin-top:10px">Crown Tools finds each card number, expiry and CVV, and skips bad or duplicate numbers. Everything is encrypted with your Crown Tools password.</div>
+  </div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="caGo" disabled>Add cards</button></div>
+</dialog>
+
+<dialog id="dlgCardAssign" class="narrow">
+  <div class="dhead">Put cards on profiles<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="caaBody"></div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="caaGo">Assign</button></div>
+</dialog>
+
+<dialog id="dlgAddrs">
+  <div class="dhead"><span id="addrTitle">Saved addresses</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="addrBody"></div>
+  <div class="dfoot"><button class="primary" data-close>Done</button></div>
+</dialog>
+
+<dialog id="dlgBuild" class="wide">
+  <div class="dhead">Build profiles<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="pbBody"></div>
+  <div class="dfoot"><button class="ghost" id="pbReroll" style="margin-right:auto">↻ New random details</button><button data-close>Cancel</button><button class="primary" id="pbGo" disabled>Create</button></div>
+</dialog>
+
+<dialog id="dlgFixL2" class="wide">
+  <div class="dhead">New address line 2 <span class="muted" id="fixCount" style="font-weight:400"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="fixBody"></div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="fixGo">Change line 2</button></div>
 </dialog>
 
 <dialog id="dlgL2">
@@ -277,6 +347,11 @@
 <script src="botformats.js"></script>
 <script src="account.js"></script>
 <script src="profiles.js"></script>
+<script src="doctor.js"></script>
+<script src="accounts.js"></script>
+<script src="cards.js"></script>
+<script src="addresses.js"></script>
+<script src="builder.js"></script>
 <script src="orders.js"></script>
 <script src="pages.js"></script>
 <script src="scanner.js"></script>

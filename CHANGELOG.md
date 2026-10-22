@@ -2,23 +2,25 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
-## v0.8.0 — A new look (2026-10-21)
+## v0.9.0 — Profiles, accounts, cards (2026-10-21)
 
-- New default look, Crown: warm graphite with gold, matching the crown logo.
-- Nine looks to choose from in Settings → Look — Crown, Daylight, Midnight, Ember, Royal, Forest, Mono, Ocean and Cherry — or let it follow your device’s light/dark setting. Your choice follows you to every device.
-- Cleaner layout on computers: the sidebar is grouped into Buying, Selling and Setup; the numbers at the top of each page sit in one strip; bigger headings; pages stay a comfortable width on big screens.
-- The orders table fits the screen on laptops: the order number sits under the store, and tracking is one click away in the order.
+- Reworked the Profiles section: every profile now gets a health rating from its real order results, and the ones that keep getting cancelled can be fixed with a new address line 2 in one tap (nothing else on the profile changes).
+- Added a profile builder — make hundreds of profiles for a house at once.
+- Added saved addresses per profile group.
+- Added Accounts — save every store login and password.
+- Added Cards — save cards in groups, paste thousands at once, and spread a group across your profiles.
 
-## v0.7.0 — Inventory, live TCGplayer prices, sales and profit (2026-10-21)
+## v0.8.0 — New look (2026-10-21)
 
-- New Inventory page: scan any product barcode with your phone camera (or a USB/Bluetooth scanner) to look it up, restock it or add it. Add the items from delivered orders in one tap, with what you paid as the cost.
-- Live TCGplayer market prices for sealed product (and singles): link an item once and its market, low and mid prices update every day, with a price history chart. The Inventory page shows your cost, market value and unrealized gain.
-- New Sales page: record a sale from your inventory (or scan it), with platform fees worked out for eBay, TCGplayer, Whatnot, Mercari and more, plus shipping. Expenses for bots, proxies and supplies. Profit by day or month, by platform and by item, and a CSV export.
-- Discord alerts: post to a channel when a package is out for delivery, delivered or cancelled — and give each house its own webhook so its alerts go to its own channel.
-- Scan shipping labels at the door to check boxes in (optional — turn it on in Settings; nothing is flagged unless you want it).
-- Free USPS tracking keys, next to UPS and FedEx, for real USPS delivery dates.
-- Reads order emails from about 55 stores now — Apple, Secret Lair, TCGplayer, eBay, StockX, Hot Topic, Disney, Mattel Creations, Hasbro Pulse, Premium Bandai, Nintendo, Fanatics, Panini, Topps and more — plus any Shopify store, shown under the store’s own name.
-- Recognizes OnTrac, LaserShip, DHL eCommerce, Canada Post and other tracking numbers (live tracking for those through EasyPost).
+- New default look plus nine themes to pick from in Settings.
+- Cleaner, roomier layout on computers.
+
+## v0.7.0 — Inventory, prices, sales (2026-10-21)
+
+- Added Inventory with a barcode scanner and live TCGplayer prices.
+- Added Sales with fees, expenses and profit.
+- Added Discord delivery alerts and optional package check-in.
+- More stores and carriers, plus free USPS tracking.
 
 ## v0.6.0 — Accounts and subscriptions (2026-10-21)
 

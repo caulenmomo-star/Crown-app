@@ -218,17 +218,17 @@ const lc = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 // Each profile's matching details, worked out once and reused (fast even with thousands of orders × profiles).
 const PSIG = new WeakMap();
 function profSig(p) {
-  const stamp = [p.email, p.shipAddr1, p.shipAddr2, p.shipZip, p.shipFirst, p.shipLast, p.shipName, p.cardNumber, p.shipCity].join('\u0001');
+  const stamp = [p.email, p.shipAddr1, p.shipAddr2, p.shipZip, p.shipFirst, p.shipLast, p.shipName, p.cardNumber, p.shipCity, (p.l2History || []).length].join('\u0001');
   let c = PSIG.get(p); if (c && c.stamp === stamp) return c;
   const nm = String(p.shipName || '').trim().split(/\s+/);
   c = { stamp, email: normEmail(p.email), house: Parser.houseSig(p.shipAddr1, p.shipZip), unit: Parser.normUnit([Parser.splitUnit(p.shipAddr1).unit, p.shipAddr2].filter(Boolean).join(' ')),
-    first: lc(p.shipFirst || nm[0]), last: lc(p.shipLast || nm.slice(1).join('')), card: String(p.cardNumber || '').replace(/\D/g, ''), zip: Parser.zip5(p.shipZip), city: lc(p.shipCity) };
+    past: new Set((p.l2History || []).map(x => Parser.normUnit(x.old)).filter(Boolean)), first: lc(p.shipFirst || nm[0]), last: lc(p.shipLast || nm.slice(1).join('')), card: String(p.cardNumber || '').replace(/\D/g, ''), zip: Parser.zip5(p.shipZip), city: lc(p.shipCity) };
   PSIG.set(p, c); return c;
 }
 function linkScore(p, o, sig) {
   const q = profSig(p); let sc = 0; const how = [];
   if (sig.email && q.email === sig.email) { sc += 4; how.push('email'); }
-  if (sig.house && q.house && Parser.sameHouse(q.house, sig.house)) { sc += 3; how.push('address'); if (sig.unit && q.unit === sig.unit) sc += 2; }
+  if (sig.house && q.house && Parser.sameHouse(q.house, sig.house)) { sc += 3; how.push('address'); if (sig.unit && (q.unit === sig.unit || q.past.has(sig.unit))) sc += 2; }
   else if (sig.house && q.house) sc -= 3; // shipped somewhere else
   if (sig.first && sig.last && q.first === sig.first && q.last === sig.last) { sc += 4; how.push('name'); }
   else {
@@ -403,7 +403,7 @@ let oSelected = new Set(), oSelMode = false;
 // The sidebar always opens the full, unfiltered list; filters only stick when you set them on the page itself.
 function resetPageFilters(page) {
   if (page === 'orders') { Object.assign(OF, { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', page: 0 }); oSelected.clear(); }
-  if (page === 'profiles' && typeof issuesOnly !== 'undefined') { issuesOnly = false; }
+  if (page === 'profiles' && typeof issuesOnly !== 'undefined') { issuesOnly = false; pFilter = 'all'; }
   if (page === 'houses') HF.q = '';
 }
 function activeFilterText() {
