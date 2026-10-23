@@ -1,6 +1,10 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.10.1', date: '2026-10-22', title: 'Resizable columns', items: [
+    'Drag the edge of a column header to resize it in Profiles, Orders, Accounts and Cards — double-click to reset.',
+    'Tables scroll sideways inside their own box, so the columns on the right are always reachable.',
+  ] },
   { v: '0.10.0', date: '2026-10-22', title: 'Crown Tools app', items: [
     'Install Crown Tools as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.',
     'Added a Get the app card in Settings and an install page with steps for each device.',

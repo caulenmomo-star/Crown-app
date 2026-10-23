@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.10.1 — Resizable columns (2026-10-22)
+
+- Drag the edge of a column header to resize it in Profiles, Orders, Accounts and Cards — double-click to reset.
+- Tables scroll sideways inside their own box, so the columns on the right are always reachable.
+
 ## v0.10.0 — Crown Tools app (2026-10-22)
 
 - Install Crown Tools as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.
