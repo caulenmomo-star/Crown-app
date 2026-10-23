@@ -21,7 +21,12 @@ function linkFor(name) {
   if (inv) return { id: k, pid: inv.market.id, cat: inv.market.cat, group: inv.market.group, pname: inv.market.name, set: inv.market.setName, image: inv.market.image, prices: inv.market.prices, sub: inv.market.sub, by: 'inventory' };
   return ivIndex().get(k) || null;
 }
-function ivPrice(l) { if (!l || l.none || !l.prices) return null; const p = l.prices[l.sub] || l.prices.Normal || Object.values(l.prices)[0] || {}; const v = p.mid ?? p.market ?? p.low; return v == null ? null : Number(v); }
+// profit is simply the TCGplayer median minus what you paid (no selling fees or shipping)
+function sellCfg() { return { basis: 'mid' }; }
+function ivPrice(l, basis) {
+  if (!l || l.none || !l.prices) return null; const p = l.prices[l.sub] || l.prices.Normal || Object.values(l.prices)[0] || {};
+  const v = (basis || sellCfg().basis) === 'market' ? (p.market ?? p.mid ?? p.low) : (p.mid ?? p.market ?? p.low); return v == null ? null : Number(v);
+}
 function putLink(rec) {
   state.itemLinks = state.itemLinks || [];
   const i = state.itemLinks.findIndex(l => l.id === rec.id); rec.updatedAt = Date.now();
@@ -92,21 +97,32 @@ async function refreshLinkPrices(force) {
 }
 
 /* ---------- estimated profit for a set of orders ---------- */
-// value = TCGplayer median × quantity; cost = what you paid for that item, with the order's tax and shipping spread in
-function profitOf(orders) {
-  const t = { value: 0, cost: 0, profit: 0, units: 0, priced: 0, unpriced: 0, pending: 0 };
+// what each product cost you (what you paid, with the order's tax and shipping spread in), by product name
+function productCosts(orders) {
+  const m = new Map();
   for (const o of orders) {
     if (isDead(o)) continue;
     const items = (o.items || []).filter(i => qtyOf(i) > 0); if (!items.length) continue;
     const sub = sum(items, i => (Number(i.price) || 0) * qtyOf(i));
     const ratio = sub > 0 && o.total != null && o.total !== '' ? Math.min(1.6, Math.max(0.85, Number(o.total) / sub)) : 1.08;
     for (const i of items) {
-      const q = qtyOf(i); t.units += q;
-      const l = linkFor(i.name), v = ivPrice(l);
-      let c = i.price != null && i.price !== '' ? Number(i.price) * ratio : items.length === 1 && o.total != null && o.total !== '' ? Number(o.total) / q : null;
-      if (v == null || c == null || !isFinite(c)) { t.unpriced += q; if (!l) t.pending += q; continue; }
-      t.value += v * q; t.cost += c * q; t.priced += q;
+      const q = qtyOf(i), c = i.price != null && i.price !== '' ? Number(i.price) * ratio : items.length === 1 && o.total != null && o.total !== '' ? Number(o.total) / q : null;
+      const g = m.get(i.name) || { name: i.name, qty: 0, costQty: 0, cost: 0 }; g.qty += q;
+      if (c != null && isFinite(c)) { g.costQty += q; g.cost += c * q; }
+      m.set(i.name, g);
     }
+  }
+  return m;
+}
+// Estimated profit: what the items are worth at the TCGplayer median minus what you paid for them.
+function profitOf(orders) {
+  const t = { value: 0, cost: 0, profit: 0, units: 0, priced: 0, unpriced: 0, pending: 0 };
+  for (const g of productCosts(orders).values()) {
+    t.units += g.qty;
+    const l = linkFor(g.name), v = ivPrice(l);
+    if (v == null || !g.costQty) { t.unpriced += g.qty; if (!l) t.pending += g.qty; continue; }
+    t.unpriced += g.qty - g.costQty;
+    t.value += v * g.costQty; t.cost += g.cost; t.priced += g.costQty;
   }
   t.profit = t.value - t.cost;
   return t;
@@ -127,19 +143,21 @@ function loadImg(url) {
 
 /* ---------- review the matches ---------- */
 let ivReview = { q: {}, res: {} };
-function openPriceReview(names) {
+function openPriceReview(orders) {
+  const costs = productCosts(orders);
+  const names = [...costs.values()].map(g => [g.name, g.qty, g]).sort((a, b) => ((ivPrice(linkFor(b[0])) || 0) * b[1]) - ((ivPrice(linkFor(a[0])) || 0) * a[1]) || b[1] - a[1]);
   ivReview = { q: {}, res: {}, names };
   renderPriceReview(); openDlg('dlgPrices');
 }
 function renderPriceReview() {
   const names = ivReview.names || [];
-  $('#prBody').innerHTML = `<div class="small muted" style="margin-bottom:10px">Each product is matched to TCGplayer and valued at the TCGplayer median. Fix a wrong match by searching for the right product, or mark it as not on TCGplayer.</div>
+  $('#prBody').innerHTML = `<div class="small muted" style="margin-bottom:10px">Each product is matched to TCGplayer and valued at the TCGplayer median. Profit is that price minus what you paid. Biggest first — fix a wrong match by searching for the right product, or mark it as not on TCGplayer.</div>
     <div class="list">${names.map(([n, q]) => { const l = linkFor(n), v = ivPrice(l), k = ivKey(n); const res = ivReview.res[k];
       return `<div class="li prrow"><div class="mmain"><div class="t2 ellipsis">${esc(n)}</div>
         <div class="small ${l && !l.none ? 'muted' : 'faint'} ellipsis">${l && !l.none ? `→ ${esc(l.pname)}${l.set ? ' · ' + esc(l.set) : ''}${l.by === 'inventory' ? ' · from Inventory' : l.by === 'you' ? ' · set by you' : ''}` : l ? esc(l.why || 'Not priced') : 'Matching…'}</div>
         ${res ? `<div class="prres">${res.length ? res.slice(0, 6).map((x, j) => `<button class="sm" data-prpick="${k}|${j}">${esc(x.name)} <span class="faint">· ${esc(x.setName || '')} · ${fmtMoney((x.prices.Normal || Object.values(x.prices)[0] || {}).mid)}</span></button>`).join('') : '<span class="small faint">Nothing found — try other words.</span>'}</div>` : ''}
         <div class="prsearch" ${ivReview.q[k] != null ? '' : 'hidden'}><input data-prq="${k}" value="${esc(ivReview.q[k] || '')}" placeholder="Search TCGplayer"><button class="sm" data-prgo="${k}">Search</button></div></div>
-        <div class="dright"><b>${v != null ? fmtMoney(v) : '—'}</b><div class="small faint">${q}× ordered</div><div class="hstack" style="gap:4px;justify-content:flex-end;margin-top:4px"><button class="ghost sm" data-prfix="${k}">Change</button>${l && !l.none && l.by !== 'inventory' ? `<button class="ghost sm" data-prnone="${k}" title="Not on TCGplayer">✕</button>` : ''}</div></div></div>`; }).join('') || '<div class="empty sm">No products in this range.</div>'}</div>`;
+        <div class="dright"><b>${v != null ? fmtMoney(v) : '—'}</b><div class="small faint">${q}× ordered</div>${(() => { const g = (ivReview.names.find(x => x[0] === n) || [])[2]; if (v == null || !g || !g.costQty) return ''; const each = v - g.cost / g.costQty; return `<div class="small ${each >= 0 ? 'pos' : 'neg'}" title="Each: worth ${fmtMoney(v)} − paid ${fmtMoney(g.cost / g.costQty)}">${fmtSigned(each)} each · ${fmtSigned(each * g.costQty)}</div>`; })()}<div class="hstack" style="gap:4px;justify-content:flex-end;margin-top:4px"><button class="ghost sm" data-prfix="${k}">Change</button>${l && !l.none && l.by !== 'inventory' ? `<button class="ghost sm" data-prnone="${k}" title="Not on TCGplayer">✕</button>` : ''}</div></div></div>`; }).join('') || '<div class="empty sm">No products in this range.</div>'}</div>`;
 }
 function wirePriceReview() {
   const nameOf = k => ((ivReview.names || []).find(([n]) => ivKey(n) === k) || [''])[0];

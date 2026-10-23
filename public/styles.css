@@ -803,3 +803,5 @@ html[data-theme=cherry] dialog{box-shadow:var(--shadow)}
 .prres{display:flex;flex-direction:column;gap:4px;margin-top:6px}
 .prres button{text-align:left;justify-content:flex-start;white-space:normal;height:auto;line-height:1.35;padding:6px 10px}
 .prsearch{display:flex;gap:6px;margin-top:6px}.prsearch input{flex:1;min-width:0}
+
+.pfmath b{color:var(--text);font-weight:600}.pfmath b.pos{color:var(--ok)}.pfmath b.neg{color:var(--danger)}

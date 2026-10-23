@@ -300,7 +300,7 @@ function recapCardHtml() {
           ${SHARE.bg === 'photo' && photo ? `<div class="recap-photo"><span class="small muted">Darken</span><input type="range" id="shDim" min="10" max="85" value="${SHARE.dim}"><button class="sm ghost" id="shPhotoNew">Change</button><button class="sm ghost" id="shPhotoDel">Remove</button></div>` : ''}</div></div>
         <div class="recap-row"><div class="lbl">Show</div><div class="chips sm">${[['money', 'Dollar amounts'], ['profit', 'Est. profit'], ['store', 'Top store'], ['items', 'Top items'], ['pics', 'Item pictures']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${SHARE[k] ? '✓ ' : ''}${l}</button>`).join('')}</div></div>
         <div class="recap-row"><div class="lbl">Save as</div><div class="chips sm">${[['png', 'PNG'], ['jpg', 'JPG']].map(([k, l]) => `<button class="chip ${SHARE.fmt === k ? 'on' : ''}" data-fmt="${k}">${l}</button>`).join('')}<span class="small faint" style="align-self:center;margin-left:6px">1080 × 1350</span></div></div>
-        <div class="recap-row"><div class="lbl">Prices</div><div class="small muted recap-prices">${names.size ? `${pf.priced ? `${pf.priced} of ${pf.units} items valued at the TCGplayer median — worth ${fmtMoney(pf.value)}, cost ${fmtMoney(pf.cost)}.` : IV.busy || IV.queue.length ? `Matching items to TCGplayer… ${IV.done}/${IV.total}` : 'No items here could be matched to TCGplayer yet.'} <button class="linkbtn" id="shReview">Review prices</button>` : 'No item details in this range.'}</div></div>
+        <div class="recap-row"><div class="lbl">Prices</div><div class="small muted recap-prices">${names.size ? `${pf.priced ? `<span class="pfmath">${pf.priced} of ${pf.units} items: worth <b>${fmtMoney(pf.value)}</b> at the TCGplayer median − what you paid <b>${fmtMoney(pf.cost)}</b> = <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> profit.</span>` : IV.busy || IV.queue.length ? `Matching items to TCGplayer… ${IV.done}/${IV.total}` : 'No items here could be matched to TCGplayer yet.'} <button class="linkbtn" id="shReview">Review prices</button>` : 'No item details in this range.'}</div></div>
         <div class="small faint recap-note">Never includes addresses, names, emails or card numbers. eBay’s sold prices aren’t available to apps like this, so values come from TCGplayer.</div>
       </div></div></div>`;
 }
@@ -343,7 +343,7 @@ function wireRecapCard(rerender) {
   $('#shPhoto').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await takePhoto(f); set(() => SHARE.bg = 'photo'); } catch (err) { toast(err.message); } };
   if ($('#shPhotoDel')) $('#shPhotoDel').onclick = () => { try { localStorage.removeItem('crown.sharePhoto'); } catch (_) { } set(() => SHARE.bg = 'theme'); };
   if ($('#shDim')) { $('#shDim').oninput = e => { SHARE.dim = +e.target.value; saveShare(); paintRecap(); }; }
-  if ($('#shReview')) $('#shReview').onclick = () => { const names = new Map(); recapData().list.filter(o => !isDead(o)).forEach(o => (o.items || []).forEach(i => { if (i.name && qtyOf(i) > 0) names.set(i.name, (names.get(i.name) || 0) + qtyOf(i)); })); openPriceReview([...names.entries()].sort((a, b) => b[1] - a[1])); };
+  if ($('#shReview')) $('#shReview').onclick = () => openPriceReview(recapData().list);
   const blob = type => recapDraw.then(() => new Promise(res => cv.toBlob(res, type, 0.92)));
   $('#shDl').onclick = async () => { const jpg = SHARE.fmt === 'jpg', b = await blob(jpg ? 'image/jpeg' : 'image/png'); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `crown-recap-${stamp()}.${jpg ? 'jpg' : 'png'}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); };
   $('#shCopy').onclick = async () => { try { const b = await blob('image/png'); await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]); toast('Image copied — paste it into Discord'); } catch (_) { toast('Your browser blocked copying. Use Save instead.'); } };
@@ -382,12 +382,15 @@ function drawShareCard(cv, d, img) {
   let y = by + bh + 26;
   // estimated profit: TCGplayer median value of what was bought, minus what it cost
   if (SHARE.money && SHARE.profit && pf && pf.priced) {
-    const ph = 132, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
+    const ph = 150, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
     ctx.fillStyle = up ? 'rgba(74,222,128,.12)' : 'rgba(248,113,113,.12)'; rr(ctx, L, y, CW, ph, 24); ctx.fill(); ctx.strokeStyle = up ? 'rgba(74,222,128,.35)' : 'rgba(248,113,113,.35)'; ctx.lineWidth = 2; ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText('EST. PROFIT', L + 28, y + 42);
-    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW * 0.5, 800, 60, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 104);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = `600 28px ${F}`; ctx.fillText('Worth ' + fmtMoney(pf.value, pf.value >= 10000), R - 28, y + 58);
-    ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.font = `500 22px ${F}`; ctx.fillText(`TCGplayer median · ${pf.priced}${pf.priced < pf.units ? ' of ' + pf.units : ''} items`, R - 28, y + 96); ctx.textAlign = 'left';
+    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW * 0.46, 800, 62, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 112);
+    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `500 20px ${F}`; ctx.fillText('TCGplayer value − what you paid', L + 28, y + 138);
+    const big2 = v => fmtMoney(v, v >= 10000);
+    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = `600 28px ${F}`; ctx.fillText('Worth ' + big2(pf.value), R - 28, y + 58);
+    ctx.fillStyle = 'rgba(255,255,255,.66)'; ctx.font = `500 23px ${F}`; ctx.fillText('− ' + big2(pf.cost) + ' paid', R - 28, y + 94);
+    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = `500 19px ${F}`; ctx.fillText(`TCGplayer median · ${pf.priced}${pf.priced < pf.units ? ' of ' + pf.units : ''} items`, R - 28, y + 128); ctx.textAlign = 'left';
     y += ph + 24;
   }
   const head = t => { ctx.fillStyle = 'rgba(255,255,255,.56)'; ctx.font = `700 21px ${F}`; ctx.fillText(t, L, y); };
