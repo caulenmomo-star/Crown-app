@@ -532,6 +532,7 @@ PAGES.settings = {
     const pg = $('#pg-settings'); const S = state.settings;
     const trackAll = !S.trackedStores || !S.trackedStores.length;
     pg.innerHTML = `<div class="pagehead"><h1>Settings</h1></div>
+      ${typeof installCardHtml === 'function' ? installCardHtml() : ''}
       ${CLOUD && typeof Account !== 'undefined' ? Account.card() : ''}
       <div class="card" id="themeCard" style="margin-bottom:14px"><h3>Look</h3><div class="themes">${THEMES_UI.map(([k, l, d]) => `<button class="themeopt ${(S.theme || DEFAULT_THEME) === k ? 'on' : ''}" data-theme-pick="${k}"><span class="tswatch t-${k}"><i></i><i></i><i></i></span><span class="tname">${esc(l)}</span><span class="small faint">${esc(d)}</span></button>`).join('')}</div></div>
       <div class="cols2">
@@ -590,6 +591,7 @@ PAGES.settings = {
           </div></div>
       </div>
       <div class="small faint" style="margin-top:16px">Crown Tools v${VERSION}${CLOUD ? ' · Crown Tools Online' : ''}</div>`;
+    if (typeof wireInstallCard === 'function') wireInstallCard();
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();

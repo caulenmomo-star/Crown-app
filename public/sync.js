@@ -166,6 +166,7 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { if (document.visibilityState === 'hidden') { scheduleSync(); return; } syncAll(false); }, m * 60000);
 }
 function onUnlocked() {
+  if (typeof maybeShowIosTip === 'function') setTimeout(maybeShowIosTip, 2500);
   if (state.settings.theme) applyTheme(state.settings.theme);
   if (typeof maybeShowChangelog === 'function') maybeShowChangelog();
   // Drop anything in "couldn't read" that isn't a real-looking store order email (old builds listed promos there).

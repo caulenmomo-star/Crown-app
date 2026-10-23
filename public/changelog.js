@@ -1,6 +1,10 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.10.0', date: '2026-10-22', title: 'Crown Tools app', items: [
+    'Install Crown Tools as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.',
+    'Added a Get the app card in Settings and an install page with steps for each device.',
+  ] },
   { v: '0.9.10', date: '2026-10-22', title: 'Simpler profit', items: [
     'The profit on the Checkout card now shows just the number.',
   ] },

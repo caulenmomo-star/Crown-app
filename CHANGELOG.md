@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.10.0 — Crown Tools app (2026-10-22)
+
+- Install Crown Tools as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.
+- Added a Get the app card in Settings and an install page with steps for each device.
+
 ## v0.9.10 — Simpler profit (2026-10-22)
 
 - The profit on the Checkout card now shows just the number.

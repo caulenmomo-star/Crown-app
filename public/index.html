@@ -33,6 +33,7 @@
     </div>
     <input type="file" id="lockRestoreFile" accept=".json" hidden>
   </div>
+  <button class="linkbtn lockinstall" id="installLock" hidden>⬇ Install Crown Tools as an app</button>
 </div>
 
 <!-- ================= ACCOUNT (online) ================= -->
@@ -49,11 +50,13 @@
     <div class="navfoot">
       <div class="pillstat" id="syncStat"><span class="dot"></span><span>Email sync off</span></div>
       <div class="pillstat" id="saveStat"><span class="dot ok"></span><span>Saved</span></div>
+      <button class="sm installbtn" id="installNav" hidden>⬇ Install app</button>
       <div class="hstack topbtns"><button class="sm ibtn" id="scanNav" aria-label="Scan a barcode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5.5A1.5 1.5 0 015.5 4H8M16 4h2.5A1.5 1.5 0 0120 5.5V8M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16M8 20H5.5A1.5 1.5 0 014 18.5V16M7.5 8.5v7M10.5 8.5v7M13 8.5v7M16.5 8.5v7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Scan</span></button><button class="sm ibtn" id="syncNowNav" aria-label="Sync email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 01-14.3 4.9M4 12a8 8 0 0114.3-4.9M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Sync email</span><span class="sdot" id="syncDot"></span></button><button class="sm ibtn" id="lockNow" aria-label="Lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Lock</span></button></div>
     </div>
   </nav>
   <main id="main">
     <div class="banner annbar" id="annBar" hidden><span></span></div>
+    <div class="itip" id="installTip" hidden></div>
     <div class="subnav" id="subnav" hidden></div>
     <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown Tools directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown Tools with <b>Start Crown Tools</b> to turn them on.</div>
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
@@ -347,6 +350,7 @@
 <script src="parser.js"></script>
 <script src="core.js"></script>
 <script src="changelog.js"></script>
+<script src="install.js"></script>
 <script src="botformats.js"></script>
 <script src="account.js"></script>
 <script src="profiles.js"></script>
