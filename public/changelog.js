@@ -1,6 +1,9 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.9.10', date: '2026-10-22', title: 'Simpler profit', items: [
+    'The profit on the Checkout card now shows just the number.',
+  ] },
   { v: '0.9.9', date: '2026-10-22', title: 'Clearer profit', items: [
     'The Checkout card now shows how profit is worked out: TCGplayer value minus what you paid.',
     'Review prices shows the profit on each product, biggest first.',

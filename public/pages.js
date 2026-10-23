@@ -382,15 +382,10 @@ function drawShareCard(cv, d, img) {
   let y = by + bh + 26;
   // estimated profit: TCGplayer median value of what was bought, minus what it cost
   if (SHARE.money && SHARE.profit && pf && pf.priced) {
-    const ph = 150, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
+    const ph = 132, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
     ctx.fillStyle = up ? 'rgba(74,222,128,.12)' : 'rgba(248,113,113,.12)'; rr(ctx, L, y, CW, ph, 24); ctx.fill(); ctx.strokeStyle = up ? 'rgba(74,222,128,.35)' : 'rgba(248,113,113,.35)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText('EST. PROFIT', L + 28, y + 42);
-    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW * 0.46, 800, 62, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 112);
-    ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.font = `500 20px ${F}`; ctx.fillText('TCGplayer value − what you paid', L + 28, y + 138);
-    const big2 = v => fmtMoney(v, v >= 10000);
-    ctx.textAlign = 'right'; ctx.fillStyle = '#fff'; ctx.font = `600 28px ${F}`; ctx.fillText('Worth ' + big2(pf.value), R - 28, y + 58);
-    ctx.fillStyle = 'rgba(255,255,255,.66)'; ctx.font = `500 23px ${F}`; ctx.fillText('− ' + big2(pf.cost) + ' paid', R - 28, y + 94);
-    ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.font = `500 19px ${F}`; ctx.fillText(`TCGplayer median · ${pf.priced}${pf.priced < pf.units ? ' of ' + pf.units : ''} items`, R - 28, y + 128); ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText('EST. PROFIT', L + 28, y + 44);
+    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW - 56, 800, 64, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 108);
     y += ph + 24;
   }
   const head = t => { ctx.fillStyle = 'rgba(255,255,255,.56)'; ctx.font = `700 21px ${F}`; ctx.fillText(t, L, y); };

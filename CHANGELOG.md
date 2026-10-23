@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.9.10 — Simpler profit (2026-10-22)
+
+- The profit on the Checkout card now shows just the number.
+
 ## v0.9.9 — Clearer profit (2026-10-22)
 
 - The Checkout card now shows how profit is worked out: TCGplayer value minus what you paid.
