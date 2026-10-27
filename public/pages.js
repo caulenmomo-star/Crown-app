@@ -85,15 +85,20 @@ PAGES.dashboard = {
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
         <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
-      <div class="kpis">
-        <div class="kpi"><div class="l">Spent · ${esc(dLabel)}</div><div class="v">${fmtMoney(sum(days, d => d.value))}</div><div class="d">This month ${fmtMoney(spentM)}${spentLM ? ' · ' + (spentM >= spentLM ? '▲ ' : '▼ ') + fmtMoney(Math.abs(spentM - spentLM)) + ' vs last' : ''}</div></div>
-        <div class="kpi"><div class="l">Orders · ${esc(dLabel)}</div><div class="v">${dOrders}</div><div class="d">${dDead} cancelled · ${dItems} items</div></div>
-        <div class="kpi"><div class="l">In transit</div><div class="v">${transit.length}</div><div class="d">${soon.length ? soon.length + ' arriving by tomorrow' : '&nbsp;'}</div></div>
-        ${(() => { const si = stickInfo(inSel); return `<div class="kpi"><div class="l">Stick rate · ${esc(dLabel)}</div><div class="v">${si.rate == null ? '—' : si.rate + '%'}</div><div class="d">${inSel.length ? `${si.stuck} shipped · ${si.dead} cancelled${si.pending ? ' · ' + si.pending + ' pending' : ''}` : '&nbsp;'}</div></div>`; })()}
-
-        ${(state.inventory || []).length ? (() => { const st = invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)); return `<div class="kpi click" data-nav="inventory"><div class="l">Inventory</div><div class="v">${fmtMoney(st.value || st.cost, true)}</div><div class="d">${st.units} units${st.priced ? ' · ' + (st.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(st.gain), true) : ''}</div></div>`; })() : ''}
-        ${(state.sales || []).length ? (() => { const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)); const ss = state.sales.filter(x => x.date >= m0), ex = (state.expenses || []).filter(x => x.date >= m0); const p = sum(ss, saleProfit) - sum(ex, x => x.amount); return `<div class="kpi click" data-nav="sales"><div class="l">Profit this month</div><div class="v ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '' : '−'}${fmtMoney(Math.abs(p), true)}</div><div class="d">${plural(ss.length, 'sale')}</div></div>`; })() : ''}
-      </div>
+      ${(() => { const si = stickInfo(inSel), inv = (state.inventory || []).length ? invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)) : null;
+        const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)), ss = (state.sales || []).filter(x => x.date >= m0), pm = (state.sales || []).length ? sum(ss, saleProfit) - sum((state.expenses || []).filter(x => x.date >= m0), x => x.amount) : null;
+        return `<div class="hero dhero"><div class="hero-l">Spent · ${esc(dLabel)}</div><div class="hero-v">${fmtMoney(sum(days, d => d.value))}</div>
+        <div class="hero-s">This month ${fmtMoney(spentM)}${spentLM ? ` · ${spentM >= spentLM ? '▲' : '▼'} ${fmtMoney(Math.abs(spentM - spentLM))} vs last month` : ''}</div>
+        <div class="hero-tiles">
+          <button class="htile" data-nav="orders"><span>Orders</span><b>${dOrders}</b><i>${dItems} items${dDead ? ` · ${dDead} cancelled` : ''}</i></button>
+          <button class="htile" data-nav="orders"><span>Stick rate</span><b>${si.rate == null ? '—' : si.rate + '%'}</b><i>${inSel.length ? `${si.stuck} shipped${si.pending ? ` · ${si.pending} pending` : ''}` : 'no orders yet'}</i></button>
+          <button class="htile" data-nav="calendar"><span>On the way</span><b>${transit.length}</b><i>${soon.length ? soon.length + ' arriving by tomorrow' : overdue.length ? overdue.length + ' running late' : 'in transit now'}</i></button>
+          ${inv ? `<button class="htile" data-nav="inventory"><span>Inventory</span><b>${fmtMoney(inv.value || inv.cost, true)}</b><i>${inv.units} units${inv.priced ? ' · ' + (inv.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(inv.gain), true) : ''}</i></button>` : ''}
+          ${pm != null ? `<button class="htile" data-nav="sales"><span>Profit this month</span><b>${pm >= 0 ? '' : '−'}${fmtMoney(Math.abs(pm), true)}</b><i>${plural(ss.length, 'sale')}</i></button>` : ''}
+        </div></div>`; })()}
+      ${(() => { const m = new Map(); for (const o of inSel) { if (isDead(o)) continue; for (const it of o.items || []) { const q = qtyOf(it); if (!q || !it.name) continue; const k = ivKey(it.name); let e = m.get(k); if (!e) m.set(k, e = { name: it.name, units: 0, spend: 0, priced: 0, image: '' }); e.units += q; if (it.price != null) { e.spend += Number(it.price) * q; e.priced += q; } if (!e.image && it.image) e.image = it.image; } }
+        const top = [...m.values()].sort((a, b) => b.units - a.units || b.spend - a.spend).slice(0, 6); if (top.length < 2) return '';
+        return `<div class="card" style="margin-bottom:14px"><h3>Top products · ${esc(dLabel)}<span class="spacer"></span><button class="ghost sm" data-nav="orders">All orders ›</button></h3><div class="tprods">${top.map(t => { const img = t.image || ((linkFor(t.name) || {}).image) || ''; return `<div class="tprod" title="${esc(t.name)}"><div class="tpic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div><div class="tbody"><div class="tname">${esc(shortName(t.name))}</div><div class="tnum">${plural(t.units, 'unit')}${t.priced ? ` · ${fmtMoney(t.spend / t.priced)} ea` : ''}</div></div></div>`; }).join('')}</div></div>`; })()}
       <div class="cols2" style="margin-bottom:14px">
         <div class="card"><h3>Upcoming deliveries<span class="spacer"></span><button class="ghost sm" data-nav="calendar">Calendar ›</button></h3>
           ${upcoming.length ? `<div class="list">${upcoming.map(o => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><b>${fmtDate(o.eta, { weekday: true })}</b><div class="small faint">${statusDot(o.status)}${relDay(o.eta)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">Nothing on the way with a delivery date.</div>'}</div>
@@ -116,7 +121,7 @@ PAGES.dashboard = {
 };
 
 /* ================= calendar ================= */
-const CAL = { y: new Date().getFullYear(), m: new Date().getMonth(), sel: todayKey(), show: { eta: true, del: true, plc: true } };
+const CAL = { y: new Date().getFullYear(), m: new Date().getMonth(), sel: todayKey(), base: todayKey(), show: { eta: true, del: true, plc: true } };
 function calIndex() {
   const idx = {}; const add = (k, t, o) => { if (!k) return; (idx[k] = idx[k] || { eta: [], del: [], plc: [] })[t].push(o); };
   state.orders.forEach(o => {
@@ -151,6 +156,8 @@ function calDayByHouse(sel) {
 PAGES.calendar = {
   render() {
     const pg = $('#pg-calendar'); const idx = calIndex(); const tk = todayKey();
+    // a new day since the calendar was set up (the app was left open): jump to today
+    if (CAL.base !== tk) { const n = new Date(); Object.assign(CAL, { y: n.getFullYear(), m: n.getMonth(), sel: tk, base: tk }); }
     const first = new Date(CAL.y, CAL.m, 1); const start = new Date(CAL.y, CAL.m, 1 - first.getDay());
     const cells = []; for (let i = 0; i < 42; i++) cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
     const monthOrders = state.orders.filter(o => { const d = toDate(o.orderDate); return d && d.getFullYear() === CAL.y && d.getMonth() === CAL.m; });
@@ -300,7 +307,12 @@ function recapCardHtml() {
           ${SHARE.bg === 'photo' && photo ? `<div class="recap-photo"><span class="small muted">Darken</span><input type="range" id="shDim" min="10" max="85" value="${SHARE.dim}"><button class="sm ghost" id="shPhotoNew">Change</button><button class="sm ghost" id="shPhotoDel">Remove</button></div>` : ''}</div></div>
         <div class="recap-row"><div class="lbl">Show</div><div class="chips sm">${[['money', 'Dollar amounts'], ['profit', 'Est. profit'], ['store', 'Top store'], ['items', 'Top items'], ['pics', 'Item pictures']].map(([k, l]) => `<button class="chip ${SHARE[k] ? 'on' : ''}" data-sh="${k}">${SHARE[k] ? '✓ ' : ''}${l}</button>`).join('')}</div></div>
         <div class="recap-row"><div class="lbl">Save as</div><div class="chips sm">${[['png', 'PNG'], ['jpg', 'JPG']].map(([k, l]) => `<button class="chip ${SHARE.fmt === k ? 'on' : ''}" data-fmt="${k}">${l}</button>`).join('')}<span class="small faint" style="align-self:center;margin-left:6px">1080 × 1350</span></div></div>
-        <div class="recap-row"><div class="lbl">Prices</div><div class="small muted recap-prices">${names.size ? `${pf.priced ? `<span class="pfmath">${pf.priced} of ${pf.units} items: worth <b>${fmtMoney(pf.value)}</b> at the TCGplayer median − what you paid <b>${fmtMoney(pf.cost)}</b> = <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> profit.</span>` : IV.busy || IV.queue.length ? `Matching items to TCGplayer… ${IV.done}/${IV.total}` : 'No items here could be matched to TCGplayer yet.'} <button class="linkbtn" id="shReview">Review prices</button>` : 'No item details in this range.'}</div></div>
+        <div class="recap-row"><div class="lbl">Profit</div><div class="small muted recap-prices">${names.size ? `${pf.priced || pf.pend.priced ? `<span class="pfmath">${pf.priced ? `Shipped &amp; delivered (${pf.priced} items): worth <b>${fmtMoney(pf.value)}</b> − paid <b>${fmtMoney(pf.cost)}</b> = <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b>.` : 'Nothing has shipped yet in this range.'}${pf.pend.priced ? ` Still pending (${plural(pf.pend.orders, 'order')}, incl. pre-orders): <b>${fmtSigned(pf.pend.profit)}</b> more if they ship — not counted.` : ''}</span>` : IV.busy || IV.queue.length ? `Matching items to TCGplayer… ${IV.done}/${IV.total}` : 'No items here could be matched to TCGplayer yet.'} <button class="linkbtn" id="shReview">Review prices</button>
+          <details class="pfhow"><summary>How is this worked out?</summary><ol>
+            <li>Only orders that <b>shipped or were delivered</b> count. Pending orders and pre-orders can still be cancelled, so they’re shown separately and left out.</li>
+            <li>Each product is matched to its TCGplayer listing and valued at the <b>lower</b> of TCGplayer’s market price (what it actually sold for recently) and its median listing price.</li>
+            <li>What you paid is the item price from your order email, with that order’s tax and shipping spread across its items.</li>
+            <li>Profit = value − what you paid. No selling fees or shipping are taken off. Items that can’t be matched (LEGO, consoles…) or have no price are left out of both sides.</li></ol></details>` : 'No item details in this range.'}</div></div>
         <div class="small faint recap-note">Never includes addresses, names, emails or card numbers. eBay’s sold prices aren’t available to apps like this, so values come from TCGplayer.</div>
       </div></div></div>`;
 }
@@ -534,7 +546,8 @@ PAGES.settings = {
     pg.innerHTML = `<div class="pagehead"><h1>Settings</h1></div>
       ${typeof installCardHtml === 'function' ? installCardHtml() : ''}
       ${CLOUD && typeof Account !== 'undefined' ? Account.card() : ''}
-      <div class="card" id="themeCard" style="margin-bottom:14px"><h3>Look</h3><div class="themes">${THEMES_UI.map(([k, l, d]) => `<button class="themeopt ${(S.theme || DEFAULT_THEME) === k ? 'on' : ''}" data-theme-pick="${k}"><span class="tswatch t-${k}"><i></i><i></i><i></i></span><span class="tname">${esc(l)}</span><span class="small faint">${esc(d)}</span></button>`).join('')}</div></div>
+      <div class="card" id="themeCard" style="margin-bottom:14px"><h3>Look</h3><div class="themes">${THEMES_UI.map(([k, l, d]) => `<button class="themeopt ${(S.theme || DEFAULT_THEME) === k ? 'on' : ''}" data-theme-pick="${k}"><span class="tswatch t-${k}"><i></i><i></i><i></i></span><span class="tname">${esc(l)}</span><span class="small faint">${esc(d)}</span></button>`).join('')}</div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="setBg3d" ${document.documentElement.classList.contains('bg3d') ? 'checked' : ''}> 3D background picture <span class="small faint">(this device)</span></label></div>
       <div class="cols2">
         <div class="card"><h3>Security</h3>
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
@@ -610,6 +623,7 @@ PAGES.settings = {
     });
     $$('#carrierCard [data-cdel]').forEach(b => b.onclick = () => { const c = Object.assign({}, S.carriers); delete c[b.dataset.cdel]; S.carriers = c; save(); PAGES.settings.render(); });
     $('#stTrackNow').onclick = () => refreshAllTracking();
+    $('#setBg3d').onchange = e => applyBg(e.target.checked);
     $$('[data-theme-pick]').forEach(b => b.onclick = () => { S.theme = applyTheme(b.dataset.themePick); save(); PAGES.settings.render(); });
     $('#alSave').onclick = async () => {
       const url = $('#alUrl').value.trim(); if (!url) { toast('Paste the webhook link from Discord'); return; }

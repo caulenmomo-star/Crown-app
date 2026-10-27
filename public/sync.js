@@ -189,6 +189,9 @@ function onUnlocked() {
   // one time: data made before auto-lock had a default gets 15 minutes (can be set back to Never in Settings)
   if (!state.settings.lockDefault) { if (!state.settings.autoLockMin) state.settings.autoLockMin = 15; state.settings.lockDefault = 1; save(); }
   if (state.syncVer !== 1) { if (!state.settings.autoSyncMin) state.settings.autoSyncMin = 5; state.syncVer = 1; save(); }
+  // catch up right away: email (which also refreshes carrier tracking) and then live tracking. Crown Tools can't read
+  // anything while it's locked, so waiting for the next scheduled sync left orders and arrival dates out of date.
+  setTimeout(() => { if (cryptoKey && SERVER && !syncing && !rereading && state.readerVer === READER_VER && state.imapAccounts.some(a => a.enabled !== false && Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); }, 1200);
   setTimeout(() => refreshStaleTracking(), 4000);
   setTimeout(() => { if (cryptoKey && typeof refreshPrices === 'function') refreshPrices(false, true); }, 9000);
   // keep TCGplayer median prices fresh on a 6-hour cycle while the app is open.

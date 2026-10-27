@@ -1,6 +1,15 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.11.0', date: '2026-10-26', title: 'Friendlier look', items: [
+    'New 3D background and big summary cards on Dashboard, Orders and Inventory.',
+    'Orders can show as picture cards with a progress bar and when they arrive.',
+    'Inventory shows picture cards with paid, worth and gain, plus quick + / − and Sell.',
+    'Account groups.',
+    'Profile health: only item-demand cancels count; pending orders count as went through.',
+    'Estimated profit counts only shipped and delivered orders, at the lower TCGplayer price.',
+    'Fixed: typing in search boxes no longer closes the phone keyboard; pages no longer slide sideways; the calendar stays up to date.',
+  ] },
   { v: '0.10.1', date: '2026-10-22', title: 'Resizable columns', items: [
     'Drag the edge of a column header to resize it in Profiles, Orders, Accounts and Cards — double-click to reset.',
     'Tables scroll sideways inside their own box, so the columns on the right are always reachable.',

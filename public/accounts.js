@@ -9,11 +9,21 @@ const ACC_STATUS = [
   { k: 'banned', l: 'Banned', c: 'var(--danger)' },
 ];
 const ACCS = Object.fromEntries(ACC_STATUS.map(s => [s.k, s]));
-const AF = { q: '', store: '', status: 'all', reveal: new Set() };
+const AF = { q: '', store: '', status: 'all', group: 'all', reveal: new Set() };
+// groups, e.g. "Target main", "Walmart farm", "Friends & family" — an account sits in one group (or none)
+const accGroupById = id => (state.accountGroups || []).find(g => g.id === id);
+function ensureAccGroup(name) {
+  name = String(name || '').trim(); if (!name) return '';
+  if (!state.accountGroups) state.accountGroups = [];
+  let g = state.accountGroups.find(x => x.name.toLowerCase() === name.toLowerCase());
+  if (!g) { g = { id: uid(), name, createdAt: Date.now(), updatedAt: Date.now() }; state.accountGroups.push(g); }
+  return g.id;
+}
+const accGroupOptions = sel => `<option value="">No group</option>${(state.accountGroups || []).map(g => `<option value="${g.id}" ${sel === g.id ? 'selected' : ''}>${esc(g.name)}</option>`).join('')}<option value="__new">+ New group…</option>`;
 let accSel = new Set();
 const accStoreLabel = a => a.store === 'custom' ? (a.storeName || 'Other') : Parser.storeInfo(a.store).label;
 const accStoreBadge = a => a.store === 'custom' ? `<span class="badge"><i style="background:var(--faint)"></i>${esc(a.storeName || 'Other')}</span>` : storeBadge(a.store);
-function newAccount(f) { return Object.assign({ id: uid(), store: 'target', storeName: '', email: '', password: '', phone: '', profileId: '', status: 'new', notes: '', createdAt: Date.now(), updatedAt: Date.now() }, f || {}); }
+function newAccount(f) { return Object.assign({ id: uid(), store: 'target', storeName: '', email: '', password: '', phone: '', profileId: '', groupId: '', status: 'new', notes: '', createdAt: Date.now(), updatedAt: Date.now() }, f || {}); }
 const accKey = a => (a.store === 'custom' ? 'c:' + norm(a.storeName) : a.store) + '|' + String(a.email || '').toLowerCase().trim();
 
 // Orders sent to this email at this store tell how the account is doing
@@ -46,9 +56,10 @@ function filteredAccounts() {
   return (state.accounts || []).filter(a => {
     if (AF.store && (a.store === 'custom' ? 'c:' + norm(a.storeName) : a.store) !== AF.store) return false;
     if (AF.status !== 'all' && a.status !== AF.status) return false;
+    if (AF.group === 'none' ? a.groupId && accGroupById(a.groupId) : AF.group !== 'all' && a.groupId !== AF.group) return false;
     if (!q) return true;
     const p = accProfile(a);
-    return [a.email, accStoreLabel(a), a.notes, a.phone, p && p.name].some(v => String(v || '').toLowerCase().includes(q));
+    return [a.email, accStoreLabel(a), a.notes, a.phone, p && p.name, (accGroupById(a.groupId) || {}).name].some(v => String(v || '').toLowerCase().includes(q));
   }).sort((x, y) => accStoreLabel(x).localeCompare(accStoreLabel(y)) || String(x.email).localeCompare(String(y.email)));
 }
 
@@ -67,21 +78,32 @@ PAGES.accounts = {
         <div class="kpi"><div class="l">Needs attention</div><div class="v">${cnt('needs')}</div><div class="d">verify, reset, 2FA</div></div>
         <div class="kpi"><div class="l">Locked or banned</div><div class="v ${cnt('locked') + cnt('banned') ? 'neg' : ''}">${cnt('locked') + cnt('banned')}</div><div class="d">${cnt('locked')} locked · ${cnt('banned')} banned</div></div>
         <div class="kpi"><div class="l">With orders</div><div class="v">${all.filter(a => accOrders(a).length).length}</div><div class="d">matched by email</div></div></div>` : ''}
+      <div class="split"><div class="catlist"><div id="agList">${(() => { const n = id => all.filter(a => id === 'none' ? !(a.groupId && accGroupById(a.groupId)) : a.groupId === id).length;
+          return `<div class="cat ${AF.group === 'all' ? 'active' : ''}" data-ag="all"><span>All accounts</span><span class="n">${all.length}</span></div>` + (state.accountGroups || []).map(g => `<div class="cat ${AF.group === g.id ? 'active' : ''}" data-ag="${g.id}"><span class="ellipsis">${esc(g.name)}</span><span class="n">${n(g.id)}</span><span class="act"><button data-agren="${g.id}">Rename</button><button data-agdel="${g.id}">✕</button></span></div>`).join('') + ((state.accountGroups || []).length && n('none') ? `<div class="cat ${AF.group === 'none' ? 'active' : ''}" data-ag="none"><span class="faint">No group</span><span class="n">${n('none')}</span></div>` : ''); })()}</div><button id="agAdd" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New group</button></div><div style="min-width:0">
       <div class="toolbar"><input class="search" data-search id="acQ" placeholder="Search email, store, profile, notes…  ( / )" value="${esc(AF.q)}">
         <select id="acStore"><option value="">All stores</option>${stores.map(([k, l]) => `<option value="${esc(k)}" ${AF.store === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
         <div class="chips" id="acStatus">${[['all', 'All']].concat(ACC_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${AF.status === k ? 'on' : ''}" data-as="${k}">${esc(l)}${k !== 'all' ? `<span class="n">${cnt(k)}</span>` : ''}</button>`).join('')}</div></div>
-      ${accSel.size ? `<div class="selbar"><strong>${accSel.size} selected</strong><select id="acSetStatus" style="width:auto"><option value="">Set status…</option>${ACC_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><button class="sm" id="acCopySel">Copy email:password</button><button class="sm danger" id="acDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="acClrSel">Clear</button></div>` : ''}
-      ${list.length ? `<div class="tablewrap"><table class="atable"><thead><tr><th class="cb"><input type="checkbox" id="acAll" ${list.every(a => accSel.has(a.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Store</th><th>Email / username</th><th>Password</th><th>Status</th><th>Profile</th><th class="right">Orders</th></tr></thead><tbody>
+      ${accSel.size ? `<div class="selbar"><strong>${accSel.size} selected</strong><select id="acSetStatus" style="width:auto"><option value="">Set status…</option>${ACC_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><select id="acMove" style="width:auto"><option value="">Move to group…</option>${accGroupOptions('').replace('<option value="">No group</option>', '<option value="-">No group</option>')}</select><button class="sm" id="acCopySel">Copy email:password</button><button class="sm danger" id="acDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="acClrSel">Clear</button></div>` : ''}
+      ${list.length ? `<div class="tablewrap"><table class="atable"><thead><tr><th class="cb"><input type="checkbox" id="acAll" ${list.every(a => accSel.has(a.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Store</th><th>Email / username</th><th>Password</th><th>Status</th><th>Group</th><th>Profile</th><th class="right">Orders</th></tr></thead><tbody>
         ${list.map(a => { const os = accOrders(a), st = ACCS[a.status] || ACCS.new, p = accProfile(a), shown = AF.reveal.has(a.id); const t = tally(os);
           return `<tr data-acc="${a.id}" class="${accSel.has(a.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-acb="${a.id}" ${accSel.has(a.id) ? 'checked' : ''} aria-label="Select"></td>
           <td class="a-store">${accStoreBadge(a)}</td>
           <td class="a-email"><div class="cellflex"><span class="ellipsis">${esc(a.email) || '<span class="faint">—</span>'}</span>${a.email ? `<button class="ghost sm icopy" data-copy="email" data-id="${a.id}" title="Copy email" aria-label="Copy email">⧉</button>` : ''}</div></td>
           <td class="a-pw"><div class="cellflex"><span class="mono pw">${a.password ? (shown ? esc(a.password) : '••••••••••') : '<span class="faint">—</span>'}</span>${a.password ? `<button class="ghost sm icopy" data-reveal="${a.id}" title="${shown ? 'Hide' : 'Show'} password" aria-label="${shown ? 'Hide' : 'Show'} password">${shown ? 'Hide' : 'Show'}</button><button class="ghost sm icopy" data-copy="pw" data-id="${a.id}" title="Copy password" aria-label="Copy password">⧉</button>` : ''}</div></td>
           <td class="a-st"><span class="hpill"><i style="background:${st.c}"></i>${esc(st.l)}</span></td>
+          <td class="a-grp">${accGroupById(a.groupId) ? `<span class="tag">${esc(accGroupById(a.groupId).name)}</span>` : '<span class="faint">—</span>'}</td>
           <td class="a-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
           <td class="right a-n">${os.length ? `${os.length}<span class="small faint"> · ${t.stuck}✓ ${t.dead}✕</span>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
-        : `<div class="empty">${all.length ? 'No accounts match.' : 'No accounts yet. Save every store login here — email, password, which profile it goes with and whether it still works. <b>Import</b> takes email:password lists or a spreadsheet.'}</div>`}`;
-    $('#acAdd').onclick = () => openAccount(null);
+        : `<div class="empty">${all.length ? 'No accounts match.' : 'No accounts yet. Save every store login here — email, password, which profile it goes with and whether it still works. <b>Import</b> takes email:password lists or a spreadsheet. Make groups like “Target main” to keep them sorted.'}</div>`}</div></div>`;
+    $('#acAdd').onclick = () => openAccount(null, AF.group !== 'all' && AF.group !== 'none' ? { groupId: AF.group } : null);
+    $('#agAdd').onclick = async () => { const n = await askText('New account group', '', { placeholder: 'Target main, Walmart farm…', ok: 'Add group' }); if (n && n.trim()) { snapshot('add account group'); AF.group = ensureAccGroup(n); save(); PAGES.accounts.render(); } };
+    $('#agList').onclick = async e => {
+      const ren = e.target.dataset.agren, del = e.target.dataset.agdel;
+      if (ren) { const g = accGroupById(ren); const n = await askText('Rename group', g.name); if (n && n.trim()) { snapshot('rename account group'); g.name = n.trim(); g.updatedAt = Date.now(); save(); PAGES.accounts.render(); } return; }
+      if (del) { const g = accGroupById(del); if (!await ask(`Delete group “${g.name}”?\n\nIts accounts stay — they just won’t be in a group.`)) return; snapshot('delete account group'); state.accountGroups = state.accountGroups.filter(x => x.id !== del); state.accounts.forEach(a => { if (a.groupId === del) { a.groupId = ''; a.updatedAt = Date.now(); } }); if (AF.group === del) AF.group = 'all'; save(); PAGES.accounts.render(); toast('Group deleted', { undo: true }); return; }
+      const row = e.target.closest('[data-ag]'); if (row) { AF.group = row.dataset.ag; accSel.clear(); PAGES.accounts.render(); }
+    };
+    if ($('#acMove')) $('#acMove').onchange = async e => { let v = e.target.value; if (!v) return; if (v === '__new') { const n = await askText('New account group', '', { ok: 'Add group' }); if (!n || !n.trim()) { e.target.value = ''; return; } v = ensureAccGroup(n); } snapshot('move accounts'); const gid = v === '-' ? '' : v; state.accounts.forEach(a => { if (accSel.has(a.id)) { a.groupId = gid; a.updatedAt = Date.now(); } }); save(); toast(`Moved ${plural(accSel.size, 'account')}${gid ? ' to ' + accGroupById(gid).name : ' out of their group'}`, { undo: true }); PAGES.accounts.render(); };
     $('#acImp').onclick = openAccImport;
     $('#acExp').onclick = () => openAccExport();
     $('#acQ').oninput = debounce(e => { AF.q = e.target.value; PAGES.accounts.render(); const i = $('#acQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 160);
@@ -118,6 +140,7 @@ function readAccount() {
   curAcc.store = $('#aStore').value; curAcc.storeName = $('#aStoreName') ? $('#aStoreName').value.trim() : curAcc.storeName;
   curAcc.email = $('#aEmail').value.trim(); curAcc.password = $('#aPw').value; curAcc.phone = $('#aPhone').value.trim();
   curAcc.profileId = $('#aProf').value; curAcc.status = $('#aStatus').value; curAcc.notes = $('#aNotes').value;
+  if ($('#aGroup') && $('#aGroup').value !== '__new') curAcc.groupId = $('#aGroup').value;
 }
 function renderAccount() {
   const a = curAcc; const os = accIsNew ? [] : accOrders(a).sort((x, y) => String(y.orderDate).localeCompare(String(x.orderDate)));
@@ -130,11 +153,13 @@ function renderAccount() {
       <div class="s2"><label>Password</label><div class="hstack" style="gap:6px"><input id="aPw" type="password" value="${esc(a.password)}" autocomplete="new-password" spellcheck="false" style="flex:1;min-width:0"><button class="sm" id="aPwShow">Show</button><button class="sm" id="aPwCopy">Copy</button><button class="sm" id="aPwGen" title="Make a strong password">Generate</button></div></div>
       <div class="s2"><label>Phone on the account</label><input id="aPhone" value="${esc(a.phone)}" inputmode="tel" autocomplete="off"></div>
       <div class="s2"><label>Status</label><select id="aStatus">${ACC_STATUS.map(s => `<option value="${s.k}" ${a.status === s.k ? 'selected' : ''}>${s.l}</option>`).join('')}</select></div>
+      <div class="s2"><label>Group</label><select id="aGroup">${accGroupOptions(a.groupId)}</select></div>
       <div class="s2"><label>Profile</label><select id="aProf"><option value="">— None —</option>${state.profiles.slice().sort((x, y) => String(x.name).localeCompare(String(y.name), undefined, { numeric: true })).map(p => `<option value="${p.id}" ${a.profileId === p.id ? 'selected' : ''}>${esc(p.name || 'Untitled')}</option>`).join('')}</select>${!a.profileId && sp ? `<div class="small faint" style="margin-top:3px">“${esc(sp.name)}” uses this email — <button class="linkbtn" id="aUseSug">link it</button></div>` : ''}</div>
       <div class="s4"><label>Notes</label><textarea id="aNotes" style="min-height:60px;font-family:inherit;font-size:13px" placeholder="Security answers, 2FA app, when it was made…">${esc(a.notes)}</textarea></div></div>
     ${os.length ? `<div class="section">Orders sent to this email at ${esc(accStoreLabel(a))}</div>${(() => { const si = stickInfo(os); return `<div class="small muted" style="margin-bottom:6px">${si.stuck} stuck · ${si.dead} cancelled${si.pending ? ' · ' + si.pending + ' pending' : ''}${si.rate != null ? ' · ' + si.rate + '% stick rate' : ''}</div>`; })()}${orderMiniList(os.slice(0, 12))}` : ''}`;
   $('#acctDelete').hidden = accIsNew;
   $('#aStore').onchange = () => { readAccount(); renderAccount(); };
+  $('#aGroup').onchange = async e => { if (e.target.value !== '__new') return; const n = await askText('New account group', '', { ok: 'Add group' }); readAccount(); if (n && n.trim()) curAcc.groupId = ensureAccGroup(n); renderAccount(); };
   $('#aPwShow').onclick = e => { const i = $('#aPw'); i.type = i.type === 'password' ? 'text' : 'password'; e.target.textContent = i.type === 'password' ? 'Show' : 'Hide'; };
   $('#aPwCopy').onclick = () => copyText($('#aPw').value, 'Password');
   $('#aPwGen').onclick = () => { const i = $('#aPw'); i.value = strongPassword(); i.type = 'text'; };
@@ -156,7 +181,7 @@ function wireAccDlg() {
 }
 
 /* ---------- import: email:password lists or spreadsheets ---------- */
-const ACC_COLS = { email: ['email', 'username', 'login', 'user', 'accountemail', 'emailaddress'], password: ['password', 'pass', 'pw', 'pwd', 'accountpassword'], store: ['store', 'site', 'retailer', 'website', 'shop'], phone: ['phone', 'phonenumber', 'mobile'], profile: ['profile', 'profilename'], status: ['status', 'state'], notes: ['notes', 'note', 'comment', 'comments'] };
+const ACC_COLS = { email: ['email', 'username', 'login', 'user', 'accountemail', 'emailaddress'], password: ['password', 'pass', 'pw', 'pwd', 'accountpassword'], store: ['store', 'site', 'retailer', 'website', 'shop'], phone: ['phone', 'phonenumber', 'mobile'], profile: ['profile', 'profilename'], status: ['status', 'state'], group: ['group', 'groupname', 'folder', 'category'], notes: ['notes', 'note', 'comment', 'comments'] };
 const ACC_MAP = {}; for (const [k, arr] of Object.entries(ACC_COLS)) arr.forEach(a => ACC_MAP[a] = k);
 function parseAccountsText(text, defStore) {
   const t = String(text || '').replace(/^﻿/, '').trim(); if (!t) return [];
@@ -184,7 +209,7 @@ function parseAccountsText(text, defStore) {
     const sk = v.store ? (Parser.STORES.find(s => s.key === norm(v.store) || norm(s.label) === norm(v.store)) || {}).key : '';
     const st = v.status ? (ACC_STATUS.find(s => norm(s.l) === norm(v.status) || s.k === norm(v.status)) || (/ban/i.test(v.status) ? ACCS.banned : /lock/i.test(v.status) ? ACCS.locked : /work|good|active|ok/i.test(v.status) ? ACCS.active : null)) : null;
     const p = v.profile ? state.profiles.find(x => String(x.name || '').trim().toLowerCase() === v.profile.trim().toLowerCase()) : null;
-    return newAccount({ store: sk || (v.store ? 'custom' : defStore), storeName: sk ? '' : (v.store || ''), email: v.email, password: v.password || '', phone: v.phone || '', status: st ? st.k : 'new', notes: v.notes || '', profileId: p ? p.id : '' });
+    return newAccount({ store: sk || (v.store ? 'custom' : defStore), storeName: sk ? '' : (v.store || ''), email: v.email, password: v.password || '', phone: v.phone || '', status: st ? st.k : 'new', notes: v.notes || '', profileId: p ? p.id : '', groupName: v.group || '' });
   });
 }
 let accImp = [];
@@ -206,9 +231,10 @@ function wireAccImport() {
     if (!accImp.length) return; snapshot('import accounts');
     const byKey = new Map(state.accounts.map(a => [accKey(a), a])); let added = 0, updated = 0;
     for (const a of accImp) {
+      if (a.groupName) a.groupId = ensureAccGroup(a.groupName); delete a.groupName;
       const ex = byKey.get(accKey(a));
-      if (ex) { if (a.password) ex.password = a.password; if (a.phone) ex.phone = a.phone; if (a.notes) ex.notes = [ex.notes, a.notes].filter(Boolean).join('\n'); if (a.profileId && !ex.profileId) ex.profileId = a.profileId; if (a.status !== 'new') ex.status = a.status; ex.updatedAt = Date.now(); updated++; }
-      else { state.accounts.push(a); byKey.set(accKey(a), a); added++; }
+      if (ex) { if (a.password) ex.password = a.password; if (a.phone) ex.phone = a.phone; if (a.notes) ex.notes = [ex.notes, a.notes].filter(Boolean).join('\n'); if (a.profileId && !ex.profileId) ex.profileId = a.profileId; if (a.groupId) ex.groupId = a.groupId; if (a.status !== 'new') ex.status = a.status; ex.updatedAt = Date.now(); updated++; }
+      else { if (!a.groupId && AF.group !== 'all' && AF.group !== 'none' && accGroupById(AF.group)) a.groupId = AF.group; state.accounts.push(a); byKey.set(accKey(a), a); added++; }
     }
     state.settings.lastAccStore = $('#aiStore').value;
     save(); closeDlg('dlgAccImport'); refresh(); toast(`Imported: ${added} new${updated ? `, ${updated} updated` : ''}`, { undo: true });
@@ -219,7 +245,7 @@ function wireAccImport() {
 function openAccExport() {
   const list = accSel.size ? state.accounts.filter(a => accSel.has(a.id)) : filteredAccounts();
   $('#aeCount').textContent = `${plural(list.length, 'account')}${accSel.size ? ' selected' : AF.store || AF.status !== 'all' || AF.q ? ' shown' : ''}`;
-  $('#aeCsv').onclick = () => { download(`crown-tools-accounts-${stamp()}.csv`, toCSV(['store', 'email', 'password', 'phone', 'status', 'profile', 'notes'], list.map(a => ({ store: accStoreLabel(a), email: a.email, password: a.password, phone: a.phone, status: (ACCS[a.status] || ACCS.new).l, profile: (accProfile(a) || {}).name || '', notes: a.notes }))), 'text/csv'); closeDlg('dlgAccExport'); };
+  $('#aeCsv').onclick = () => { download(`crown-tools-accounts-${stamp()}.csv`, toCSV(['store', 'email', 'password', 'phone', 'status', 'group', 'profile', 'notes'], list.map(a => ({ store: accStoreLabel(a), group: (accGroupById(a.groupId) || {}).name || '', email: a.email, password: a.password, phone: a.phone, status: (ACCS[a.status] || ACCS.new).l, profile: (accProfile(a) || {}).name || '', notes: a.notes }))), 'text/csv'); closeDlg('dlgAccExport'); };
   $('#aeTxt').onclick = () => { download(`crown-tools-accounts-${stamp()}.txt`, list.map(a => `${a.email}:${a.password}`).join('\n') + '\n', 'text/plain'); closeDlg('dlgAccExport'); };
   $('#aeCopy').onclick = () => { copyText(list.map(a => `${a.email}:${a.password}`).join('\n'), plural(list.length, 'login')); closeDlg('dlgAccExport'); };
   openDlg('dlgAccExport');

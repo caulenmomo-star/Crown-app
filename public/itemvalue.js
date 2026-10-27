@@ -21,11 +21,14 @@ function linkFor(name) {
   if (inv) return { id: k, pid: inv.market.id, cat: inv.market.cat, group: inv.market.group, pname: inv.market.name, set: inv.market.setName, image: inv.market.image, prices: inv.market.prices, sub: inv.market.sub, by: 'inventory' };
   return ivIndex().get(k) || null;
 }
-// profit is simply the TCGplayer median minus what you paid (no selling fees or shipping)
-function sellCfg() { return { basis: 'mid' }; }
+// The price an item is valued at: the lower of TCGplayer's market price (what it actually sold for recently) and its
+// median listing (the middle asking price). Asking prices for hyped sets and pre-orders run well above real sales.
+function sellCfg() { return { basis: 'low' }; }
 function ivPrice(l, basis) {
   if (!l || l.none || !l.prices) return null; const p = l.prices[l.sub] || l.prices.Normal || Object.values(l.prices)[0] || {};
-  const v = (basis || sellCfg().basis) === 'market' ? (p.market ?? p.mid ?? p.low) : (p.mid ?? p.market ?? p.low); return v == null ? null : Number(v);
+  const b = basis || 'low', m = p.market != null ? Number(p.market) : null, d = p.mid != null ? Number(p.mid) : null;
+  const v = b === 'mid' ? (d ?? m ?? p.low) : b === 'market' ? (m ?? d ?? p.low) : (m != null && d != null ? Math.min(m, d) : (m ?? d ?? p.low));
+  return v == null ? null : Number(v);
 }
 function putLink(rec) {
   state.itemLinks = state.itemLinks || [];
@@ -65,7 +68,7 @@ async function matchItem(name) {
   }
   if (!best) return putLink({ id, name, none: true, why: 'No match on TCGplayer', tried: Date.now(), by: 'auto' });
   const x = best.x, subs = Object.keys(x.prices || {});
-  return putLink({ id, name, none: false, pid: x.id, cat: x.cat, group: x.group, pname: x.name, set: x.setName, image: x.image, url: x.url, prices: x.prices, sub: subs.includes('Normal') ? 'Normal' : subs[0] || '', at: Date.now(), tried: Date.now(), by: 'auto', score: Math.round(best.sc * 100) / 100 });
+  return putLink({ id, name, none: false, pid: x.id, cat: x.cat, group: x.group, pname: x.name, set: x.setName, image: x.image, url: x.url, prices: x.prices, setDate: x.setDate || '', sub: subs.includes('Normal') ? 'Normal' : subs[0] || '', at: Date.now(), tried: Date.now(), by: 'auto', score: Math.round(best.sc * 100) / 100 });
 }
 // match every product in these orders that hasn't been tried in the last 3 days (in the background, two at a time)
 function ensureLinks(orders) {
@@ -114,9 +117,11 @@ function productCosts(orders) {
   }
   return m;
 }
-// Estimated profit: what the items are worth at the TCGplayer median minus what you paid for them.
-function profitOf(orders) {
-  const t = { value: 0, cost: 0, profit: 0, units: 0, priced: 0, unpriced: 0, pending: 0 };
+// Estimated profit, counting only orders that are secured (shipped, out for delivery, ready or delivered): what those
+// items are worth at TCGplayer minus what you paid. Pending orders (including pre-orders) are worked out the same way
+// but kept separate in .pend - most can still be cancelled.
+function profitPart(orders) {
+  const t = { value: 0, cost: 0, profit: 0, units: 0, priced: 0, unpriced: 0, pending: 0, orders: orders.length };
   for (const g of productCosts(orders).values()) {
     t.units += g.qty;
     const l = linkFor(g.name), v = ivPrice(l);
@@ -126,6 +131,11 @@ function profitOf(orders) {
   }
   t.profit = t.value - t.cost;
   return t;
+}
+function profitOf(orders) {
+  const sec = profitPart(orders.filter(o => !isDead(o) && isStuck(o)));
+  sec.pend = profitPart(orders.filter(o => !isDead(o) && !isStuck(o)));
+  return sec;
 }
 
 /* ---------- pictures for the canvas (fetched through Crown Tools so the card can still be saved) ---------- */
@@ -151,7 +161,7 @@ function openPriceReview(orders) {
 }
 function renderPriceReview() {
   const names = ivReview.names || [];
-  $('#prBody').innerHTML = `<div class="small muted" style="margin-bottom:10px">Each product is matched to TCGplayer and valued at the TCGplayer median. Profit is that price minus what you paid. Biggest first — fix a wrong match by searching for the right product, or mark it as not on TCGplayer.</div>
+  $('#prBody').innerHTML = `<div class="small muted" style="margin-bottom:10px">Each product is matched to TCGplayer and valued at the lower of its market price (recent sales) and median listing. Profit is that minus what you paid. Biggest first — fix a wrong match by searching for the right product, or mark it as not on TCGplayer.</div>
     <div class="list">${names.map(([n, q]) => { const l = linkFor(n), v = ivPrice(l), k = ivKey(n); const res = ivReview.res[k];
       return `<div class="li prrow"><div class="mmain"><div class="t2 ellipsis">${esc(n)}</div>
         <div class="small ${l && !l.none ? 'muted' : 'faint'} ellipsis">${l && !l.none ? `→ ${esc(l.pname)}${l.set ? ' · ' + esc(l.set) : ''}${l.by === 'inventory' ? ' · from Inventory' : l.by === 'you' ? ' · set by you' : ''}` : l ? esc(l.why || 'Not priced') : 'Matching…'}</div>

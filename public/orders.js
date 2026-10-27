@@ -400,6 +400,30 @@ document.addEventListener('click', e => { const r = e.target.closest('[data-orde
 /* ================= orders page ================= */
 const OF = { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', sort: 'date', dir: -1, page: 0 };
 let oSelected = new Set(), oSelMode = false;
+// Cards (pictures, progress bar) or Table — your pick is remembered on this device; phones start on cards
+const oView = () => { try { const v = localStorage.getItem('crown.oview'); if (v === 'cards' || v === 'table') return v; } catch (_) { } return isCompact() ? 'cards' : 'table'; };
+// where an order is, in words: "In transit · Arrives tomorrow"
+function orderWhen(o) {
+  const tk = todayKey(), rel = k => { const r = relDay(k); return /^(today|tomorrow|yesterday)$/i.test(r) ? r.toLowerCase() : fmtDate(k, { weekday: true }); };
+  if (o.status === 'delivered') { const d = o.deliveredAt ? dayKey(toDate(o.deliveredAt)) : o.eta; return { cls: 's-delivered', step: 4, t: 'Delivered' + (d ? ' · ' + rel(d) : '') }; }
+  if (isDead(o)) { const c = o.status === 'cancelled' && typeof cancelInfo === 'function' ? cancelInfo(o) : null; return { cls: 's-dead', step: 0, t: STATUS[o.status].l + (c && c.kind !== 'flag' ? ' · ' + (c.kind === 'limit' ? 'quantity limit' : 'item demand') : '') }; }
+  const late = o.eta && o.eta < tk;
+  if (o.status === 'out') return { cls: 's-transit', step: 3, t: 'Out for delivery · arrives today' };
+  if (o.status === 'ready') return { cls: 's-transit', step: 3, t: 'Ready for pickup' };
+  if (o.status === 'shipped') return late ? { cls: 's-late', step: 3, t: 'Running late · was due ' + rel(o.eta) } : { cls: 's-transit', step: 3, t: 'In transit' + (o.eta ? ' · arrives ' + rel(o.eta) : '') };
+  return { cls: 's-confirmed', step: 1, t: (o.status === 'confirmed' ? 'Confirmed' : 'Placed') + (o.eta && !late ? ' · arrives ' + rel(o.eta) : ' · waiting to ship') };
+}
+function orderCardHtml(o) {
+  const w = orderWhen(o), img = orderImage(o), n = itemCount(o), tot = orderSpend(o) || Number(o.total) || 0, h = houseById(o.houseId), p = profileById(o.profileId);
+  const first = (o.items || [])[0], each = n === 1 && first && first.price != null ? null : (o.items || []).length === 1 && first && first.price != null ? Number(first.price) : null;
+  const steps = ['Ordered', 'Shipped', 'In transit', 'Delivered'];
+  return `<div class="ocard ${oSelected.has(o.id) ? 'sel' : ''}" data-oid="${o.id}"><span class="ocheck"></span>
+    <div class="otop"><div class="opic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div>
+      <div class="omain"><div class="otitle">${esc(shortTitle(o)) || 'Order #' + esc(o.orderNumber || '—')}</div><div class="ometa">${storeBadge(o.store)}<span class="mono">#${esc(o.orderNumber || '—')}</span><span>· ${esc(fmtDate(o.orderDate))}</span></div></div></div>
+    <span class="ostat ${w.cls}"><i style="background:${(STATUS[o.status] || STATUS.placed).c}"></i>${esc(w.t)}</span>
+    ${isDead(o) ? '' : `<div class="oprog ${w.step === 4 ? 'done' : ''}">${steps.map((_, i) => `<i class="${i < w.step ? 'on' : ''}"></i>`).join('')}</div><div class="osteps">${steps.map((t, i) => `<span class="${i < w.step ? 'on' : ''}">${t}</span>`).join('')}</div>`}
+    <div class="ofoot"><span class="oprice">${fmtMoney(tot)}</span><span class="ounit">${plural(n, 'unit')}${each != null ? ' · ' + fmtMoney(each) + ' ea' : n > 1 && tot ? ' · ' + fmtMoney(tot / n) + ' avg' : ''}</span><span class="owhere" title="${esc([h && houseLabel(h), p && p.name].filter(Boolean).join(' · '))}">${h ? '⌂ ' + esc(houseLabel(h)) : p ? esc(p.name || '') : ''}</span></div></div>`;
+}
 // The sidebar always opens the full, unfiltered list; filters only stick when you set them on the page itself.
 function resetPageFilters(page) {
   if (page === 'orders') { Object.assign(OF, { q: '', status: 'all', store: '', profile: '', house: '', range: 'all', page: 0 }); oSelected.clear(); }
@@ -462,13 +486,15 @@ PAGES.orders = {
     pg.innerHTML = `<div class="pagehead"><h1>Orders</h1><span class="sub">${plural(list.length, 'order')} · ${fmtMoney(sum(list, orderSpend))} spent</span><div class="spacer"></div>
       ${(() => { const n = suggestedDuplicates().length + state.orders.filter(isSuspicious).length; return n ? `<button id="oClean" style="border-color:var(--warnLine);color:var(--warnText)">Clean up (${n})</button>` : ''; })()}
       <button id="oBot">Paste bot checkout</button><button id="oImp">Import</button><button id="oExp">Export</button>${trackingReady() ? '<button id="oTrack">Refresh tracking</button>' : ''}${state.orders.length ? '<button class="danger" id="oClearAll">Clear all orders</button>' : ''}<button class="primary" id="oAdd">+ Add order</button></div>
+      ${(() => { const live = list.filter(o => !isDead(o)), si = stickInfo(list), arriving = live.filter(o => !['delivered'].includes(o.status) && o.eta && o.eta >= todayKey()).length; return list.length ? `<div class="hero ohero"><div class="hero-l">Spent${OF.range !== 'all' ? ' · ' + esc((RANGE_OPTS.find(r => r[0] === OF.range) || [, ''])[1].toLowerCase()) : ''}</div><div class="hero-v">${fmtMoney(sum(list, orderSpend))}</div><div class="hero-s">${plural(list.length, 'order')}${activeFilterText().length ? ' matching your filters' : ''}</div>
+        <div class="hero-tiles"><div class="htile"><span>Units</span><b>${sum(live, itemCount)}</b><i>${plural(live.length, 'live order')}</i></div><div class="htile"><span>Went through</span><b>${si.rate == null ? '—' : si.rate + '%'}</b><i>${si.stuck} shipped${si.pending ? ' · ' + si.pending + ' pending' : ''}</i></div><div class="htile"><span>Arriving</span><b>${arriving}</b><i>${list.filter(o => o.status === 'delivered').length} delivered</i></div><div class="htile"><span>Cancelled</span><b>${si.dead}</b><i>${list.length ? Math.round(si.dead / list.length * 100) : 0}% of orders</i></div></div></div>` : ''; })()}
       <div class="toolbar"><div class="searchrow"><input class="search" data-search id="oQ" placeholder="Search order #, item, name, address, tracking…  ( / )" value="${esc(OF.q)}"><button class="phoneonly" id="oSelMode">${oSelMode || oSelected.size ? 'Done' : 'Select'}</button></div>
-        <div class="chips">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
+        <div class="pills" id="oRange">${[['today', 'Today'], ['7', '7D'], ['30', '30D'], ['90', '90D'], ['month', 'This month'], ['lastmonth', 'Last month'], ['year', 'This year'], ['all', 'All time']].map(([v, l]) => `<button class="chip ${OF.range === v ? 'on' : ''}" data-rg="${v}">${l}</button>`).join('')}</div>
+        <div class="chips" id="oStatusTabs">${STATUS_TABS.map(([k, l]) => `<button class="chip ${OF.status === k ? 'on' : ''}" data-st="${k}">${l}<span class="n">${base.filter(o => statusTabMatch(o, k)).length}</span></button>`).join('')}</div></div>
       <div class="toolbar">
         <select id="oStore"><option value="">All stores</option>${stores.map(s => `<option value="${esc(s)}" ${OF.store === s ? 'selected' : ''}>${esc(Parser.storeInfo(s).label)}</option>`).join('')}</select>
         <select id="oProf"><option value="">All profiles</option><option value="__none" ${OF.profile === '__none' ? 'selected' : ''}>Not linked (${unlinked})</option>${state.profiles.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })).map(p => `<option value="${p.id}" ${OF.profile === p.id ? 'selected' : ''}>${esc(p.name || 'Untitled')}</option>`).join('')}</select>
         <select id="oHouse"><option value="">All houses</option><option value="__none" ${OF.house === '__none' ? 'selected' : ''}>No address</option>${usedHouses.map(h => `<option value="${h.id}" ${OF.house === h.id ? 'selected' : ''}>${esc(houseLabel(h))}</option>`).join('')}</select>
-        <select id="oRange">${RANGE_OPTS.map(([v, l]) => `<option value="${v}" ${OF.range === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
         ${OF.q || OF.store || OF.profile || OF.house || OF.range !== 'all' || OF.status !== 'all' ? '<button class="ghost sm" id="oReset">Reset filters</button>' : ''}
       </div>
       ${activeFilterText().length ? `<div class="note warn" style="margin:0 0 10px;display:flex;align-items:center;gap:10px"><span style="flex:1">Showing only: <b>${esc(activeFilterText().join(' · '))}</b> — ${list.length} of ${state.orders.length} orders</span><button class="sm" id="oReset2">Show all orders</button></div>` : ''}
@@ -476,7 +502,10 @@ PAGES.orders = {
         <select id="oSetStatus"><option value="">Set status…</option>${STATUSES.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select>
         <select id="oSetProf"><option value="">Link to profile…</option><option value="__auto">Auto-match again</option><option value="__none">Unlink</option>${state.profiles.map(p => `<option value="${p.id}">${esc(p.name || 'Untitled')}</option>`).join('')}</select>
         <button class="sm danger" id="oDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="oClear">Clear selection</button></div>
-      <div class="tablewrap ${oSelMode || oSelected.size ? 'selmode' : ''}"><table class="otable"><thead><tr><th class="cb"><input type="checkbox" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th class="c-trk">Tracking</th></tr></thead>
+      <div class="hstack" style="margin:0 0 10px;justify-content:space-between"><div class="seg" id="oView"><button data-ov="cards" class="${oView() === 'cards' ? 'on' : ''}">Cards</button><button data-ov="table" class="${oView() === 'table' ? 'on' : ''}">Table</button><button data-ov="calendar">Calendar</button><button data-ov="houses">Houses</button></div>
+        <select id="oSort" style="width:auto">${[['date', 'Newest first'], ['eta', 'Arriving soonest'], ['total', 'Biggest total'], ['status', 'Status'], ['store', 'Store']].map(([k, l]) => `<option value="${k}" ${OF.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+      ${oView() === 'cards' ? `<div class="olist ${oSelMode || oSelected.size ? 'selmode' : ''}">${shown.map(orderCardHtml).join('')}</div>${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown Tools will pull them in automatically, or add / import / paste them here.'}</div>`}` : ''}
+      <div class="tablewrap ${oSelMode || oSelected.size ? 'selmode' : ''}" ${oView() === 'cards' ? 'hidden' : ''}><table class="otable"><thead><tr><th class="cb"><input type="checkbox" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th class="c-trk">Tracking</th></tr></thead>
       <tbody>${shown.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return `<tr data-oid="${o.id}" class="${oSelected.has(o.id) ? 'sel' : ''}">
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
         <td class="c-date">${fmtDate(o.orderDate)}</td><td class="c-store">${storeBadge(o.store)}<div class="mono small faint c-no2">${esc(o.orderNumber || '')}</div></td><td class="mono small c-no">${esc(o.orderNumber || '—')}</td>
@@ -490,16 +519,19 @@ PAGES.orders = {
       ${pages > 1 ? `<div class="pager">Page ${OF.page + 1} of ${pages}<button class="sm" id="oPrev" ${OF.page ? '' : 'disabled'}>‹ Prev</button><button class="sm" id="oNext" ${OF.page < pages - 1 ? '' : 'disabled'}>Next ›</button></div>` : ''}`;
     const rr = () => PAGES.orders.render();
     $('#oQ').oninput = debounce(e => { OF.q = e.target.value; OF.page = 0; rr(); setTimeout(() => { const i = $('#oQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 160);
-    pg.querySelector('.chips').onclick = e => { const b = e.target.closest('[data-st]'); if (b) { OF.status = b.dataset.st; OF.page = 0; rr(); } };
+    $('#oRange').onclick = e => { const b = e.target.closest('[data-rg]'); if (b) { OF.range = b.dataset.rg; OF.page = 0; rr(); } };
+    $('#oStatusTabs').onclick = e => { const b = e.target.closest('[data-st]'); if (b) { OF.status = b.dataset.st; OF.page = 0; rr(); } };
     $('#oStore').onchange = e => { OF.store = e.target.value; OF.page = 0; rr(); };
     $('#oProf').onchange = e => { OF.profile = e.target.value; OF.page = 0; rr(); };
     $('#oHouse').onchange = e => { OF.house = e.target.value; OF.page = 0; rr(); };
-    $('#oRange').onchange = e => { OF.range = e.target.value; OF.page = 0; rr(); };
     if ($('#oReset')) $('#oReset').onclick = () => { resetPageFilters('orders'); rr(); };
     if ($('#oReset2')) $('#oReset2').onclick = () => { resetPageFilters('orders'); rr(); };
     if ($('#oPrev')) $('#oPrev').onclick = () => { OF.page--; rr(); };
     if ($('#oNext')) $('#oNext').onclick = () => { OF.page++; rr(); };
     $$('#pg-orders th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (OF.sort === k) OF.dir *= -1; else { OF.sort = k; OF.dir = ['date', 'total', 'eta', 'status'].includes(k) ? -1 : 1; } rr(); });
+    $('#oView').onclick = e => { const b = e.target.closest('[data-ov]'); if (!b) return; const v = b.dataset.ov; if (v === 'calendar' || v === 'houses') { go(v); return; } try { localStorage.setItem('crown.oview', v); } catch (_) { } rr(); };
+    $('#oSort').onchange = e => { OF.sort = e.target.value; OF.dir = e.target.value === 'eta' ? 1 : ['store'].includes(e.target.value) ? 1 : -1; rr(); };
+    if (pg.querySelector('.olist')) pg.querySelector('.olist').onclick = e => { if (e.target.closest('a')) return; const c = e.target.closest('.ocard'); if (!c) return; const id = c.dataset.oid; if (oSelMode || oSelected.size) { oSelected.has(id) ? oSelected.delete(id) : oSelected.add(id); rr(); return; } openOrder(id); };
     $('#oAll').onchange = e => { shown.forEach(o => e.target.checked ? oSelected.add(o.id) : oSelected.delete(o.id)); rr(); };
     pg.querySelector('tbody').onclick = e => { const cb = e.target.dataset.ocb; if (cb) { e.target.checked ? oSelected.add(cb) : oSelected.delete(cb); rr(); return; } if (e.target.closest('a')) return; const tr = e.target.closest('tr'); if (!tr) return; if ((oSelMode || oSelected.size) && isCompact()) { const id = tr.dataset.oid; oSelected.has(id) ? oSelected.delete(id) : oSelected.add(id); rr(); return; } openOrder(tr.dataset.oid); };
     if ($('#oClear')) $('#oClear').onclick = () => { oSelected.clear(); rr(); };

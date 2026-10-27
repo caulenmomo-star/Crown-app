@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.10.1'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.11.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -19,6 +19,9 @@ function applyTheme(t) {
 }
 applyTheme((() => { try { return localStorage.getItem('crown.theme') || DEFAULT_THEME; } catch (_) { return DEFAULT_THEME; } })());
 if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { let t; try { t = localStorage.getItem('crown.theme'); } catch (_) { } if (t === 'auto') applyTheme('auto'); });
+// the 3D background picture behind everything (on unless you switch it off in Settings → Look; kept per device)
+function applyBg(on) { document.documentElement.classList.toggle('bg3d', on !== false); try { localStorage.setItem('crown.bg3d', on === false ? '0' : '1'); } catch (_) { } return on !== false; }
+applyBg((() => { try { return localStorage.getItem('crown.bg3d') !== '0'; } catch (_) { return true; } })());
 const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
@@ -81,7 +84,7 @@ function stickInfo(list) {
 /* ---------- state ---------- */
 const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, discordToken: '', discordLookback: 30, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], accountGroups: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -89,7 +92,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-  for (const k of ['accounts', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['accounts', 'accountGroups', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -250,7 +253,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'accounts', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks']) {
+  for (const k of ['categories', 'profiles', 'accounts', 'accountGroups', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];
