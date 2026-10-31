@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.12.0 — Pre-orders (2026-10-31)
+
+- New Pre-orders page: see which pre-orders had a declined card and which ones you’ve already updated.
+- Reads the store’s card-declined and payment-successful emails, plus release dates.
+- Tap “I updated the card” after fixing one; it turns Paid when the store charges it.
+- Pre-orders are labeled in your orders, and the dashboard tells you when a card needs updating.
+
 ## v0.11.0 — Friendlier look (2026-10-26)
 
 - New 3D background and big summary cards on Dashboard, Orders and Inventory.

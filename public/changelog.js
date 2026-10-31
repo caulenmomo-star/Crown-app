@@ -1,6 +1,12 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.12.0', date: '2026-10-31', title: 'Pre-orders', items: [
+    'New Pre-orders page: see which pre-orders had a declined card and which ones you’ve already updated.',
+    'Reads the store’s card-declined and payment-successful emails, plus release dates.',
+    'Tap “I updated the card” after fixing one; it turns Paid when the store charges it.',
+    'Pre-orders are labeled in your orders, and the dashboard tells you when a card needs updating.',
+  ] },
   { v: '0.11.0', date: '2026-10-26', title: 'Friendlier look', items: [
     'New 3D background and big summary cards on Dashboard, Orders and Inventory.',
     'Orders can show as picture cards with a progress bar and when they arrive.',

@@ -68,6 +68,7 @@ PAGES.dashboard = {
     buildDupIndex(); const badProfiles = state.profiles.filter(p => health(p).length).length;
     const badInbox = state.imapAccounts.filter(a => a.enabled !== false && a.lastResult && a.lastResult.error);
     const attention = [
+      (() => { const n = typeof preTodoCount === 'function' ? preTodoCount() : 0; return n && [`${plural(n, 'pre-order')} with a declined card — update ${n === 1 ? 'it' : 'them'}`, 'preorders', () => { PRE.f = 'todo'; }]; })(),
       overdue.length && [`${plural(overdue.length, 'order')} past the expected delivery date`, 'orders', () => { OF.status = 'active'; }],
       unlinked && [`${plural(unlinked, 'order')} not linked to a profile`, 'orders', () => { OF.profile = '__none'; OF.status = 'all'; }],
       noAddr && [`${plural(noAddr, 'order')} without a shipping address (no house)`, 'orders', () => { OF.house = '__none'; OF.status = 'all'; }],

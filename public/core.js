@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.11.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.12.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -401,6 +401,7 @@ const ICONS = {
   sales: '<path d="M3 17l5.5-5.5 4 4L21 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   accounts: '<rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="11" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.8 16.2c.6-1.7 1.8-2.5 3.2-2.5s2.6.8 3.2 2.5M14.5 10h3.5M14.5 13.5h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   cards: '<rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 9.5h18M6.5 14.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  preorders: '<rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 12.5v3l2 1.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
@@ -409,7 +410,7 @@ const ICONS = {
 const HUBS = [
   { k: 'home', l: 'Home', side: '', icon: 'dashboard', pages: [['dashboard', 'Dashboard']] },
   { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards']] },
-  { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
+  { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['preorders', 'Pre-orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
   { k: 'resell', l: 'Resell', side: 'Reselling', icon: 'inventory', pages: [['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending']] },
   { k: 'setup', l: 'More', side: 'Setup', icon: 'more', pages: [['inboxes', 'Inboxes'], ['settings', 'Settings']] },
 ];
@@ -429,7 +430,7 @@ function applyRoute() {
   renderNav(); renderPage(); $('#main').scrollTop = 0;
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
-function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length }; }
+function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length, preorders: typeof preTodoCount === 'function' ? preTodoCount() : 0 }; }
 const navItem = (k, l, counts) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`;
 function renderNav() {
   const counts = navCounts();

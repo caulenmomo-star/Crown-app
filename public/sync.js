@@ -1,6 +1,6 @@
 /* Crown Tools - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 5; // 5: cancellation reasons
+const READER_VER = 6; // 5: cancellation reasons, 6: pre-order payments (declined / updated)
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;

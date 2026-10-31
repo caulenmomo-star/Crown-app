@@ -89,6 +89,11 @@ function mergeOrderInto(keep, o) {
   if (o.cancels) keep.cancels = Object.assign({}, o.cancels, keep.cancels || {});
   if (o.cancelDeduct && !keep.cancelDeduct) keep.cancelDeduct = o.cancelDeduct;
   for (const t of o.tracking || []) if (!keep.tracking.some(x => x.number === t.number)) keep.tracking.push(t);
+  if (o.preorder) keep.preorder = true;
+  if (o.releaseDate && (!keep.releaseDate || (o.releaseAt || '') > (keep.releaseAt || ''))) { keep.releaseDate = o.releaseDate; keep.releaseAt = o.releaseAt || ''; }
+  for (const e of o.payEvents || []) { keep.payEvents = keep.payEvents || []; if (!keep.payEvents.some(x => (e.mid && x.mid === e.mid) || (x.kind === e.kind && x.date === e.date))) keep.payEvents.push(e); }
+  if (keep.payEvents) keep.payEvents.sort((x, y) => String(x.date).localeCompare(String(y.date)));
+  if (o.payFixedAt && (!keep.payFixedAt || o.payFixedAt > keep.payFixedAt)) keep.payFixedAt = o.payFixedAt;
   if (o.source === 'email' || keep.source === 'email') keep.source = 'email';
   keep.updatedAt = Date.now();
   state.orders = state.orders.filter(x => x.id !== o.id);
@@ -363,11 +368,19 @@ function applyEmail(r, accountLabel, opts) {
   // an older reader glued words onto the number ("…539ARE"): take the clean number from this email
   else if (r.orderNumber && o.orderNumber !== r.orderNumber) { const a = Parser.normOrderNo(o.orderNumber), b = Parser.normOrderNo(r.orderNumber); if (b.length >= 6 && a.startsWith(b) && /^[A-Z]+$/.test(a.slice(b.length))) o.orderNumber = r.orderNumber; }
   if (r.date && (!o.orderDate || r.date < o.orderDate)) o.orderDate = r.date;
-  if (r.total != null && r.status !== 'cancelled' && (o.total == null || r.status === 'confirmed' && r.totalKind !== 'payment' && o.source === 'email' && !o.totalLocked)) o.total = Math.round((r.total - (Number(o.cancelDeduct) || 0)) * 100) / 100;
-  if (r.items && r.items.length && r.status !== 'cancelled') mergeItems(o, r.items, r.status === 'confirmed');
+  // pre-order emails: flag the order, remember the release date and every declined / paid payment email
+  if (r.preorder && !o.preorder) o.preorder = true;
+  if (r.releaseDate && (!o.releaseAt || r.date >= o.releaseAt)) { o.releaseDate = r.releaseDate; o.releaseAt = r.date; }
+  if (r.payment === 'declined' || r.payment === 'paid') {
+    o.payEvents = o.payEvents || [];
+    if (!o.payEvents.some(e => (r.messageId && e.mid === r.messageId) || (e.kind === r.payment && e.date === r.date))) { o.payEvents.push({ kind: r.payment, date: r.date, subject: r.subject, mid: r.messageId || '', last4: r.last4 || '' }); o.payEvents.sort((x, y) => String(x.date).localeCompare(String(y.date))); }
+  }
+  const payMail = !!r.payment && !created;
+  if (r.total != null && r.status !== 'cancelled' && !payMail && (o.total == null || r.status === 'confirmed' && r.totalKind !== 'payment' && o.source === 'email' && !o.totalLocked)) o.total = Math.round((r.total - (Number(o.cancelDeduct) || 0)) * 100) / 100;
+  if (r.items && r.items.length && r.status !== 'cancelled') mergeItems(o, r.items, r.status === 'confirmed' && !payMail);
   else if (r.items && r.items.length && cancelKind === 'full' && !o.items.length) o.items = r.items.map(i => Object.assign({}, i));
   if (r.to && !o.recipientEmail) o.recipientEmail = r.to;
-  if (r.last4 && !o.last4) o.last4 = r.last4;
+  if (r.last4 && (!o.last4 || (r.payment === 'paid' && payMail))) o.last4 = r.last4; // an updated card replaces the old last 4
   if (r.name && !o.name) o.name = r.name;
   if (r.address && r.address.addr1 && !o.addr1) Object.assign(o, { addr1: r.address.addr1, addr2: r.address.addr2, city: r.address.city, state: r.address.state, zip: r.address.zip });
   if (r.address && r.address.name && !o.name) o.name = r.address.name;
@@ -420,7 +433,7 @@ function orderCardHtml(o) {
   return `<div class="ocard ${oSelected.has(o.id) ? 'sel' : ''}" data-oid="${o.id}"><span class="ocheck"></span>
     <div class="otop"><div class="opic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div>
       <div class="omain"><div class="otitle">${esc(shortTitle(o)) || 'Order #' + esc(o.orderNumber || '—')}</div><div class="ometa">${storeBadge(o.store)}<span class="mono">#${esc(o.orderNumber || '—')}</span><span>· ${esc(fmtDate(o.orderDate))}</span></div></div></div>
-    <span class="ostat ${w.cls}"><i style="background:${(STATUS[o.status] || STATUS.placed).c}"></i>${esc(w.t)}</span>
+    <div class="hstack" style="gap:6px"><span class="ostat ${w.cls}"><i style="background:${(STATUS[o.status] || STATUS.placed).c}"></i>${esc(w.t)}</span>${typeof preChip === 'function' ? preChip(o) : ''}</div>
     ${isDead(o) ? '' : `<div class="oprog ${w.step === 4 ? 'done' : ''}">${steps.map((_, i) => `<i class="${i < w.step ? 'on' : ''}"></i>`).join('')}</div><div class="osteps">${steps.map((t, i) => `<span class="${i < w.step ? 'on' : ''}">${t}</span>`).join('')}</div>`}
     <div class="ofoot"><span class="oprice">${fmtMoney(tot)}</span><span class="ounit">${plural(n, 'unit')}${each != null ? ' · ' + fmtMoney(each) + ' ea' : n > 1 && tot ? ' · ' + fmtMoney(tot / n) + ' avg' : ''}</span><span class="owhere" title="${esc([h && houseLabel(h), p && p.name].filter(Boolean).join(' · '))}">${h ? '⌂ ' + esc(houseLabel(h)) : p ? esc(p.name || '') : ''}</span></div></div>`;
 }
@@ -510,7 +523,7 @@ PAGES.orders = {
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
         <td class="c-date">${fmtDate(o.orderDate)}</td><td class="c-store">${storeBadge(o.store)}<div class="mono small faint c-no2">${esc(o.orderNumber || '')}</div></td><td class="mono small c-no">${esc(o.orderNumber || '—')}</td>
         <td class="c-item" style="max-width:320px" title="${esc((o.items || []).map(i => i.qty + '× ' + i.name).join('\n'))}"><div class="itemcell">${thumb(orderImage(o), 'sm')}<span class="ellipsis">${esc(shortTitle(o)) || '<span class="faint">—</span>'}</span></div></td>
-        <td class="right c-tot">${fmtMoney(orderSpend(o) || o.total)}</td><td class="c-st">${statusBadge(o.status)}${cancelChip(o)}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:var(--danger)">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
+        <td class="right c-tot">${fmtMoney(orderSpend(o) || o.total)}</td><td class="c-st">${statusBadge(o.status)}${cancelChip(o)}${typeof preChip === 'function' ? preChip(o) : ''}${cancelledCount(o) && !isDead(o) ? `<div class="small" style="color:var(--danger)">${cancelledCount(o)} item${cancelledCount(o) > 1 ? 's' : ''} cancelled</div>` : ''}</td>
         <td class="c-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint dash">—</span>'}</td>
         <td class="ellipsis c-house" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint dash">—</span>'}</td>
         <td class="c-eta ${!o.eta && o.status !== 'delivered' ? 'est' : ''}">${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint dash">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : o.estEta ? `<span class="faint small" title="Not shipped yet — the order confirmation estimated this">not shipped · est. ${fmtDate(o.estEta)}</span>` : '<span class="faint dash">—</span>'}</td>
@@ -589,6 +602,7 @@ function renderOrderDlg() {
         <div class="k">Placed</div><div>${fmtDT(o.orderDate)}</div>
         <div class="k">Total</div><div><b>${fmtMoney(o.total)}</b>${isDead(o) ? ' <span class="faint small">(not counted — ' + STATUS[o.status].l.toLowerCase() + ')</span>' : ''}</div>
         <div class="k">Status</div><div><select id="ovStatus" style="width:auto">${STATUSES.map(s => `<option value="${s.k}" ${o.status === s.k ? 'selected' : ''}>${s.l}</option>`).join('')}</select></div>
+        <div class="k">Pre-order</div><div>${(() => { const real = state.orders.find(x => x.id === o.id) || o, ps = typeof payState === 'function' && isPreorderOrder(real) ? payState(real) : null; return `<label class="check"><input type="checkbox" id="ovPre" ${real.preorder || ps ? 'checked' : ''} ${(real.payEvents || []).some(e => e.kind === 'declined') ? 'disabled' : ''}> ${ps ? esc(PAY_STATES[ps.k].l) + (real.releaseDate ? ' · releases ' + esc(fmtDate(real.releaseDate)) : '') : 'This is a pre-order'}</label>${ps && ps.k === 'declined' ? '<button class="sm primary" id="ovPreFix" style="margin-top:6px">✓ I updated the card</button>' : ps && ps.k === 'updated' ? '<button class="sm" id="ovPreUndo" style="margin-top:6px">Not updated yet</button>' : ''}`; })()}</div>
         ${o.status === 'cancelled' ? (() => { const real = state.orders.find(x => x.id === o.id) || o, c = cancelInfo(real); return `<div class="k">Cancelled for</div><div><select id="ovWhy" style="width:auto"><option value="">Auto — ${esc(CANCEL_KINDS[c.kind].l)}</option>${Object.entries(CANCEL_KINDS).map(([k, v]) => `<option value="${k}" ${o.cancelWhy === k ? 'selected' : ''}>${esc(v.l)}</option>`).join('')}</select>
           <div class="small faint" style="margin-top:3px">${o.cancelWhy ? 'Set by you' : esc(c.why)}${c.kind === 'limit' ? (c.caught ? ' · on a line 2 while the item got through on another address at this house — the jig didn’t get past the limit' : c.jig ? ' · this line 2 had already got it through, so it’s just maxed — expected' : ' · no line 2, so that’s expected — the house is maxed') : ''}</div></div>`; })() : ''}
 ${o.bot ? `        <div class="k">Bot checkout</div><div>${esc(botLabel(o.bot.bot))}${o.bot.mode ? ' · ' + esc(o.bot.mode) : ''}${o.bot.profile ? `<div class="small faint">profile “${esc(o.bot.profile)}”${o.bot.account ? ' · ' + esc(o.bot.account) : ''}${o.bot.at ? ' · ' + esc(fmtDT(o.bot.at)) : ''}</div>` : ''}</div>
@@ -614,6 +628,10 @@ ${o.bot ? `        <div class="k">Bot checkout</div><div>${esc(botLabel(o.bot.bo
       <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${hh.status === 'partial' ? '#ef5b5b' : (STATUS[hh.status] || STATUS.placed).c}"><div><b>${esc(hh.status === 'partial' ? 'Some items cancelled' : (STATUS[hh.status] || {}).l || hh.status)}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
     </div></div>`;
     if ($('#ovWhy')) $('#ovWhy').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('cancel reason'); real.cancelWhy = e.target.value; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
+    if ($('#ovPre')) $('#ovPre').onchange = e => { const real = state.orders.find(x => x.id === o.id); if (!real) return; snapshot('pre-order'); real.preorder = e.target.checked; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
+    const preSet = fixed => { const real = state.orders.find(x => x.id === o.id); if (!real) return; snapshot(fixed ? 'card updated' : 'card not updated'); if (fixed) real.payFixedAt = new Date().toISOString(); else delete real.payFixedAt; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
+    if ($('#ovPreFix')) $('#ovPreFix').onclick = () => preSet(true);
+    if ($('#ovPreUndo')) $('#ovPreUndo').onclick = () => preSet(false);
     $('#ovStatus').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('change status'); setStatus(real, e.target.value, null, 'manual'); real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
     $('#ovProf').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('link profile'); real.profileId = e.target.value; real.profileLink = e.target.value ? 'manual' : ''; if (!e.target.value) autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
     if ($('#ovAuto')) $('#ovAuto').onclick = () => { const real = state.orders.find(x => x.id === o.id); real.profileLink = ''; real.profileId = ''; autoLink(real); resolveHouse(real); pruneHouses(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };

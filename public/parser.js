@@ -96,7 +96,43 @@
   const OUT = ['out for delivery', 'arrive today', 'arrives today', 'arriving today', 'coming today', 'delivering today', 'will be delivered today'];
   const SHIPPED = ['shipped', 'has shipped', 'on its way', 'is on the way', 'are on the way', 'on their way', 'tracking number', 'has been dispatched', 'in transit', 'shipment', 'about to ship', 'ready to ship', 'getting ready to ship', 'preparing to ship', 'arrive tomorrow', 'arrives tomorrow', 'arriving tomorrow', 'arriving soon', 'arrives soon', 'headed your way', 'heading your way', 'on the move', 'label created', 'has been sent', 'have been sent', 'shipping update', 'package update', 'tracking info', 'tracking update'];
   const CONFIRMED = ['order confirm', 'thanks for your order', 'thank you for your order', 'thanks for your delivery order', 'thanks for your pickup order', 'thanks for your drive up order', 'thanks for your shipping order', 'thanks for shopping', 'thank you for shopping', "here's your order", 'here is your order', 'order received', 'order placed', "we've got your order", 'we got your order', 'order successful', 'purchase successful', 'checkout successful', 'purchase confirmation', 'thanks for your purchase', 'thank you for your purchase', 'order is confirmed', 'order has been received', 'order acknowledgement', 'order acknowledgment', 'we received your order', 'order was placed', 'order has been placed', 'order was received', 'your preorder', 'your pre-order', 'preorder payment', 'pre-order payment', 'preorder is', 'pre-order is', 'release day', "we're on it", 'your receipt', 'order details', 'order update', 'order status'];
-  const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, OUT, SHIPPED, CONFIRMED)));
+  // Pre-order payments: the store emails when the card is declined (so you can update it) and again once the
+  // updated card is charged. 'reminder' is the "we'll charge your card soon" heads-up, which isn't a problem.
+  const PAY_DECLINED = /payment (?:was |has been |got )?(?:declined|denied|rejected|failed|unsuccessful|did ?n[o']t go through|could ?n[o']t be (?:processed|completed|authori[sz]ed))|card (?:was |has been )?declined|declined (?:payment|card|transaction)|(?:issue|problem|trouble) (?:with|processing|charging) (?:your |the )?(?:payment|card)|payment (?:issue|problem)s? (?:with|on|for) (?:your )?(?:order|pre-?order)|(?:could ?n[o']t|could not|can ?n[o']t|cannot|were unable to|was unable to|unable to|weren't able to|were not able to) (?:process|charge|authori[sz]e|complete|collect|verify) (?:your |the )?(?:payment|card|pre-?order payment)|(?:update|fix) your payment (?:method|info|information|details)? ?(?:to keep|so we can|to avoid|or your|before)|action (?:needed|required)[^.\n]{0,40}payment|payment (?:action|update) (?:needed|required)|payment (?:needed|required) (?:for|on) (?:your )?(?:order|pre-?order)/i;
+  const PAY_OK = /payment (?:was |has been |is )?(?:successful|successfully (?:processed|completed|charged|updated)|processed|approved|complete|completed|confirmed|accepted|received|updated)|(?:we(?:'ve| have)|we) (?:received|processed|updated|got) your (?:updated |new )?payment|thanks? (?:you )?for updating your payment|(?:your )?updated payment (?:method |info |information |details )?(?:was |has been |is )?(?:accepted|approved|received|confirmed|successful)|payment (?:went|has gone) through|card (?:was |has been )?(?:successfully )?charged|successfully charged/i;
+  const PAY_REMIND = /we(?:'ll| will) (?:process|charge|reauthori[sz]e)[^.\n]{0,40}(?:pre-?order )?payment|process your pre-?order payment soon|release day is getting closer|reauthori[sz]e (?:a )?payment/i;
+  const PAY_KEYWORDS = ['payment', 'declined', 'pre-order', 'preorder', 'card was', 'charge your'];
+  const norm1 = t => String(t || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
+  // what a pre-order payment email says: 'declined' | 'paid' | 'reminder' | ''
+  function paymentEvent(subject, text) {
+    const s = norm1(subject), t = norm1(String(text || '').slice(0, 2500));
+    if (PAY_REMIND.test(s)) return 'reminder';
+    if (PAY_DECLINED.test(s)) return 'declined';
+    if (PAY_OK.test(s) && /payment|card|charge/.test(s)) return 'paid';
+    if (!/payment|card|charge|pre-?order|action (?:needed|required)/.test(s)) return '';
+    // the subject is about the payment but vague ("About your preorder #123"): the email body decides
+    if (PAY_REMIND.test(t)) return 'reminder';
+    if (PAY_DECLINED.test(t) && !/if you need to update your payment|please review your payment details/.test(t)) return 'declined';
+    if (PAY_OK.test(t)) return 'paid';
+    return '';
+  }
+  const isPreorderMail = (subject, text) => /\bpre-?order(?:ed|s)?\b|release (?:day|date)|releases? on\b/i.test(String(subject || '')) || /\b(?:pre-?order(?:ed)? (?:item|items|date|release|payment)|this (?:is a|item is a) pre-?order|your pre-?order|pre-?order(?:ed)? on|release date|releases? on|street date|expected release)\b/i.test(String(text || '').slice(0, 4000));
+  const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11 };
+  // "release date, Sep 16, 2026" / "Releases on 11/7/2026" / "Release Date: November 7" -> YYYY-MM-DD
+  function extractReleaseDate(text, sent) {
+    const t = String(text || '').replace(/\s+/g, ' ');
+    const ref = sent ? new Date(sent) : new Date(); const y0 = isNaN(ref) ? new Date().getFullYear() : ref.getFullYear();
+    const pad = n => String(n).padStart(2, '0');
+    let m = t.match(/(?:release(?:s|d)?(?: date)?|releasing|street date|available|launch(?:es|ing)?(?: date)?)(?: is| on| date)?\s*[:,\-]?\s*(?:on )?(?:[a-z]+day,? )?([a-z]{3,9})\.? (\d{1,2})(?:st|nd|rd|th)?,? ?(\d{4})?/i);
+    if (m && MON[m[1].toLowerCase().slice(0, m[1].toLowerCase() === 'sept' ? 4 : 3)] != null) { const mo = MON[m[1].toLowerCase().slice(0, 3)]; const d = +m[2]; if (d >= 1 && d <= 31) { let y = m[3] ? +m[3] : y0; if (!m[3] && new Date(y, mo, d) < new Date(ref - 60 * 864e5)) y++; return `${y}-${pad(mo + 1)}-${pad(d)}`; } }
+    m = t.match(/(?:release(?:s|d)?(?: date)?|releasing|street date|available)(?: is| on)?\s*[:,\-]?\s*(?:on )?(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i);
+    if (m) { const mo = +m[1], d = +m[2]; let y = m[3] ? +m[3] : y0; if (y < 100) y += 2000; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${y}-${pad(mo)}-${pad(d)}`; }
+    // table layout: a "Release Date" column header, the date a few cells later ("November 19, 2026")
+    const i = t.search(/release date/i);
+    if (i >= 0) { const w = t.slice(i, i + 400), dm = w.match(/\b([A-Z][a-z]{2,8})\.? (\d{1,2}),? (\d{4})\b/); if (dm && MON[dm[1].toLowerCase().slice(0, 3)] != null) { const v = `${dm[3]}-${pad(MON[dm[1].toLowerCase().slice(0, 3)] + 1)}-${pad(+dm[2])}`; if (!sent || v >= String(sent).slice(0, 10)) return v; } }
+    return '';
+  }
+  const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, OUT, SHIPPED, CONFIRMED, PAY_KEYWORDS)));
   // Python-compatible regexes (the helper filters subjects with these too).
   const SUBJECT_PATTERNS = ['thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}'];
   const SUBJECT_RES = SUBJECT_PATTERNS.map(p => new RegExp(p, 'i'));
@@ -110,6 +146,7 @@
     if (has(s, REFUNDED) && !/refund (?:policy|request)/.test(s)) return 'refunded';
     if (has(s, CANCELLED) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
     if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*(delivered|arrived)\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
+    if (PAY_DECLINED.test(s) || PAY_REMIND.test(s) || (PAY_OK.test(s) && /\b(order|pre-?order|#\s*\d)/.test(s))) return 'confirmed';
     if (has(s, READY)) return 'ready';
     if (has(s, OUT)) return 'out';
     if (has(s, SHIPPED)) return 'shipped';
@@ -662,6 +699,9 @@
       tracking: (() => { for (const s of sources) { const v = extractTracking(s, orderNumber); if (v.length) return v; } return []; })(),
       last4: first(extractLast4) || '',
       cancelReason: status === 'cancelled' ? cancelReason(subject, text) : '',
+      payment: status === 'cancelled' || status === 'refunded' ? '' : paymentEvent(subject, text),
+      preorder: isPreorderMail(subject, cutRecs(text)),
+      releaseDate: isPreorderMail(subject, cutRecs(text)) ? extractReleaseDate(subject + '\n' + cutRecs(text), m.date) : '',
       items: settlePrices(items, sub),
       // "We had to cancel an item in your order" - only part of the order is cancelled
       partial: status === 'cancelled' && (/\b(an item|some items|one item|1 item|items? in your order|items? from your order|part of your order|an item from|some of your items)\b/i.test(subject) || /\b(rest of your order|remaining items?|other items? (?:in|from) your order)\b/i.test(text)),
@@ -687,7 +727,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { cancelReason, detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { paymentEvent, extractReleaseDate, isPreorderMail, cancelReason, detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);
