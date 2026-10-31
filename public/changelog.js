@@ -1,6 +1,9 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.12.2', date: '2026-10-31', title: 'Target payment updates', items: [
+    'Target’s “Success! Your payment method was updated” email marks the pre-order Updated, with the new card’s last 4.',
+  ] },
   { v: '0.12.1', date: '2026-10-31', title: 'Simpler dashboard and pre-orders', items: [
     'One summary card on the dashboard, now with estimated profit; Share turns it into a picture.',
     'On phones, profile categories and card / account groups fold into one dropdown.',

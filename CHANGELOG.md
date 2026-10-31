@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.12.2 — Target payment updates (2026-10-31)
+
+- Target’s “Success! Your payment method was updated” email marks the pre-order Updated, with the new card’s last 4.
+
 ## v0.12.1 — Simpler dashboard and pre-orders (2026-10-31)
 
 - One summary card on the dashboard, now with estimated profit; Share turns it into a picture.

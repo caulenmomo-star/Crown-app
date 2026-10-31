@@ -5,7 +5,7 @@
 const PRE = { f: '', q: '' };
 // A pre-order: the store's emails said so, a payment email came in for it, or you marked it. An order placed a
 // while back (10+ days) that still hasn't shipped is one too - normal orders ship within days.
-const isPreorderOrder = o => !!o.preorder || (o.payEvents || []).some(e => e.kind === 'declined') ||
+const isPreorderOrder = o => !!o.preorder || (o.payEvents || []).length > 0 ||
   (o.preorder !== false && !isDead(o) && ['placed', 'confirmed'].includes(o.status) && !!o.orderDate && Date.now() - (toDate(o.orderDate) || Date.now()) > 10 * 864e5);
 // where a pre-order's payment stands
 //   declined - the store says the card was declined and nothing since: update the card
@@ -21,6 +21,8 @@ function payState(o) {
   if (D && (P > D || shippedNow)) return { k: 'paid', declines, at: P > D ? P : o.statusAt || '', by: P > D ? 'email' : 'shipped', fixedAt: F > D ? F : '' };
   if (D && F > D) return { k: 'updated', declines, at: F, declinedAt: D };
   if (D) return { k: 'declined', declines, at: D, last4: d.last4 || o.last4 || '' };
+  // the store says the payment method was updated, even if its decline email never reached Crown Tools
+  if (P) return { k: 'paid', declines, at: P, by: 'email', fixedAt: F };
   return { k: 'ok', declines, at: '' };
 }
 const PAY_STATES = {
