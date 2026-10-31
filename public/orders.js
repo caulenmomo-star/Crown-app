@@ -335,12 +335,17 @@ function applyEmail(r, accountLabel, opts) {
   let o = r.orderNumber ? findOrder(r.orderNumber, r.store) : null;
   // Shipping / delivery emails often have only a tracking number - match those to the order that has it.
   if (!o) o = findByTracking(r.tracking);
+  // A pre-order payment email ("update your payment" / "payment updated") belongs to the order you already have,
+  // even when its email shows the order number differently - never make a second order out of it.
+  if (!o && r.payment) o = matchPayOrder(r);
   let created = false;
   if (!o) {
+    if (r.payment && !r.orderNumber) return { skipped: 'payment email for an order that isn’t in Crown Tools' };
     if (!r.orderNumber) return { skipped: 'no order number' };
     const st0 = r.status === 'cancelled' && r.partial ? 'placed' : r.status;
     o = newOrder({ orderNumber: r.orderNumber, store: r.store, status: st0, orderDate: r.date, source: 'email', history: [] });
-    if (st0 === r.status) o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject });
+    if (r.payment) { o.status = 'confirmed'; o.preorder = true; }
+    else if (st0 === r.status) o.history.push({ status: r.status, date: r.date, source: 'email', note: r.subject });
     if (r.status === 'delivered') o.deliveredAt = r.date;
     state.orders.push(o); created = true;
   }
@@ -354,7 +359,11 @@ function applyEmail(r, accountLabel, opts) {
   // Cancellation emails: work out whether the whole order or just some items were cancelled.
   let cancelKind = '';
   if (r.status === 'cancelled') { cancelKind = applyCancel(o, r); if (r.cancelReason) o.cancelReason = r.cancelReason; }
-  if (cancelKind === 'partial') {
+  if (r.payment) {
+    // a payment step on the pre-order, not a status change ("Charge failed", "Payment updated")
+    if (!o.history.some(h => h.status === 'pay' && h.kind === r.payment && h.date === r.date)) { o.history.push({ status: 'pay', kind: r.payment, date: r.date, source: 'email', note: r.subject }); o.history.sort((a, b) => String(a.date).localeCompare(String(b.date))); }
+    if (created) o.statusAt = r.date;
+  } else if (cancelKind === 'partial') {
     if (!o.history.some(h => h.status === 'partial' && h.date === r.date)) { o.history.push({ status: 'partial', date: r.date, source: 'email', note: r.subject }); o.history.sort((a, b) => String(a.date).localeCompare(String(b.date))); }
     if (created) o.statusAt = r.date;
   } else if (!created) {
@@ -398,6 +407,43 @@ function applyEmail(r, accountLabel, opts) {
   fillImages(o); autoLink(o); resolveHouse(o);
   o.updatedAt = Date.now();
   return { order: o, created, changed: created || before !== o.status || beforeEta !== o.eta, from: before };
+}
+
+// Find the order a payment email is about when its order number didn't match: same store and same account email,
+// still open, placed before the email; the item, total and order number (one inside the other) break ties.
+function matchPayOrder(r) {
+  const when = r.date || new Date().toISOString(), to = normEmail(r.to || ''), no = Parser.normOrderNo(r.orderNumber || '');
+  const itemWords = new Set((r.items || []).flatMap(i => String(i.name || '').toLowerCase().split(/\W+/).filter(w => w.length > 3)));
+  let best = null, bestScore = 0;
+  for (const o of state.orders) {
+    if (isDead(o) || o.status === 'delivered' || (o.orderDate && o.orderDate > when)) continue;
+    if (r.store && r.store !== 'other' && o.store && o.store !== 'other' && o.store !== r.store) continue;
+    let sc = 0; const on = Parser.normOrderNo(o.orderNumber || '');
+    if (no && on && no.length >= 5 && on.length >= 5 && (on.includes(no) || no.includes(on))) sc += 5;
+    if (to && o.recipientEmail && normEmail(o.recipientEmail) === to) sc += 3;
+    if (r.last4 && o.last4 && r.last4 === o.last4) sc += 1;
+    if (r.total != null && o.total != null && Math.abs(r.total - o.total) < 0.02) sc += 2;
+    if (itemWords.size && (o.items || []).some(i => String(i.name || '').toLowerCase().split(/\W+/).filter(w => itemWords.has(w)).length >= 2)) sc += 2;
+    if (isPreorderOrder(o)) sc += 1;
+    if (sc > bestScore || (sc === bestScore && best && String(o.orderDate) > String(best.orderDate))) { best = o; bestScore = sc; }
+  }
+  return bestScore >= 4 ? best : null;
+}
+// Words for one history entry, used by the order timeline and the dashboard's recent activity
+function histLabel(h) {
+  if (h.status === 'pay') return h.kind === 'declined' ? 'Pre-order charge failed — needs a new payment method' : h.kind === 'paid' ? 'Payment updated — charged, pre-order secured' : h.kind === 'fixed' ? 'You updated the payment method' : 'Pre-order card will be charged soon';
+  if (h.status === 'partial') return 'Some items cancelled';
+  return (STATUS[h.status] || {}).l || h.status;
+}
+function histColor(h) {
+  if (h.status === 'pay') return h.kind === 'declined' ? '#ef5b5b' : h.kind === 'paid' ? '#3ecf8e' : h.kind === 'fixed' ? '#f5a524' : '#7c8cff';
+  return h.status === 'partial' ? '#ef5b5b' : (STATUS[h.status] || STATUS.placed).c;
+}
+// Orders that a payment email made on its own (Crown Tools 0.12.0 did this when it couldn't find the original).
+// Removed before a re-read, which then attaches those emails to the original pre-order.
+function dropPaymentOnlyOrders() {
+  const only = o => o.source === 'email' && (o.emails || []).length && o.emails.every(e => ['declined', 'paid', 'reminder'].includes(Parser.paymentEvent(e.subject || '', ''))) && o.profileLink !== 'manual' && !o.notes;
+  const n = state.orders.filter(only).length; if (n) state.orders = state.orders.filter(o => !only(o)); return n;
 }
 
 /* ================= shared order list ================= */
@@ -602,7 +648,7 @@ function renderOrderDlg() {
         <div class="k">Placed</div><div>${fmtDT(o.orderDate)}</div>
         <div class="k">Total</div><div><b>${fmtMoney(o.total)}</b>${isDead(o) ? ' <span class="faint small">(not counted — ' + STATUS[o.status].l.toLowerCase() + ')</span>' : ''}</div>
         <div class="k">Status</div><div><select id="ovStatus" style="width:auto">${STATUSES.map(s => `<option value="${s.k}" ${o.status === s.k ? 'selected' : ''}>${s.l}</option>`).join('')}</select></div>
-        <div class="k">Pre-order</div><div>${(() => { const real = state.orders.find(x => x.id === o.id) || o, ps = typeof payState === 'function' && isPreorderOrder(real) ? payState(real) : null; return `<label class="check"><input type="checkbox" id="ovPre" ${real.preorder || ps ? 'checked' : ''} ${(real.payEvents || []).some(e => e.kind === 'declined') ? 'disabled' : ''}> ${ps ? esc(PAY_STATES[ps.k].l) + (real.releaseDate ? ' · releases ' + esc(fmtDate(real.releaseDate)) : '') : 'This is a pre-order'}</label>${ps && ps.k === 'declined' ? '<button class="sm primary" id="ovPreFix" style="margin-top:6px">✓ I updated the card</button>' : ps && ps.k === 'updated' ? '<button class="sm" id="ovPreUndo" style="margin-top:6px">Not updated yet</button>' : ''}`; })()}</div>
+        <div class="k">Pre-order</div><div>${(() => { const real = state.orders.find(x => x.id === o.id) || o, ps = typeof payState === 'function' && isPreorderOrder(real) ? payState(real) : null; return `<label class="check"><input type="checkbox" id="ovPre" ${real.preorder || ps ? 'checked' : ''} ${(real.payEvents || []).some(e => e.kind === 'declined') ? 'disabled' : ''}> ${ps ? esc(PAY_STATES[ps.k].l) : 'This is a pre-order'}</label>${ps && ps.k === 'declined' ? '<button class="sm primary" id="ovPreFix" style="margin-top:6px">✓ I updated it</button>' : ps && ps.k === 'updated' ? '<button class="sm" id="ovPreUndo" style="margin-top:6px">Not updated yet</button>' : ''}`; })()}</div>
         ${o.status === 'cancelled' ? (() => { const real = state.orders.find(x => x.id === o.id) || o, c = cancelInfo(real); return `<div class="k">Cancelled for</div><div><select id="ovWhy" style="width:auto"><option value="">Auto — ${esc(CANCEL_KINDS[c.kind].l)}</option>${Object.entries(CANCEL_KINDS).map(([k, v]) => `<option value="${k}" ${o.cancelWhy === k ? 'selected' : ''}>${esc(v.l)}</option>`).join('')}</select>
           <div class="small faint" style="margin-top:3px">${o.cancelWhy ? 'Set by you' : esc(c.why)}${c.kind === 'limit' ? (c.caught ? ' · on a line 2 while the item got through on another address at this house — the jig didn’t get past the limit' : c.jig ? ' · this line 2 had already got it through, so it’s just maxed — expected' : ' · no line 2, so that’s expected — the house is maxed') : ''}</div></div>`; })() : ''}
 ${o.bot ? `        <div class="k">Bot checkout</div><div>${esc(botLabel(o.bot.bot))}${o.bot.mode ? ' · ' + esc(o.bot.mode) : ''}${o.bot.profile ? `<div class="small faint">profile “${esc(o.bot.profile)}”${o.bot.account ? ' · ' + esc(o.bot.account) : ''}${o.bot.at ? ' · ' + esc(fmtDT(o.bot.at)) : ''}</div>` : ''}</div>
@@ -625,11 +671,11 @@ ${o.bot ? `        <div class="k">Bot checkout</div><div>${esc(botLabel(o.bot.bo
         ${t.liveError && (!t.live || t.liveError.at > t.live.checkedAt) ? `<div class="small" style="margin-top:6px;color:var(--warn)">${esc(t.liveError.msg)}</div>` : ''}
         ${t.live ? `<div class="small" style="margin-top:6px"><b>${esc(t.live.text || String(t.live.status || '').replace(/_/g, ' '))}</b>${t.live.status === 'delivered' && t.live.deliveredOn ? ' · delivered ' + fmtDate(t.live.deliveredOn, { weekday: true }) : t.live.est ? ' · arrives ' + fmtDate(t.live.est, { weekday: true }) : ''} <span class="faint">· checked ${ago(t.live.checkedAt)}</span></div>${(t.live.events || []).slice(-4).reverse().map(ev => `<div class="small muted" style="margin-top:3px">${fmtDT(ev.date)} — ${esc(ev.message)}${ev.location ? ' · ' + esc(ev.location) : ''}</div>`).join('')}` : ''}</div>`).join('') : `<div class="faint small">No tracking numbers yet — they’re added automatically from shipping emails.${trackingReady() ? '' : ' Add your free UPS / FedEx keys in Settings → Carrier tracking for live dates.'}</div>`}
       <div class="section">Timeline</div>
-      <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${hh.status === 'partial' ? '#ef5b5b' : (STATUS[hh.status] || STATUS.placed).c}"><div><b>${esc(hh.status === 'partial' ? 'Some items cancelled' : (STATUS[hh.status] || {}).l || hh.status)}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
+      <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${histColor(hh)}"><div><b>${esc(histLabel(hh))}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
     </div></div>`;
     if ($('#ovWhy')) $('#ovWhy').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('cancel reason'); real.cancelWhy = e.target.value; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); invalidateStats(); save(); renderOrderDlg(); refresh(); };
     if ($('#ovPre')) $('#ovPre').onchange = e => { const real = state.orders.find(x => x.id === o.id); if (!real) return; snapshot('pre-order'); real.preorder = e.target.checked; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
-    const preSet = fixed => { const real = state.orders.find(x => x.id === o.id); if (!real) return; snapshot(fixed ? 'card updated' : 'card not updated'); if (fixed) real.payFixedAt = new Date().toISOString(); else delete real.payFixedAt; real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
+    const preSet = fixed => { const real = state.orders.find(x => x.id === o.id); if (!real) return; snapshot(fixed ? 'card updated' : 'card not updated'); markPayFixed(real, fixed); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };
     if ($('#ovPreFix')) $('#ovPreFix').onclick = () => preSet(true);
     if ($('#ovPreUndo')) $('#ovPreUndo').onclick = () => preSet(false);
     $('#ovStatus').onchange = e => { const real = state.orders.find(x => x.id === o.id); snapshot('change status'); setStatus(real, e.target.value, null, 'manual'); real.updatedAt = Date.now(); curOrder = JSON.parse(JSON.stringify(real)); save(); renderOrderDlg(); refresh(); };

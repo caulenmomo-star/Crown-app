@@ -1,6 +1,13 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.12.1', date: '2026-10-31', title: 'Simpler dashboard and pre-orders', items: [
+    'One summary card on the dashboard, now with estimated profit; Share turns it into a picture.',
+    'On phones, profile categories and card / account groups fold into one dropdown.',
+    'Pre-orders now show three things: needs updating, updated, or went through.',
+    'Reads many more wordings of “update your payment” emails, and orders that haven’t shipped after 10 days count as pre-orders.',
+    'Payment emails now join the original pre-order instead of showing up as new orders, and its history reads “charge failed”, “payment updated”.',
+  ] },
   { v: '0.12.0', date: '2026-10-31', title: 'Pre-orders', items: [
     'New Pre-orders page: see which pre-orders had a declined card and which ones you’ve already updated.',
     'Reads the store’s card-declined and payment-successful emails, plus release dates.',

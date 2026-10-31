@@ -101,19 +101,31 @@
   const PAY_DECLINED = /payment (?:was |has been |got )?(?:declined|denied|rejected|failed|unsuccessful|did ?n[o']t go through|could ?n[o']t be (?:processed|completed|authori[sz]ed))|card (?:was |has been )?declined|declined (?:payment|card|transaction)|(?:issue|problem|trouble) (?:with|processing|charging) (?:your |the )?(?:payment|card)|payment (?:issue|problem)s? (?:with|on|for) (?:your )?(?:order|pre-?order)|(?:could ?n[o']t|could not|can ?n[o']t|cannot|were unable to|was unable to|unable to|weren't able to|were not able to) (?:process|charge|authori[sz]e|complete|collect|verify) (?:your |the )?(?:payment|card|pre-?order payment)|(?:update|fix) your payment (?:method|info|information|details)? ?(?:to keep|so we can|to avoid|or your|before)|action (?:needed|required)[^.\n]{0,40}payment|payment (?:action|update) (?:needed|required)|payment (?:needed|required) (?:for|on) (?:your )?(?:order|pre-?order)/i;
   const PAY_OK = /payment (?:was |has been |is )?(?:successful|successfully (?:processed|completed|charged|updated)|processed|approved|complete|completed|confirmed|accepted|received|updated)|(?:we(?:'ve| have)|we) (?:received|processed|updated|got) your (?:updated |new )?payment|thanks? (?:you )?for updating your payment|(?:your )?updated payment (?:method |info |information |details )?(?:was |has been |is )?(?:accepted|approved|received|confirmed|successful)|payment (?:went|has gone) through|card (?:was |has been )?(?:successfully )?charged|successfully charged/i;
   const PAY_REMIND = /we(?:'ll| will) (?:process|charge|reauthori[sz]e)[^.\n]{0,40}(?:pre-?order )?payment|process your pre-?order payment soon|release day is getting closer|reauthori[sz]e (?:a )?payment/i;
-  const PAY_KEYWORDS = ['payment', 'declined', 'pre-order', 'preorder', 'card was', 'charge your'];
+  const PAY_KEYWORDS = ['payment', 'declined', 'pre-order', 'preorder', 'card was', 'charge your', 'your card', 'billing', 'action needed', 'action required'];
   const norm1 = t => String(t || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
   // what a pre-order payment email says: 'declined' | 'paid' | 'reminder' | ''
+  // Stores word these many ways ("Action needed: update your payment", "Uh-oh, we couldn't charge your card",
+  // "Payment issue with your preorder", "Your payment info was updated"), so the subject is read loosely: it's about
+  // the payment/card AND says something went wrong (declined) or that it's sorted (paid).
+  const PAY_WORD = /\b(payment|payments|card|billing|charge|charged|pay)\b/;
+  const PAY_BAD = /declin|denied|reject|\bissue|problem|trouble|fail|unsuccessful|unable|could ?n[o']t|could not|can ?n[o']t|cannot|was ?n[o']t able|were ?n[o']t able|not able|\bupdate\b|\bupdate your|action (?:needed|required)|attention|needs? (?:your )?attention|expired|invalid|verify|on hold|uh[- ]?oh|oops|didn'?t go through|did not go through|help us|we need|required/;
+  const PAY_GOOD = /\bupdated\b|successful|success|received|processed|confirmed|approved|accepted|went through|gone through|thank|all set|good to go|complete/;
+  const IF_SENT = /(?:^|[.!?\n]\s*)(?:if|in case|should)\b[^.!?\n]*[.!?\n]?/gi; // "If we're unable to charge you…" isn't a decline
   function paymentEvent(subject, text) {
-    const s = norm1(subject), t = norm1(String(text || '').slice(0, 2500));
+    const s = norm1(subject), t = norm1(String(text || '').slice(0, 3000).replace(IF_SENT, ' '));
     if (PAY_REMIND.test(s)) return 'reminder';
     if (PAY_DECLINED.test(s)) return 'declined';
-    if (PAY_OK.test(s) && /payment|card|charge/.test(s)) return 'paid';
-    if (!/payment|card|charge|pre-?order|action (?:needed|required)/.test(s)) return '';
-    // the subject is about the payment but vague ("About your preorder #123"): the email body decides
+    if (PAY_WORD.test(s)) {
+      const good = PAY_GOOD.test(s), bad = PAY_BAD.test(s.replace(/\bupdated\b/g, ''));
+      if (bad && !good) return 'declined';
+      if (good && !bad) return 'paid';
+      if (good && bad) return /\bupdated\b|successful|went through|all set/.test(s) ? 'paid' : 'declined';
+    }
+    // a vague subject ("About your preorder #123", "Order update") - the email itself decides
+    if (/^(?:thanks|thank you|here'?s your order|order confirm)/.test(s)) return '';
     if (PAY_REMIND.test(t)) return 'reminder';
-    if (PAY_DECLINED.test(t) && !/if you need to update your payment|please review your payment details/.test(t)) return 'declined';
-    if (PAY_OK.test(t)) return 'paid';
+    if (PAY_DECLINED.test(t)) return 'declined';
+    if (/\b(?:payment|card)\b[^.]{0,60}\b(?:has been|was|is now) (?:successfully )?(?:updated|processed|charged|accepted|approved)\b|thanks? (?:you )?for updating your payment|payment (?:was |is )?successful/.test(t)) return 'paid';
     return '';
   }
   const isPreorderMail = (subject, text) => /\bpre-?order(?:ed|s)?\b|release (?:day|date)|releases? on\b/i.test(String(subject || '')) || /\b(?:pre-?order(?:ed)? (?:item|items|date|release|payment)|this (?:is a|item is a) pre-?order|your pre-?order|pre-?order(?:ed)? on|release date|releases? on|street date|expected release)\b/i.test(String(text || '').slice(0, 4000));
@@ -147,6 +159,7 @@
     if (has(s, CANCELLED) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
     if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*(delivered|arrived)\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
     if (PAY_DECLINED.test(s) || PAY_REMIND.test(s) || (PAY_OK.test(s) && /\b(order|pre-?order|#\s*\d)/.test(s))) return 'confirmed';
+    if (/\b(payment|card|billing)\b/.test(s) && (PAY_BAD.test(s) || /\bupdated\b|successful|went through/.test(s)) && /\b(order|pre-?order|purchase)\b|#\s*[a-z]{0,3}\d{5,}|\b(payment method|payment info|payment details|your card|your payment)\b/.test(s)) return 'confirmed';
     if (has(s, READY)) return 'ready';
     if (has(s, OUT)) return 'out';
     if (has(s, SHIPPED)) return 'shipped';
@@ -699,7 +712,7 @@
       tracking: (() => { for (const s of sources) { const v = extractTracking(s, orderNumber); if (v.length) return v; } return []; })(),
       last4: first(extractLast4) || '',
       cancelReason: status === 'cancelled' ? cancelReason(subject, text) : '',
-      payment: status === 'cancelled' || status === 'refunded' ? '' : paymentEvent(subject, text),
+      payment: status === 'confirmed' || status === 'placed' ? paymentEvent(subject, text) : '',
       preorder: isPreorderMail(subject, cutRecs(text)),
       releaseDate: isPreorderMail(subject, cutRecs(text)) ? extractReleaseDate(subject + '\n' + cutRecs(text), m.date) : '',
       items: settlePrices(items, sub),

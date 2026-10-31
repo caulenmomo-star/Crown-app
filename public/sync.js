@@ -1,6 +1,6 @@
 /* Crown Tools - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 6; // 5: cancellation reasons, 6: pre-order payments (declined / updated)
+const READER_VER = 8; // 5: cancellation reasons, 6-8: pre-order payments (declined / updated, linked to the original order)
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -228,7 +228,7 @@ async function rereadAll(auto) {
     const accs = state.imapAccounts.filter(a => a.enabled !== false); if (!accs.length) return;
     for (let i = 0; i < 1200 && syncing; i++) await new Promise(r => setTimeout(r, 500)); // wait for a running sync to finish
     if (!cryptoKey) return;
-    const fixed = fixOrderNumbers(), merged0 = mergeSameNumber(); if (fixed || merged0) { invalidateStats(); save(); refresh(); }
+    const dropped = dropPaymentOnlyOrders(), fixed = fixOrderNumbers(), merged0 = mergeSameNumber(); if (dropped) { invalidateStats(); save(); } if (fixed || merged0) { invalidateStats(); save(); refresh(); }
     toast(auto ? 'Crown Tools’ email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
     const days = Math.min(180, Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60));
     await syncAll(false, accs.map(a => a.id), { days, fresh: true, reapply: true, full: true });

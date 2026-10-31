@@ -82,17 +82,19 @@ PAGES.dashboard = {
     ].filter(Boolean);
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
-      ${recapCardHtml()}
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
-        <span class="hstack rangeins" style="gap:6px"><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
+<button class="chip ${DASH.from || DASH.to || DASH.custom ? 'on' : ''}" id="dCustom">Custom</button>
+        <span class="hstack rangeins" style="gap:6px" ${DASH.from || DASH.to || DASH.custom ? '' : 'hidden'}><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
       ${(() => { const si = stickInfo(inSel), inv = (state.inventory || []).length ? invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)) : null;
         const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)), ss = (state.sales || []).filter(x => x.date >= m0), pm = (state.sales || []).length ? sum(ss, saleProfit) - sum((state.expenses || []).filter(x => x.date >= m0), x => x.amount) : null;
-        return `<div class="hero dhero"><div class="hero-l">Spent · ${esc(dLabel)}</div><div class="hero-v">${fmtMoney(sum(days, d => d.value))}</div>
+        const pf = profitOf(inSel); if (typeof ensureLinks === 'function') ensureLinks(inSel);
+        return `<div class="hero dhero"><button class="hero-share" id="dShare" title="Save or share this as a picture">⤴ Share</button><div class="hero-l">Spent · ${esc(dLabel)}</div><div class="hero-v">${fmtMoney(sum(days, d => d.value))}</div>
         <div class="hero-s">This month ${fmtMoney(spentM)}${spentLM ? ` · ${spentM >= spentLM ? '▲' : '▼'} ${fmtMoney(Math.abs(spentM - spentLM))} vs last month` : ''}</div>
         <div class="hero-tiles">
           <button class="htile" data-nav="orders"><span>Orders</span><b>${dOrders}</b><i>${dItems} items${dDead ? ` · ${dDead} cancelled` : ''}</i></button>
           <button class="htile" data-nav="orders"><span>Stick rate</span><b>${si.rate == null ? '—' : si.rate + '%'}</b><i>${inSel.length ? `${si.stuck} shipped${si.pending ? ` · ${si.pending} pending` : ''}` : 'no orders yet'}</i></button>
+          <button class="htile" id="dProfit"><span>Est. profit</span><b>${pf.priced ? fmtSigned(pf.profit) : '—'}</b><i>${pf.priced ? (pf.pend.priced ? fmtSigned(pf.pend.profit) + ' more pending' : 'shipped & delivered') : IV.busy || IV.queue.length ? 'pricing items…' : 'no priced items'}</i></button>
           <button class="htile" data-nav="calendar"><span>On the way</span><b>${transit.length}</b><i>${soon.length ? soon.length + ' arriving by tomorrow' : overdue.length ? overdue.length + ' running late' : 'in transit now'}</i></button>
           ${inv ? `<button class="htile" data-nav="inventory"><span>Inventory</span><b>${fmtMoney(inv.value || inv.cost, true)}</b><i>${inv.units} units${inv.priced ? ' · ' + (inv.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(inv.gain), true) : ''}</i></button>` : ''}
           ${pm != null ? `<button class="htile" data-nav="sales"><span>Profit this month</span><b>${pm >= 0 ? '' : '−'}${fmtMoney(Math.abs(pm), true)}</b><i>${plural(ss.length, 'sale')}</i></button>` : ''}
@@ -104,7 +106,7 @@ PAGES.dashboard = {
         <div class="card"><h3>Upcoming deliveries<span class="spacer"></span><button class="ghost sm" data-nav="calendar">Calendar ›</button></h3>
           ${upcoming.length ? `<div class="list">${upcoming.map(o => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><b>${fmtDate(o.eta, { weekday: true })}</b><div class="small faint">${statusDot(o.status)}${relDay(o.eta)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">Nothing on the way with a delivery date.</div>'}</div>
         <div class="card"><h3>Recent activity</h3>
-          ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><div class="small faint nowrap">${statusDot(h.status)}${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
+          ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small ellipsis" style="color:${histColor(h)}">${esc(histLabel(h))}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><div class="small faint nowrap">${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
       </div>
       <div class="cols2">
         <div class="card"><h3>Spending · ${esc(dLabel)}<span class="spacer"></span><span class="muted" style="font-weight:400">${fmtMoney(sum(days, d => d.value))} · ${plural(dOrders, 'order')}</span><button class="ghost sm" data-nav="spending">Details ›</button></h3>
@@ -112,7 +114,9 @@ PAGES.dashboard = {
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
     if ($('#dSync')) $('#dSync').onclick = () => syncAll(true);
-    wireRecapCard(() => PAGES.dashboard.render());
+    $('#dShare').onclick = openShare; $('#dProfit').onclick = openShare;
+    $('#dCustom').onclick = () => { DASH.custom = !(DASH.custom || DASH.from || DASH.to); if (!DASH.custom) DASH.from = DASH.to = ''; PAGES.dashboard.render(); };
+    IV.onUpdate = () => { if (!cryptoKey) return; if ($('#dlgShare').open) renderShare(); else if ($('#dlgPrices').open) renderPriceReview(); else if (route.page === 'dashboard' && !document.querySelector('dialog[open]')) PAGES.dashboard.render(); };
     const dsave = () => { try { localStorage.setItem('crown.dash', JSON.stringify(DASH)); } catch (_) { } PAGES.dashboard.render(); };
     $('#dDays').onclick = e => { const b = e.target.closest('[data-dd]'); if (b) { DASH.days = +b.dataset.dd; DASH.from = DASH.to = ''; dsave(); } };
     $('#dN').onchange = e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 400) { DASH.days = n; DASH.from = DASH.to = ''; dsave(); } };
@@ -295,10 +299,10 @@ function recapCardHtml() {
   const names = new Map(); list.filter(o => !isDead(o)).forEach(o => (o.items || []).forEach(i => { if (i.name && qtyOf(i) > 0) names.set(i.name, (names.get(i.name) || 0) + qtyOf(i)); }));
   const photo = sharePhoto();
   const pfLine = !SHARE.money ? '' : pf.priced ? ` · <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> est. profit` : IV.busy || IV.queue.length ? ' · pricing items…' : '';
-  return `<div class="card recap ${SHARE.open ? 'open' : ''}"><div class="recap-grid">
+  return `<div class="recap open"><div class="recap-grid">
       <div class="recap-prev"><canvas id="shareCanvas" width="1080" height="1350" aria-label="Checkout card preview"></canvas></div>
-      <div class="recap-head"><div class="recap-title"><h3>Checkout card</h3><div class="small muted">${esc(label)} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}${pfLine}</div></div>
-          <div class="recap-btns"><button class="primary sm" id="shDl">Save ${SHARE.fmt === 'jpg' ? 'JPG' : 'PNG'}</button><button class="sm" id="shCopy">Copy image</button><button class="sm ghost recap-tog" id="shTog">${SHARE.open ? 'Done' : 'Customize'}</button></div></div>
+      <div class="recap-head"><div class="recap-title"><h3>Share as a picture</h3><div class="small muted">${esc(label)} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}${pfLine}</div></div>
+          <div class="recap-btns"><button class="primary sm" id="shDl">Save ${SHARE.fmt === 'jpg' ? 'JPG' : 'PNG'}</button><button class="sm" id="shCopy">Copy image</button></div></div>
       <div class="recap-more">
         <div class="recap-row"><div class="lbl">Range</div><div><div class="chips sm" id="shRange">${RECAP_RANGES.map(([k, l]) => `<button class="chip ${SHARE.range === k ? 'on' : ''}" data-shr="${k}">${l}</button>`).join('')}</div>
           <div class="recap-dates"><input type="date" id="shFrom" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[1] : ''}" aria-label="From"><span class="faint">to</span><input type="date" id="shTo" value="${SHARE.range.startsWith('c:') ? SHARE.range.split(':')[2] : ''}" aria-label="To"></div></div></div>
@@ -340,12 +344,13 @@ async function takePhoto(file) {
   try { localStorage.setItem('crown.sharePhoto', out); } catch (_) { throw new Error('That photo is too big to keep on this device — try a smaller one.'); }
   IMG.delete(out);
 }
+// The share picture lives in its own window, opened from the dashboard's summary card.
+function renderShare() { const y = $('#shareBody').scrollTop; $('#shareBody').innerHTML = recapCardHtml(); wireRecapCard(renderShare); $('#shareBody').scrollTop = y; }
+function openShare() { renderShare(); openDlg('dlgShare'); }
 function wireRecapCard(rerender) {
   const cv = $('#shareCanvas'); if (!cv) return;
-  IV.onUpdate = () => { if (route.page === 'dashboard' && cryptoKey && !document.querySelector('dialog[open]')) rerender(); else if ($('#dlgPrices').open) renderPriceReview(); };
   recapDraw = paintRecap();
   const set = fn => { fn(); saveShare(); rerender(); };
-  $('#shTog').onclick = () => set(() => SHARE.open = !SHARE.open);
   $('#shRange').onclick = e => { const b = e.target.closest('[data-shr]'); if (b) set(() => SHARE.range = b.dataset.shr); };
   $('#shTheme').onclick = e => { const b = e.target.closest('[data-th]'); if (b) set(() => { SHARE.theme = b.dataset.th; SHARE.bg = 'theme'; }); };
   $$('.recap [data-sh]').forEach(b => b.onclick = () => set(() => SHARE[b.dataset.sh] = !SHARE[b.dataset.sh]));
