@@ -1,6 +1,10 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.12.3', date: '2026-10-31', title: 'Fix-by dates', items: [
+    'Target’s “Please update your payment soon” email puts the order under Needs updating, with the declined card.',
+    'Each one shows the date Target will auto-cancel it, sorted soonest first, with a warning when it’s due by tomorrow.',
+  ] },
   { v: '0.12.2', date: '2026-10-31', title: 'Target payment updates', items: [
     'Target’s “Success! Your payment method was updated” email marks the pre-order Updated, with the new card’s last 4.',
   ] },

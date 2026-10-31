@@ -20,7 +20,7 @@ function payState(o) {
   if (isDead(o)) return { k: 'dead', declines, at: o.statusAt || '' };
   if (D && (P > D || shippedNow)) return { k: 'paid', declines, at: P > D ? P : o.statusAt || '', by: P > D ? 'email' : 'shipped', fixedAt: F > D ? F : '' };
   if (D && F > D) return { k: 'updated', declines, at: F, declinedAt: D };
-  if (D) return { k: 'declined', declines, at: D, last4: d.last4 || o.last4 || '' };
+  if (D) return { k: 'declined', declines, at: D, last4: d.last4 || o.last4 || '', due: d.deadline || '', late: !!d.deadline && d.deadline < todayKey() };
   // the store says the payment method was updated, even if its decline email never reached Crown Tools
   if (P) return { k: 'paid', declines, at: P, by: 'email', fixedAt: F };
   return { k: 'ok', declines, at: '' };
@@ -59,7 +59,7 @@ function preCardHtml(o) {
       <div class="omain"><div class="otitle">${esc(shortTitle(o)) || 'Order #' + esc(o.orderNumber || '—')}</div><div class="ometa">${storeBadge(o.store)}<span class="mono">#${esc(o.orderNumber || '—')}</span><button class="ghost sm icopy" data-precopy="${esc(o.orderNumber || '')}" title="Copy order number" aria-label="Copy order number">⧉</button></div></div></div>
     <span class="ostat ${S.cls}"><i style="background:${S.dot}"></i>${esc(S.l)}${s.k === 'declined' && s.declines > 1 ? ` (${s.declines}×)` : ''}</span>
     <div class="prefacts">
-      ${s.k === 'declined' ? `<div><span>Email came</span><b>${esc(fmtDate(s.at))}</b><i>${esc(relDay(s.at))}</i></div>` : `<div><span>Ordered</span><b>${esc(fmtDate(o.orderDate))}</b><i>${esc(relDay(o.orderDate))}</i></div>`}
+      ${s.k === 'declined' && s.due ? `<div class="${s.late ? 'late' : s.due <= dayKey(new Date(Date.now() + 864e5)) ? 'soon' : ''}"><span>Fix by</span><b>${esc(fmtDate(s.due, { weekday: true }))}</b><i>${s.late ? 'past — it may be cancelled' : esc(relDay(s.due))}</i></div>` : s.k === 'declined' ? `<div><span>Email came</span><b>${esc(fmtDate(s.at))}</b><i>${esc(relDay(s.at))}</i></div>` : `<div><span>Ordered</span><b>${esc(fmtDate(o.orderDate))}</b><i>${esc(relDay(o.orderDate))}</i></div>`}
       <div><span>${s.k === 'declined' ? 'Declined card' : 'Card'}</span><b>${card ? '•••• ' + esc(card) : '—'}</b></div>
       <div><span>Total</span><b>${o.total != null ? fmtMoney(o.total) : '—'}</b></div>
       <div><span>Profile</span><b class="ellipsis">${p ? esc(p.name || 'Untitled') : '—'}</b>${o.recipientEmail ? `<i class="ellipsis">${esc(o.recipientEmail)}</i>` : ''}</div>
@@ -75,13 +75,14 @@ PAGES.preorders = {
     if (!PRE.f) PRE.f = cnt('todo') ? 'todo' : 'all';
     const f = PRE_FILTERS.find(x => x[0] === PRE.f) || PRE_FILTERS[5], q = PRE.q.trim().toLowerCase();
     const list = all.filter(x => f[2](x.s)).filter(({ o }) => !q || [o.orderNumber, orderTitle(o), (profileById(o.profileId) || {}).name, o.recipientEmail, o.last4, Parser.storeInfo(o.store).label].some(v => String(v || '').toLowerCase().includes(q)));
-    const urgent = x => x.s.k === 'declined' ? 0 : x.s.k === 'updated' ? 1 : 2;
-    list.sort((a, b) => urgent(a) - urgent(b) || String(b.s.at || '').localeCompare(String(a.s.at || '')) || String(b.o.orderDate).localeCompare(String(a.o.orderDate)));
+    const urgent = x => x.s.k === 'declined' ? 0 : x.s.k === 'updated' ? 1 : 2, dueKey = x => x.s.k === 'declined' ? (x.s.due || '9999') : '';
+    list.sort((a, b) => urgent(a) - urgent(b) || dueKey(a).localeCompare(dueKey(b)) || String(b.s.at || '').localeCompare(String(a.s.at || '')) || String(b.o.orderDate).localeCompare(String(a.o.orderDate)));
     const todo = cnt('todo'), upd = all.filter(x => x.s.k === 'updated').length, paid = all.filter(x => x.s.k === 'paid').length;
     const fresh = all.filter(x => x.s.k === 'declined' && Date.now() - (toDate(x.s.at) || 0) < 3 * 864e5).length;
+    const dueSoon = all.filter(x => x.s.k === 'declined' && x.s.due && x.s.due >= todayKey() && x.s.due <= dayKey(new Date(Date.now() + 864e5))).length;
     pg.innerHTML = `<div class="pagehead"><h1>Pre-orders</h1><span class="sub">${plural(all.length, 'pre-order')}${todo ? ` · ${todo} need${todo === 1 ? 's' : ''} updating` : ''}</span><div class="spacer"></div>
         ${PRE.f === 'todo' && todo > 1 ? '<button id="preAllFix">Mark all shown as updated</button>' : ''}<button class="primary" data-nav="orders">All orders</button></div>
-      ${all.length ? `<div class="hero ${todo ? 'prehero' : ''}"><div class="hero-l">Need a new payment method</div><div class="hero-v">${todo}</div><div class="hero-s">${todo ? `${fresh ? `${fresh} new in the last 3 days · ` : ''}update the card on each, then tap “I updated it”` : 'Every pre-order that needed a new card has been updated 👑'}</div>
+      ${all.length ? `<div class="hero ${todo ? 'prehero' : ''}"><div class="hero-l">Need a new payment method</div><div class="hero-v">${todo}</div><div class="hero-s">${todo ? `${dueSoon ? `<b>${dueSoon} get${dueSoon === 1 ? 's' : ''} auto-cancelled by tomorrow</b> · ` : fresh ? `${fresh} new in the last 3 days · ` : ''}update the card on each, then tap “I updated it”` : 'Every pre-order that needed a new card has been updated 👑'}</div>
         <div class="hero-tiles"><button class="htile" data-pref="updated"><span>Updated</span><b>${upd + paid}</b><i>${upd ? `${upd} by you` : 'all confirmed'}${paid ? ` · ${paid} confirmed by the store` : ''}</i></button><button class="htile" data-pref="ok"><span>Went through</span><b>${cnt('ok')}</b><i>no update email came</i></button></div></div>` : ''}
       <div class="toolbar"><input class="search" data-search id="preQ" placeholder="Search order #, item, profile, email, last 4…" value="${esc(PRE.q)}">
         <div class="pills" id="preF">${PRE_FILTERS.map(([k, l]) => `<button class="chip ${PRE.f === k ? 'on' : ''}" data-pref="${k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div></div>

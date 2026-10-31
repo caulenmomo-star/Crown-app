@@ -128,6 +128,14 @@
     if (/\b(?:payment|card)\b[^.]{0,60}\b(?:has been|was|is now) (?:successfully )?(?:updated|processed|charged|accepted|approved)\b|thanks? (?:you )?for updating your payment|payment (?:was |is )?successful/.test(t)) return 'paid';
     return '';
   }
+  // "…update the payment method before it's auto-canceled on Sun, Nov 01, 2026" -> '2026-11-01'
+  function extractPayDeadline(text) {
+    const t = String(text || '').replace(/\s+/g, ' ');
+    const m = t.match(/(?:auto-?cancel(?:l)?ed|cancel(?:l)?ed automatically|will be cancel(?:l)?ed|cancel(?:l)?ation)\s+(?:on|by|after)\s+(?:[a-z]{3,9}\.?,?\s+)?([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i) || t.match(/update (?:the |your )?payment(?: method)? (?:by|before)\s+(?:[a-z]{3,9}\.?,?\s+)?([a-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{4})/i);
+    if (!m) return '';
+    const mo = MON[m[1].toLowerCase().slice(0, 3)]; if (mo == null) return '';
+    return `${m[3]}-${String(mo + 1).padStart(2, '0')}-${String(+m[2]).padStart(2, '0')}`;
+  }
   const isPreorderMail = (subject, text) => /\bpre-?order(?:ed|s)?\b|release (?:day|date)|releases? on\b/i.test(String(subject || '')) || /\b(?:pre-?order(?:ed)? (?:item|items|date|release|payment)|this (?:is a|item is a) pre-?order|your pre-?order|pre-?order(?:ed)? on|release date|releases? on|street date|expected release)\b/i.test(String(text || '').slice(0, 4000));
   const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11 };
   // "release date, Sep 16, 2026" / "Releases on 11/7/2026" / "Release Date: November 7" -> YYYY-MM-DD
@@ -713,6 +721,7 @@
       last4: first(extractLast4) || '',
       cancelReason: status === 'cancelled' ? cancelReason(subject, text) : '',
       payment: status === 'confirmed' || status === 'placed' ? paymentEvent(subject, text) : '',
+      payDeadline: status === 'confirmed' || status === 'placed' ? extractPayDeadline(text) : '',
       preorder: isPreorderMail(subject, cutRecs(text)),
       releaseDate: isPreorderMail(subject, cutRecs(text)) ? extractReleaseDate(subject + '\n' + cutRecs(text), m.date) : '',
       items: settlePrices(items, sub),
@@ -740,7 +749,7 @@
   function looksLikeOrderMail(subject, store) {
     return store !== 'other' && /\b(order|purchase|shipment|package|pickup|delivery)\b/i.test(String(subject || '')) && !!classifyStatus(subject);
   }
-  const API = { paymentEvent, extractReleaseDate, isPreorderMail, cancelReason, detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
+  const API = { extractPayDeadline, paymentEvent, extractReleaseDate, isPreorderMail, cancelReason, detectStoreFull, isShopifySubject, shopName, extractEtaEnd, houseSig, sameHouse, cleanStreet, dl, extractPayment, extractDeliveredOn, extractShortRecipient, cleanPlain, settlePrices, extractSubtotal, productImage, STORES, storeInfo, SUBJECT_KEYWORDS, SUBJECT_PATTERNS, classifyStatus, htmlToText, decodeEntities, detectStore, extractOrderNumber, normOrderNo, extractTotal, extractItems, extractAddress, parseAddress, extractName, extractEta, detectCarrier, trackingUrl, extractTracking, extractLast4, normStreet, normUnit, splitUnit, senderKey, isNonStoreSender, looksLikeOrderMail, zip5, houseKey, unitKey, parseOrderEmail, isoFrom };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   root.Parser = API;
 })(typeof window !== 'undefined' ? window : globalThis);

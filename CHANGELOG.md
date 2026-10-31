@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.12.3 — Fix-by dates (2026-10-31)
+
+- Target’s “Please update your payment soon” email puts the order under Needs updating, with the declined card.
+- Each one shows the date Target will auto-cancel it, sorted soonest first, with a warning when it’s due by tomorrow.
+
 ## v0.12.2 — Target payment updates (2026-10-31)
 
 - Target’s “Success! Your payment method was updated” email marks the pre-order Updated, with the new card’s last 4.

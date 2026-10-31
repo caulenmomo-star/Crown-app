@@ -984,3 +984,4 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 .hero-share{position:absolute;right:14px;top:14px;z-index:1;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);color:#fff;border-radius:99px;padding:6px 13px;font-weight:600;font-size:12.5px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 .hero-share:hover{background:rgba(255,255,255,.26);border-color:rgba(255,255,255,.4)}
 #shareBody .recap{margin:0;padding:0}
+.prefacts .soon b{color:var(--warn)}.prefacts .late b{color:var(--danger)}.prefacts .late i{color:var(--danger)}

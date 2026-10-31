@@ -382,7 +382,7 @@ function applyEmail(r, accountLabel, opts) {
   if (r.releaseDate && (!o.releaseAt || r.date >= o.releaseAt)) { o.releaseDate = r.releaseDate; o.releaseAt = r.date; }
   if (r.payment === 'declined' || r.payment === 'paid') {
     o.payEvents = o.payEvents || [];
-    if (!o.payEvents.some(e => (r.messageId && e.mid === r.messageId) || (e.kind === r.payment && e.date === r.date))) { o.payEvents.push({ kind: r.payment, date: r.date, subject: r.subject, mid: r.messageId || '', last4: r.last4 || '' }); o.payEvents.sort((x, y) => String(x.date).localeCompare(String(y.date))); }
+    if (!o.payEvents.some(e => (r.messageId && e.mid === r.messageId) || (e.kind === r.payment && e.date === r.date))) { o.payEvents.push({ kind: r.payment, date: r.date, subject: r.subject, mid: r.messageId || '', last4: r.last4 || '', deadline: r.payment === 'declined' ? r.payDeadline || '' : '' }); o.payEvents.sort((x, y) => String(x.date).localeCompare(String(y.date))); }
   }
   const payMail = !!r.payment && !created;
   if (r.total != null && r.status !== 'cancelled' && !payMail && (o.total == null || r.status === 'confirmed' && r.totalKind !== 'payment' && o.source === 'email' && !o.totalLocked)) o.total = Math.round((r.total - (Number(o.cancelDeduct) || 0)) * 100) / 100;
