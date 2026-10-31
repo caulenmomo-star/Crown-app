@@ -2,6 +2,10 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.12.4 — Cleaner calendar (2026-10-31)
+
+- The calendar no longer lists cancelled orders under Ordered or counts them in a day’s spending.
+
 ## v0.12.3 — Fix-by dates (2026-10-31)
 
 - Target’s “Please update your payment soon” email puts the order under Needs updating, with the declined card.

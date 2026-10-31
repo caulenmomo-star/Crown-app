@@ -1,6 +1,9 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.12.4', date: '2026-10-31', title: 'Cleaner calendar', items: [
+    'The calendar no longer lists cancelled orders under Ordered or counts them in a day’s spending.',
+  ] },
   { v: '0.12.3', date: '2026-10-31', title: 'Fix-by dates', items: [
     'Target’s “Please update your payment soon” email puts the order under Needs updating, with the declined card.',
     'Each one shows the date Target will auto-cancel it, sorted soonest first, with a warning when it’s due by tomorrow.',

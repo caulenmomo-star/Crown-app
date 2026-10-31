@@ -130,7 +130,7 @@ const CAL = { y: new Date().getFullYear(), m: new Date().getMonth(), sel: todayK
 function calIndex() {
   const idx = {}; const add = (k, t, o) => { if (!k) return; (idx[k] = idx[k] || { eta: [], del: [], plc: [] })[t].push(o); };
   state.orders.forEach(o => {
-    if (o.orderDate) add(dayKey(toDate(o.orderDate)), 'plc', o);
+    if (o.orderDate && !isDead(o)) add(dayKey(toDate(o.orderDate)), 'plc', o); // cancelled orders aren't shown or counted
     if (o.status === 'delivered') add(o.deliveredAt ? dayKey(toDate(o.deliveredAt)) : o.eta, 'del', o);
     else if (!isDead(o) && o.eta) add(o.eta, 'eta', o);
   });
