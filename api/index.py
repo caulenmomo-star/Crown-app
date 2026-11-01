@@ -15,6 +15,7 @@ import base64
 import datetime
 import email
 import hashlib
+import html as _html
 import imaplib
 import json
 import os
@@ -36,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.13.1"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.14.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -796,8 +797,8 @@ def ups_track(code):
             mm = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", m["date"])
             iso = "%s-%02d-%02dT12:00:00" % (mm.group(3), int(mm.group(1)), int(mm.group(2))) if mm else ""
             events.append({"date": iso, "message": m.get("name") or "", "status": "", "location": m.get("location") or ""})
-    return {"ok": True, "status": status, "carrier": "UPS", "est": ymd(str(d.get("sdd") or "")), "deliveredOn": del_date if delivered else "",
-            "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "events": events, "source": "ups", "statusText": text}
+    return _finish({"status": status, "carrier": "UPS", "est": "" if delivered else ymd(str(d.get("sdd") or "")), "deliveredOn": del_date if delivered else "",
+                    "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "source": "ups", "statusText": text}, events)
 
 
 # ---- official carrier APIs (free developer accounts). Tokens are cached while the server stays warm.
@@ -869,6 +870,39 @@ def _ymd(s):
     return "%s-%s-%s" % m.groups() if m else ""
 
 
+TRACK_EVENTS = 40  # scans kept per package
+
+
+def _busy(kind):
+    return UserError("%s is busy — too many checks this hour. Crown Tools will try again later." % CARRIER_NAMES.get(kind, kind))
+
+
+def _place(*parts):
+    return ", ".join(str(x).strip().title() if len(str(x).strip()) > 2 else str(x).strip().upper() for x in parts if x and str(x).strip())
+
+
+def _weight(v, unit):
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return ""
+    if f <= 0:
+        return ""
+    u = str(unit or "").upper()
+    u = "lb" if u.startswith("LB") or u == "LBS" else "oz" if u.startswith("OZ") else "kg" if u.startswith("KG") else u.lower()
+    return ("%g %s" % (round(f, 1), u)).strip()
+
+
+def _finish(out, events):
+    """Common tail for every carrier: newest scan last, capped, plus the last scan on its own."""
+    evs = [e for e in events if e.get("message") or e.get("location")][-TRACK_EVENTS:]
+    out["events"] = evs
+    if evs:
+        out["last"] = evs[-1]
+    out["ok"] = True
+    return out
+
+
 def ups_api_track(code, cid, secret):
     tok = _token("ups", cid, secret)
     try:
@@ -877,6 +911,8 @@ def ups_api_track(code, cid, secret):
     except CarrierError as e:
         if e.code == 404:
             raise UserError("UPS doesn't know this tracking number yet.")
+        if e.code == 429:
+            raise _busy("ups")
         raise UserError("UPS tracking error (%s)." % e)
     ship = ((j.get("trackResponse") or {}).get("shipment") or [{}])[0] or {}
     if ship.get("warnings") and not ship.get("package"):
@@ -886,21 +922,32 @@ def ups_api_track(code, cid, secret):
     cur = pkg.get("currentStatus") or {}
     desc = str(cur.get("description") or cur.get("simplifiedTextDescription") or "")
     ctype = str(cur.get("type") or "").upper()
+    acts = pkg.get("activity") or []
     delivered = ctype == "D" or bool(dates.get("DEL")) or re.search(r"\bdelivered\b", desc, re.I) is not None
-    status = "delivered" if delivered else "out_for_delivery" if re.search(r"out for delivery", desc, re.I) else \
-        "exception" if ctype == "X" else "pre_transit" if ctype in ("M", "P") and not pkg.get("activity", [])[1:] else "in_transit"
+    status = "delivered" if delivered else "out_for_delivery" if re.search(r"out for delivery", desc, re.I) or ctype == "O" else \
+        "exception" if ctype in ("X", "RS") else "pre_transit" if ctype in ("M", "P", "MV") and not acts[1:] else "in_transit"
     events = []
-    for a in (pkg.get("activity") or [])[:20]:
+    for a in acts[:TRACK_EVENTS]:
         d, t = str(a.get("date") or ""), str(a.get("time") or "000000")
         iso = "%s-%s-%sT%s:%s:%s" % (d[:4], d[4:6], d[6:8], t[:2], t[2:4], t[4:6]) if len(d) == 8 else ""
         ad = ((a.get("location") or {}).get("address") or {})
-        events.append({"date": iso, "message": (a.get("status") or {}).get("description") or "", "status": "",
-                       "location": ", ".join(x for x in [ad.get("city"), ad.get("stateProvince")] if x)})
+        st = a.get("status") or {}
+        events.append({"date": iso, "message": st.get("description") or "", "status": "", "x": str(st.get("type") or "").upper() == "X",
+                       "location": _place(ad.get("city"), ad.get("stateProvince"))})
     events.reverse()
     dt = pkg.get("deliveryTime") or {}
-    return {"ok": True, "status": status, "carrier": "UPS", "est": dates.get("RDD") or dates.get("SDD") or "", "deliveredOn": dates.get("DEL") or "",
-            "window": [dt.get("startTime") or "", dt.get("endTime") or ""], "statusText": desc, "events": events,
-            "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "source": "ups-api"}
+    adr = {str(p.get("type") or "").upper(): (p.get("address") or {}) for p in pkg.get("packageAddress") or []}
+    di = pkg.get("deliveryInformation") or {}
+    w = pkg.get("weight") or {}
+    out = {"status": status, "carrier": "UPS", "est": "" if delivered else dates.get("RDD") or dates.get("SDD") or "", "deliveredOn": dates.get("DEL") or "",
+           "window": [dt.get("startTime") or "", dt.get("endTime") or ""], "statusText": desc,
+           "service": str((pkg.get("service") or {}).get("description") or "").strip(), "weight": _weight(w.get("weight"), w.get("unitOfMeasurement")),
+           "from": _place((adr.get("ORIGIN") or {}).get("city"), (adr.get("ORIGIN") or {}).get("stateProvince")),
+           "to": _place((adr.get("DESTINATION") or {}).get("city"), (adr.get("DESTINATION") or {}).get("stateProvince")),
+           "leftAt": str(di.get("location") or "").strip() if delivered else "", "signedBy": str(di.get("receivedBy") or "").strip() if delivered else "",
+           "problem": desc if status == "exception" else "",
+           "publicUrl": "https://www.ups.com/track?loc=en_US&tracknum=" + code, "source": "ups-api"}
+    return _finish(out, events)
 
 
 def fedex_api_track(code, cid, secret):
@@ -909,6 +956,8 @@ def fedex_api_track(code, cid, secret):
         j = _api_json(FEDEX_BASE + "/track/v1/trackingnumbers", {"includeDetailedScans": True, "trackingInfo": [{"trackingNumberInfo": {"trackingNumber": code}}]},
                       headers={"Authorization": "Bearer " + tok, "X-locale": "en_US"})
     except CarrierError as e:
+        if e.code == 429:
+            raise _busy("fedex")
         raise UserError("FedEx tracking error (%s)." % e)
     res = ((((j.get("output") or {}).get("completeTrackResults") or [{}])[0] or {}).get("trackResults") or [{}])[0] or {}
     if res.get("error") and not res.get("latestStatusDetail"):
@@ -920,18 +969,30 @@ def fedex_api_track(code, cid, secret):
     est = _ymd(dts.get("ESTIMATED_DELIVERY")) or _ymd(((res.get("estimatedDeliveryTimeWindow") or {}).get("window") or {}).get("ends")) or \
         _ymd(((res.get("standardTransitTimeWindow") or {}).get("window") or {}).get("ends"))
     delivered = code2 == "DL" or bool(dts.get("ACTUAL_DELIVERY"))
-    status = "delivered" if delivered else "out_for_delivery" if code2 == "OD" else "exception" if code2 in ("DE", "SE", "CA") else \
+    status = "delivered" if delivered else "out_for_delivery" if code2 == "OD" else "exception" if code2 in ("DE", "SE", "CA", "DY", "RS") else \
         "pre_transit" if code2 in ("OC", "IN") else "in_transit"
     events = []
-    for ev in (res.get("scanEvents") or [])[:20]:
+    for ev in (res.get("scanEvents") or [])[:TRACK_EVENTS]:
         loc = ev.get("scanLocation") or {}
         events.append({"date": ev.get("date") or "", "message": ev.get("eventDescription") or "", "status": "",
-                       "location": ", ".join(x for x in [loc.get("city"), loc.get("stateOrProvinceCode")] if x)})
+                       "x": str(ev.get("derivedStatusCode") or ev.get("eventType") or "").upper() in ("DE", "SE", "DY"),
+                       "location": _place(loc.get("city"), loc.get("stateOrProvinceCode"))})
     events.reverse()
     w = (res.get("estimatedDeliveryTimeWindow") or {}).get("window") or {}
-    return {"ok": True, "status": status, "carrier": "FedEx", "est": "" if delivered else est, "deliveredOn": _ymd(dts.get("ACTUAL_DELIVERY")),
-            "window": [w.get("begins") or "", w.get("ends") or ""], "statusText": desc, "events": events,
-            "publicUrl": "https://www.fedex.com/fedextrack/?trknbr=" + code, "source": "fedex-api"}
+    anc = [x for x in (lsd.get("ancillaryDetails") or []) if isinstance(x, dict)]
+    why = "; ".join(x for x in [str(anc[0].get("reasonDescription") or "").strip(), str(anc[0].get("actionDescription") or "").strip()] if x) if anc else ""
+    dd = res.get("deliveryDetails") or {}
+    wt = ((res.get("packageDetails") or {}).get("weightAndDimensions") or {}).get("weight") or []
+    wt = next((x for x in wt if str(x.get("unit") or "").upper().startswith("LB")), wt[0] if wt else {})
+    sa, ra = (res.get("shipperInformation") or {}).get("address") or {}, (res.get("recipientInformation") or {}).get("address") or {}
+    out = {"status": status, "carrier": "FedEx", "est": "" if delivered else est, "deliveredOn": _ymd(dts.get("ACTUAL_DELIVERY")),
+           "window": [w.get("begins") or "", w.get("ends") or ""], "statusText": desc,
+           "service": str((res.get("serviceDetail") or {}).get("description") or "").strip(), "weight": _weight(wt.get("value"), wt.get("unit")),
+           "from": _place(sa.get("city"), sa.get("stateOrProvinceCode")), "to": _place(ra.get("city"), ra.get("stateOrProvinceCode")),
+           "leftAt": str(dd.get("locationDescription") or "").strip() if delivered else "", "signedBy": str(dd.get("receivedByName") or "").strip() if delivered else "",
+           "problem": (why or desc) if status == "exception" else why if why and code2 in ("DY", "DE") else "",
+           "publicUrl": "https://www.fedex.com/fedextrack/?trknbr=" + code, "source": "fedex-api"}
+    return _finish(out, events)
 
 
 def usps_api_track(code, cid, secret):
@@ -941,6 +1002,8 @@ def usps_api_track(code, cid, secret):
     except CarrierError as e:
         if e.code == 404:
             raise UserError("USPS has no information for this number yet.")
+        if e.code == 429:
+            raise _busy("usps")
         if e.code in (401, 403):
             raise UserError("USPS refused the tracking request (%s). Make sure the Tracking API is added to your USPS app." % e.msg)
         raise UserError("USPS tracking error (%s)." % e)
@@ -953,9 +1016,10 @@ def usps_api_track(code, cid, secret):
     st = str(j.get("status") or j.get("statusSummary") or "")
     evs = j.get("trackingEvents") or []
     low = (cat + " " + st).lower()
-    delivered = "delivered" in low and "not delivered" not in low and "delivery attempt" not in low
+    bad = ("alert", "exception", "return to sender", "undeliverable", "notice left", "delivery attempt", "no access", "held", "missent", "damaged")
+    delivered = "delivered" in low and "not delivered" not in low and "delivery attempt" not in low and "undeliverable" not in low
     status = "delivered" if delivered else "out_for_delivery" if "out for delivery" in low else \
-        "exception" if any(w in low for w in ("alert", "exception", "return to sender", "undeliverable", "notice left")) else \
+        "exception" if any(w in low for w in bad) else \
         "pre_transit" if any(w in low for w in ("pre-shipment", "label created", "shipping label", "pre shipment")) else "in_transit"
     deliv_day = ""
     if delivered:
@@ -965,12 +1029,23 @@ def usps_api_track(code, cid, secret):
                 break
     est = _ymd(j.get("expectedDeliveryTimeStamp") or j.get("expectedDeliveryDate") or j.get("guaranteedDeliveryTimeStamp") or j.get("predictedDeliveryDate"))
     events = []
-    for ev in evs[:20]:
-        events.append({"date": ev.get("eventTimestamp") or ev.get("GMTTimestamp") or "", "message": ev.get("eventType") or "", "status": "",
-                       "location": ", ".join(x for x in [ev.get("eventCity"), ev.get("eventState")] if x)})
+    for ev in evs[:TRACK_EVENTS]:
+        msg = str(ev.get("eventType") or "")
+        events.append({"date": ev.get("eventTimestamp") or ev.get("GMTTimestamp") or "", "message": msg, "status": "",
+                       "x": any(w in msg.lower() for w in bad), "location": _place(ev.get("eventCity"), ev.get("eventState"))})
     events.reverse()
-    return {"ok": True, "status": status, "carrier": "USPS", "est": "" if delivered else est, "deliveredOn": deliv_day,
-            "statusText": st or cat, "events": events, "publicUrl": "https://tools.usps.com/go/TrackConfirmAction?tLabels=" + code, "source": "usps-api"}
+    left = ""
+    m = re.search(r"delivered,?\s*(?:to\s+)?(.+)$", st, re.I) if delivered else None
+    if m and not re.search(r"^(individual|left with individual)$", m.group(1).strip(), re.I):
+        left = m.group(1).strip().rstrip(".")
+    elif m:
+        left = "Handed to someone"
+    out = {"status": status, "carrier": "USPS", "est": "" if delivered else est, "deliveredOn": deliv_day,
+           "statusText": st or cat, "service": re.sub(r"[®™]", "", _html.unescape(re.sub(r"<[^>]+>", "", str(j.get("mailClass") or "")))).strip(),
+           "from": _place(j.get("originCity"), j.get("originState")), "to": _place(j.get("destinationCity"), j.get("destinationState")),
+           "leftAt": left, "problem": st if status == "exception" else "",
+           "publicUrl": "https://tools.usps.com/go/TrackConfirmAction?tLabels=" + code, "source": "usps-api"}
+    return _finish(out, events)
 
 
 def carrier_test(req):
@@ -1725,17 +1800,28 @@ def track(req):
             pass
         if e.code == 401:
             raise UserError("EasyPost rejected the API key. Check it in Settings.")
+        if e.code == 429:
+            raise UserError("EasyPost is busy — too many checks this hour. Crown Tools will try again later.")
         raise UserError("EasyPost error %s%s" % (e.code, (": " + detail) if detail else ""))
     except urllib.error.URLError as e:
         raise UserError("Couldn't reach EasyPost (%s)." % e.reason)
     events = []
-    for ev in (j.get("tracking_details") or [])[-20:]:
+    for ev in (j.get("tracking_details") or [])[-TRACK_EVENTS:]:
         loc = ev.get("tracking_location") or {}
-        place = ", ".join([x for x in [loc.get("city"), loc.get("state")] if x])
         events.append({"date": ev.get("datetime"), "message": ev.get("message") or "", "status": ev.get("status") or "",
-                       "location": place})
-    return {"ok": True, "status": j.get("status") or "unknown", "carrier": j.get("carrier") or "",
-            "est": j.get("est_delivery_date"), "publicUrl": j.get("public_url") or "", "events": events}
+                       "x": ev.get("status") in ("failure", "error", "return_to_sender"), "location": _place(loc.get("city"), loc.get("state"))})
+    epst = j.get("status") or "unknown"
+    status = "exception" if epst in ("failure", "error", "return_to_sender", "available_for_pickup", "cancelled") else epst
+    cd = j.get("carrier_detail") or {}
+    ol, dl = cd.get("origin_tracking_location") or {}, cd.get("destination_tracking_location") or {}
+    last = (j.get("tracking_details") or [{}])[-1] or {}
+    out = {"status": status, "carrier": j.get("carrier") or "", "est": "" if status == "delivered" else _ymd(j.get("est_delivery_date")),
+           "deliveredOn": _ymd(last.get("datetime")) if status == "delivered" else "", "statusText": last.get("message") or "",
+           "service": str(cd.get("service") or "").strip(), "weight": _weight(j.get("weight"), "oz"),
+           "from": _place(ol.get("city"), ol.get("state")), "to": _place(dl.get("city"), dl.get("state")),
+           "signedBy": str(j.get("signed_by") or "").strip(), "problem": (last.get("message") or epst.replace("_", " ")) if status == "exception" else "",
+           "publicUrl": j.get("public_url") or "", "source": "easypost"}
+    return _finish(out, events)
 
 
 # ---------------------------------------------------------------- HTTP

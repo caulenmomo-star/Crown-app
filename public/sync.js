@@ -273,6 +273,16 @@ function applyTracking(o) {
   const est = pending.map(l => l.est).filter(Boolean).sort().pop();
   if (est && !o.etaLocked && isActive(o)) { o.eta = est; o.etaEnd = ''; o.etaFrom = (pending.find(l => l.est === est) || {}).carrier + ' tracking'; o.etaAt = new Date().toISOString(); }
 }
+// which carrier a package is with (for rate limits): ups / fedex / usps / other
+function trkKind(t) {
+  const c = String(t.carrier || '').toUpperCase(), n = String(t.number || '').replace(/\s+/g, '').toUpperCase();
+  if (c === 'UPS' || n.startsWith('1Z')) return 'ups';
+  if (c === 'USPS' || /^(92|93|94|95)\d{18,24}$|^[A-Z]{2}\d{9}US$/.test(n)) return 'usps';
+  if (c.startsWith('FEDEX') || /^(\d{12}|\d{15}|\d{20}|\d{22})$/.test(n)) return 'fedex';
+  return 'other';
+}
+// a carrier that said "too many checks" gets a rest (USPS's free plan allows about 60 an hour)
+const TRK_COOL = {};
 async function liveTrack(orderId, idx, btn, quiet) {
   const o = state.orders.find(x => x.id === orderId); if (!o || !o.tracking[idx]) return false;
   if (!SERVER) { if (!quiet) toast('Live tracking needs Crown Tools’ helper running'); return false; }
@@ -281,38 +291,74 @@ async function liveTrack(orderId, idx, btn, quiet) {
   try {
     const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || '' });
     if (!cryptoKey) return false;
-    const evs = r.events || [];
+    const evs = (r.events || []).slice(-40), prev = t.live || null;
     const delDay = r.deliveredOn ? ymdOnly(r.deliveredOn) : r.status === 'delivered' ? ymdOnly((evs.slice(-1)[0] || {}).date) : '';
-    t.live = { status: r.status, est: ymdOnly(r.est), deliveredOn: delDay, carrier: r.carrier || t.carrier || '', text: r.statusText || '', events: evs, publicUrl: r.publicUrl, checkedAt: Date.now() };
+    const est = r.status === 'delivered' ? '' : ymdOnly(r.est);
+    // the first arrival date the carrier gave; a later one means it's running behind
+    const firstEst = (prev && (prev.firstEst || prev.est)) || est;
+    const text = r.statusText || '';
+    t.live = { status: r.status, est, firstEst: firstEst || '', deliveredOn: delDay, carrier: r.carrier || t.carrier || '', text, events: evs, publicUrl: r.publicUrl, checkedAt: Date.now(),
+      window: Array.isArray(r.window) && r.window.some(Boolean) ? r.window.slice(0, 2) : null, service: r.service || '', weight: r.weight || '', from: r.from || '', to: r.to || '',
+      leftAt: r.leftAt || '', signedBy: r.signedBy || '', problem: r.problem || '',
+      changedAt: !prev || prev.status !== r.status || prev.text !== text || prev.est !== est || (prev.events || []).length !== evs.length ? Date.now() : (prev.changedAt || prev.checkedAt || Date.now()) };
+    delete t.liveError;
     if (r.carrier && !t.carrier) t.carrier = r.carrier;
     applyTracking(o);
+    // a problem or a later arrival date: worth a notification (out for delivery / delivered come from the order itself)
+    if (typeof addNotif === 'function') {
+      const nm = typeof oName === 'function' ? oName(o) : (o.orderNumber || 'Order'), wh = typeof oWhere === 'function' ? oWhere(o) : '';
+      let n = null;
+      if (r.status === 'exception' && (!prev || prev.status !== 'exception')) n = addNotif('problem', 'Delivery problem: ' + nm, [t.live.problem || text || 'The carrier reported a problem', t.live.carrier, wh].filter(Boolean).join(' · '), 'packages', 'trkx:' + t.number + ':' + (t.live.problem || text));
+      else if (prev && prev.est && est && est > prev.est && r.status !== 'delivered') n = addNotif('late', 'Delayed: ' + nm, `Now arriving ${fmtDate(est, { weekday: true })} (was ${fmtDate(prev.est, { weekday: true })})` + (wh ? ' · ' + wh : ''), 'packages', 'delay:' + t.number + ':' + est);
+      if (n) renderBell();
+    }
     o.updatedAt = Date.now(); save();
     if ($('#dlgOrder').open && curOrder && curOrder.id === o.id) { curOrder = JSON.parse(JSON.stringify(o)); renderOrderDlg(); }
     if (!quiet) softRefresh();
     return true;
   } catch (e) {
     t.liveError = { msg: e.message, at: Date.now() };
+    if (/too many checks/i.test(e.message)) TRK_COOL[trkKind(t)] = Date.now() + (trkKind(t) === 'usps' ? 3600e3 : 900e3);
     if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false;
   }
+}
+// how long a package's last check stays fresh: out for delivery or arriving soon gets checked more often
+function trackFreshFor(l) {
+  if (!l) return 0;
+  if (l.status === 'out_for_delivery') return 30 * 60e3;
+  if (l.status === 'exception' || (l.est && l.est <= dayKey(new Date(Date.now() + 864e5)))) return 3600e3;
+  if (l.status === 'pre_transit') return 6 * 3600e3;
+  return 2 * 3600e3;
 }
 // After each sync (and when you open Crown Tools), quietly check packages that haven't been checked recently.
 let trackBusy = false;
 async function refreshStaleTracking(force) {
   if (trackBusy || !SERVER || !trackingReady()) return; trackBusy = true;
   try {
-    const jobs = []; const stale = Date.now() - (force ? 0 : 2 * 3600e3);
+    const jobs = [], now = Date.now(), perKind = {};
     state.orders.filter(o => isActive(o) && o.tracking.length).forEach(o => o.tracking.forEach((t, i) => {
       if (t.live && t.live.status === 'delivered') return;
-      if (!force && t.liveError && Date.now() - t.liveError.at < 3600e3) return; // don't hammer a failing lookup
-      if (!t.live || (t.live.checkedAt || 0) < stale) jobs.push([o.id, i, t.live ? t.live.checkedAt || 0 : 0]);
+      if ((TRK_COOL[trkKind(t)] || 0) > now) return; // that carrier asked us to slow down
+      if (!force && t.liveError && now - t.liveError.at < 3600e3) return; // don't hammer a failing lookup
+      if (force || !t.live || now - (t.live.checkedAt || 0) >= trackFreshFor(t.live)) jobs.push([o.id, i, t.live ? t.live.checkedAt || 0 : 0, trkKind(t)]);
     }));
     jobs.sort((a, b) => a[2] - b[2]);
-    let n = 0; const list = jobs.slice(0, force ? 150 : 60);
-    for (let i = 0; i < list.length; i += 4) { if (!cryptoKey) return; const r = await Promise.all(list.slice(i, i + 4).map(([id, k]) => liveTrack(id, k, null, true))); n += r.filter(Boolean).length; }
+    // USPS's free plan allows about 60 checks an hour, so take at most 25 USPS packages per round
+    const cap = { usps: 25 }, list = jobs.filter(j => (perKind[j[3]] = (perKind[j[3]] || 0) + 1) <= (cap[j[3]] || 999)).slice(0, force ? 150 : 60);
+    let n = 0;
+    for (let i = 0; i < list.length; i += 4) {
+      if (!cryptoKey) return;
+      const r = await Promise.all(list.slice(i, i + 4).map(([id, k, , kind]) => (TRK_COOL[kind] || 0) > Date.now() ? false : liveTrack(id, k, null, true)));
+      n += r.filter(Boolean).length;
+    }
+    // delivered a month ago: keep the last few scans only, so your data stays small
+    state.orders.forEach(o => (o.tracking || []).forEach(t => { if (t.live && t.live.status === 'delivered' && now - (t.live.checkedAt || 0) > 30 * 864e5 && (t.live.events || []).length > 6) t.live.events = t.live.events.slice(-6); }));
     if (n) { invalidateStats(); softRefresh(); if (typeof Alerts !== 'undefined') Alerts.run(); }
     return n;
   } finally { trackBusy = false; }
 }
+// while Crown Tools is open, keep checking (each package only when it's due, see trackFreshFor)
+setInterval(() => { if (cryptoKey) refreshStaleTracking(); }, 15 * 60e3);
 async function refreshAllTracking() {
   const total = state.orders.filter(o => isActive(o) && o.tracking.length).reduce((a, o) => a + o.tracking.length, 0);
   if (!total) { toast('No active orders with tracking numbers'); return; }

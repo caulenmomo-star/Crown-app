@@ -70,6 +70,7 @@ PAGES.dashboard = {
     const attention = [
       (() => { const od = (state.acoInvoices || []).filter(i => typeof acoOverdue === 'function' && acoOverdue(i)); return od.length && [`${plural(od.length, 'ACO invoice')} overdue (${fmtMoney(sum(od, acoInvTotal))})`, 'aco', () => { ACO.tab = 'invoices'; ACO.invStatus = 'overdue'; }]; })(),
       (() => { const n = typeof acoUnclaimed === 'function' && (state.acoClients || []).length ? acoUnclaimed().length : 0; return n && [`${plural(n, 'bot checkout')} on profiles that aren’t yours or a client’s — sort them`, 'aco', () => { ACO.tab = 'checkouts'; }]; })(),
+      (() => { const n = typeof allPackages === 'function' ? allPackages().filter(x => x.st === 'exception' || x.delayed || x.stuck).length : 0; return n && [`${plural(n, 'package')} need${n === 1 ? 's' : ''} a look — a delivery problem, a delay or no new scans`, 'packages', () => { PK.f = 'problems'; }]; })(),
       (() => { const n = typeof preTodoCount === 'function' ? preTodoCount() : 0; return n && [`${plural(n, 'pre-order')} with a declined card — update ${n === 1 ? 'it' : 'them'}`, 'preorders', () => { PRE.f = 'todo'; }]; })(),
       overdue.length && [`${plural(overdue.length, 'order')} past the expected delivery date`, 'orders', () => { OF.status = 'active'; }],
       unlinked && [`${plural(unlinked, 'order')} not linked to a profile`, 'orders', () => { OF.profile = '__none'; OF.status = 'all'; }],
@@ -563,7 +564,7 @@ PAGES.settings = {
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
         ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
-          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS, FedEx and USPS directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown Tools data.</div>
+          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS, FedEx and USPS directly for every package: every scan, the real delivery date and window, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page. Orders and the calendar update on their own. Keys stay encrypted inside your Crown Tools data.</div>
           ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
              ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.'],
              ['usps', 'USPS', 'https://developers.usps.com', 'Sign in at developers.usps.com with a free USPS Business account → Apps → Add App → add the <b>Tracking</b> API → copy the Consumer Key (Client ID) and Consumer Secret.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `

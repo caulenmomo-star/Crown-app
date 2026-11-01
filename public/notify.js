@@ -5,7 +5,7 @@
 'use strict';
 const NOTIF_KINDS = [
   ['order', 'New orders', '🛒'], ['shipped', 'Shipped', '🚚'], ['out', 'Out for delivery', '📦'], ['delivered', 'Delivered', '✅'],
-  ['late', 'Running late', '⏰'], ['cancelled', 'Cancelled', '✕'], ['preorder', 'Pre-order payment', '💳'], ['checkout', 'Bot checkouts', '🤖'],
+  ['late', 'Running late', '⏰'], ['problem', 'Delivery problems', '⚠️'], ['cancelled', 'Cancelled', '✕'], ['preorder', 'Pre-order payment', '💳'], ['checkout', 'Bot checkouts', '🤖'],
   ['aco', 'ACO client checkouts', '👥'], ['invoice', 'Invoices', '🧾'],
 ];
 const NOTIF_ICON = Object.fromEntries(NOTIF_KINDS.map(k => [k[0], k[2]]));

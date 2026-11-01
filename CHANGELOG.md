@@ -2,6 +2,14 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.14.0 — Packages (2026-11-01)
+
+- New Packages page: every package on your orders with a progress bar, the arrival date and delivery window, and the latest scan.
+- Open any package to see every scan, plus the service, weight, where it shipped from and where it was left.
+- “Needs a look” finds delivery problems, arrival dates that moved later, packages past their date and ones with no new scans for 4 days, with a notification.
+- Packages are checked more often once they’re close: every 30 minutes when out for delivery.
+- When USPS says there have been too many checks, Crown Tools waits and tries again later instead of failing.
+
 ## v0.13.1 — Pre-orders: card not updated (2026-11-01)
 
 - Pre-orders cancelled for item demand or a quantity limit no longer show on the Pre-orders page.
