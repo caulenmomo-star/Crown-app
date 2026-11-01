@@ -17,7 +17,9 @@ function payState(o) {
   const ev = o.payEvents || [], last = k => { for (let i = ev.length - 1; i >= 0; i--) if (ev[i].kind === k) return ev[i]; return null; };
   const d = last('declined'), p = last('paid'), D = d ? d.date : '', P = p ? p.date : '', F = o.payFixedAt || '';
   const declines = ev.filter(e => e.kind === 'declined').length, shippedNow = isStuck(o);
-  if (isDead(o)) return { k: 'dead', declines, at: o.statusAt || '' };
+  // cancelled after the store asked for a new card and it wasn't changed (Target's auto-cancel) - worth tracking;
+  // cancelled for anything else (item demand, quantity limit) isn't a payment problem, so it stays off this page
+  if (isDead(o)) return D && !(P > D) ? { k: 'lost', declines, at: o.statusAt || (o.history || []).filter(h => h.status === 'cancelled').map(h => h.date).pop() || D, declinedAt: D, last4: d.last4 || o.last4 || '', fixedAt: F > D ? F : '' } : { k: 'dead', declines, at: o.statusAt || '' };
   if (D && (P > D || shippedNow)) return { k: 'paid', declines, at: P > D ? P : o.statusAt || '', by: P > D ? 'email' : 'shipped', fixedAt: F > D ? F : '' };
   if (D && F > D) return { k: 'updated', declines, at: F, declinedAt: D };
   if (D) return { k: 'declined', declines, at: D, last4: d.last4 || o.last4 || '', due: d.deadline || '', late: !!d.deadline && d.deadline < todayKey() };
@@ -30,9 +32,10 @@ const PAY_STATES = {
   updated: { l: 'Updated by you', short: 'Updated', cls: 's-late', dot: 'var(--warn)' },
   paid: { l: 'Updated — the store charged the new card', short: 'Paid', cls: 's-delivered', dot: 'var(--ok)' },
   ok: { l: 'Went through — no payment problems', short: 'Went through', cls: 's-delivered', dot: 'var(--ok)' },
+  lost: { l: 'Cancelled — the card wasn’t updated in time', short: 'Card not updated', cls: 's-dead', dot: 'var(--danger)' },
   dead: { l: 'Cancelled', short: 'Cancelled', cls: 's-dead', dot: 'var(--faint)' },
 };
-const PRE_FILTERS = [['todo', 'Needs updating', s => s.k === 'declined'], ['updated', 'Updated', s => s.k === 'updated' || s.k === 'paid'], ['ok', 'Went through', s => s.k === 'ok'], ['dead', 'Cancelled', s => s.k === 'dead'], ['all', 'All', () => true]];
+const PRE_FILTERS = [['todo', 'Needs updating', s => s.k === 'declined'], ['updated', 'Updated', s => s.k === 'updated' || s.k === 'paid'], ['ok', 'Went through', s => s.k === 'ok'], ['lost', 'Cancelled — card not updated', s => s.k === 'lost'], ['all', 'All', s => s.k !== 'dead']];
 // "I updated it": remember when, and show it on the order's history
 function markPayFixed(o, on) {
   o.history = (o.history || []).filter(h => !(h.status === 'pay' && h.kind === 'fixed'));
@@ -44,7 +47,7 @@ const preTodoCount = () => state.orders.filter(o => isPreorderOrder(o) && paySta
 // small chip for order lists ("Pre-order · card declined")
 function preChip(o) {
   if (!isPreorderOrder(o)) return '';
-  const s = payState(o); const t = s.k === 'declined' ? 'Pre-order · card declined' : s.k === 'updated' ? 'Pre-order · card updated' : s.k === 'paid' ? 'Pre-order · updated' : 'Pre-order';
+  const s = payState(o); if (s.k === 'dead') return ''; const t = s.k === 'declined' ? 'Pre-order · card declined' : s.k === 'updated' ? 'Pre-order · card updated' : s.k === 'paid' ? 'Pre-order · updated' : s.k === 'lost' ? 'Cancelled · card not updated' : 'Pre-order';
   return `<span class="prechip pc-${s.k}">${esc(t)}</span>`;
 }
 function relShort(k) { const r = relDay(k); return /^(today|tomorrow|yesterday)$/.test(r) ? r : fmtDate(k); }
@@ -53,14 +56,14 @@ function preCardHtml(o) {
   const steps = (o.payEvents || []).map(e => ({ t: e.kind === 'declined' ? 'Card declined' : 'Payment went through', d: e.date, c: e.kind === 'declined' ? 'neg' : 'pos' }));
   if (o.payFixedAt) steps.push({ t: 'You updated the card', d: o.payFixedAt, c: '' });
   steps.sort((a, b) => String(a.d).localeCompare(String(b.d)));
-  const card = s.k === 'declined' ? s.last4 : o.last4;
+  const card = s.k === 'declined' || s.k === 'lost' ? s.last4 : o.last4;
   return `<div class="ocard pcard pc-${s.k}" data-pre="${o.id}">
     <div class="otop"><div class="opic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div>
       <div class="omain"><div class="otitle">${esc(shortTitle(o)) || 'Order #' + esc(o.orderNumber || '—')}</div><div class="ometa">${storeBadge(o.store)}<span class="mono">#${esc(o.orderNumber || '—')}</span><button class="ghost sm icopy" data-precopy="${esc(o.orderNumber || '')}" title="Copy order number" aria-label="Copy order number">⧉</button></div></div></div>
-    <span class="ostat ${S.cls}"><i style="background:${S.dot}"></i>${esc(S.l)}${s.k === 'declined' && s.declines > 1 ? ` (${s.declines}×)` : ''}</span>
+    <span class="ostat ${S.cls}"><i style="background:${S.dot}"></i>${esc(s.k === 'lost' && s.fixedAt ? 'Cancelled — even after you updated the card' : S.l)}${s.k === 'declined' && s.declines > 1 ? ` (${s.declines}×)` : ''}</span>
     <div class="prefacts">
-      ${s.k === 'declined' && s.due ? `<div class="${s.late ? 'late' : s.due <= dayKey(new Date(Date.now() + 864e5)) ? 'soon' : ''}"><span>Fix by</span><b>${esc(fmtDate(s.due, { weekday: true }))}</b><i>${s.late ? 'past — it may be cancelled' : esc(relDay(s.due))}</i></div>` : s.k === 'declined' ? `<div><span>Email came</span><b>${esc(fmtDate(s.at))}</b><i>${esc(relDay(s.at))}</i></div>` : `<div><span>Ordered</span><b>${esc(fmtDate(o.orderDate))}</b><i>${esc(relDay(o.orderDate))}</i></div>`}
-      <div><span>${s.k === 'declined' ? 'Declined card' : 'Card'}</span><b>${card ? '•••• ' + esc(card) : '—'}</b></div>
+      ${s.k === 'lost' ? `<div class="late"><span>Cancelled</span><b>${esc(fmtDate(s.at))}</b><i>${esc(relDay(s.at))}</i></div>` : s.k === 'declined' && s.due ? `<div class="${s.late ? 'late' : s.due <= dayKey(new Date(Date.now() + 864e5)) ? 'soon' : ''}"><span>Fix by</span><b>${esc(fmtDate(s.due, { weekday: true }))}</b><i>${s.late ? 'past — it may be cancelled' : esc(relDay(s.due))}</i></div>` : s.k === 'declined' ? `<div><span>Email came</span><b>${esc(fmtDate(s.at))}</b><i>${esc(relDay(s.at))}</i></div>` : `<div><span>Ordered</span><b>${esc(fmtDate(o.orderDate))}</b><i>${esc(relDay(o.orderDate))}</i></div>`}
+      <div><span>${s.k === 'declined' || s.k === 'lost' ? 'Declined card' : 'Card'}</span><b>${card ? '•••• ' + esc(card) : '—'}</b></div>
       <div><span>Total</span><b>${o.total != null ? fmtMoney(o.total) : '—'}</b></div>
       <div><span>Profile</span><b class="ellipsis">${p ? esc(p.name || 'Untitled') : '—'}</b>${o.recipientEmail ? `<i class="ellipsis">${esc(o.recipientEmail)}</i>` : ''}</div>
     </div>
@@ -70,25 +73,26 @@ function preCardHtml(o) {
 PAGES.preorders = {
   render() {
     const pg = $('#pg-preorders');
-    const all = state.orders.filter(isPreorderOrder).map(o => ({ o, s: payState(o) }));
+    const all = state.orders.filter(isPreorderOrder).map(o => ({ o, s: payState(o) })).filter(x => x.s.k !== 'dead');
     const cnt = k => all.filter(x => PRE_FILTERS.find(f => f[0] === k)[2](x.s)).length;
     if (!PRE.f) PRE.f = cnt('todo') ? 'todo' : 'all';
     const f = PRE_FILTERS.find(x => x[0] === PRE.f) || PRE_FILTERS[5], q = PRE.q.trim().toLowerCase();
     const list = all.filter(x => f[2](x.s)).filter(({ o }) => !q || [o.orderNumber, orderTitle(o), (profileById(o.profileId) || {}).name, o.recipientEmail, o.last4, Parser.storeInfo(o.store).label].some(v => String(v || '').toLowerCase().includes(q)));
-    const urgent = x => x.s.k === 'declined' ? 0 : x.s.k === 'updated' ? 1 : 2, dueKey = x => x.s.k === 'declined' ? (x.s.due || '9999') : '';
+    const urgent = x => x.s.k === 'declined' ? 0 : x.s.k === 'lost' ? 1 : x.s.k === 'updated' ? 2 : 3, dueKey = x => x.s.k === 'declined' ? (x.s.due || '9999') : '';
     list.sort((a, b) => urgent(a) - urgent(b) || dueKey(a).localeCompare(dueKey(b)) || String(b.s.at || '').localeCompare(String(a.s.at || '')) || String(b.o.orderDate).localeCompare(String(a.o.orderDate)));
     const todo = cnt('todo'), upd = all.filter(x => x.s.k === 'updated').length, paid = all.filter(x => x.s.k === 'paid').length;
+    const lostToday = all.filter(x => x.s.k === 'lost' && dayKey(toDate(x.s.at) || new Date(0)) === todayKey()).length;
     const fresh = all.filter(x => x.s.k === 'declined' && Date.now() - (toDate(x.s.at) || 0) < 3 * 864e5).length;
     const dueSoon = all.filter(x => x.s.k === 'declined' && x.s.due && x.s.due >= todayKey() && x.s.due <= dayKey(new Date(Date.now() + 864e5))).length;
-    pg.innerHTML = `<div class="pagehead"><h1>Pre-orders</h1><span class="sub">${plural(all.length, 'pre-order')}${todo ? ` · ${todo} need${todo === 1 ? 's' : ''} updating` : ''}</span><div class="spacer"></div>
+    pg.innerHTML = `<div class="pagehead"><h1>Pre-orders</h1><span class="sub">${plural(all.length, 'pre-order')}${todo ? ` · ${todo} need${todo === 1 ? 's' : ''} updating` : ''}${lostToday ? ` · ${lostToday} cancelled today — card not updated` : ''}</span><div class="spacer"></div>
         ${PRE.f === 'todo' && todo > 1 ? '<button id="preAllFix">Mark all shown as updated</button>' : ''}<button class="primary" data-nav="orders">All orders</button></div>
       ${all.length ? `<div class="hero ${todo ? 'prehero' : ''}"><div class="hero-l">Need a new payment method</div><div class="hero-v">${todo}</div><div class="hero-s">${todo ? `${dueSoon ? `<b>${dueSoon} get${dueSoon === 1 ? 's' : ''} auto-cancelled by tomorrow</b> · ` : fresh ? `${fresh} new in the last 3 days · ` : ''}update the card on each, then tap “I updated it”` : 'Every pre-order that needed a new card has been updated 👑'}</div>
-        <div class="hero-tiles"><button class="htile" data-pref="updated"><span>Updated</span><b>${upd + paid}</b><i>${upd ? `${upd} by you` : 'all confirmed'}${paid ? ` · ${paid} confirmed by the store` : ''}</i></button><button class="htile" data-pref="ok"><span>Went through</span><b>${cnt('ok')}</b><i>no update email came</i></button></div></div>` : ''}
+        <div class="hero-tiles"><button class="htile" data-pref="updated"><span>Updated</span><b>${upd + paid}</b><i>${upd ? `${upd} by you` : 'all confirmed'}${paid ? ` · ${paid} confirmed by the store` : ''}</i></button><button class="htile" data-pref="ok"><span>Went through</span><b>${cnt('ok')}</b><i>no update email came</i></button><button class="htile" data-pref="lost"><span>Cancelled — card not updated</span><b>${cnt('lost')}</b><i>${(() => { const t = all.filter(x => x.s.k === 'lost' && dayKey(toDate(x.s.at) || new Date(0)) === todayKey()).length; return t ? t + ' today' : cnt('lost') ? 'none today' : 'none — nice'; })()}</i></button></div></div>` : ''}
       <div class="toolbar"><input class="search" data-search id="preQ" placeholder="Search order #, item, profile, email, last 4…" value="${esc(PRE.q)}">
         <div class="pills" id="preF">${PRE_FILTERS.map(([k, l]) => `<button class="chip ${PRE.f === k ? 'on' : ''}" data-pref="${k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div></div>
       ${list.length ? `<div class="olist">${list.map(x => preCardHtml(x.o)).join('')}</div>`
         : `<div class="empty">${all.length ? (PRE.f === 'todo' ? 'Nothing needs a new payment method right now. 👑' : 'No pre-orders match.') : 'No pre-orders yet. Crown Tools spots pre-orders from the store’s emails — the order confirmation, the “we’ll charge your card soon” reminder, and the card-declined and payment-successful emails — and lists them here so you can see which declined ones you’ve already updated.'}</div>`}
-      <div class="note small">How it works: a pre-order is any order the store’s emails call a pre-order, or one placed 10+ days ago that hasn’t shipped. When the store emails that you need to update the payment method, it goes under <b>Needs updating</b>. Change the card on the store’s site, then tap <b>I updated it</b>. If the store sends a “payment updated / successful” email, or the order ships, that confirms it. Pre-orders that never got an update email went through.</div>`;
+      <div class="note small">How it works: a pre-order is any order the store’s emails call a pre-order, or one placed 10+ days ago that hasn’t shipped. Pre-orders cancelled for item demand or a quantity limit aren’t shown here; ones the store cancelled because the card wasn’t changed in time are under <b>Cancelled — card not updated</b>. When the store emails that you need to update the payment method, it goes under <b>Needs updating</b>. Change the card on the store’s site, then tap <b>I updated it</b>. If the store sends a “payment updated / successful” email, or the order ships, that confirms it. Pre-orders that never got an update email went through.</div>`;
     $('#preQ').oninput = debounce(e => { PRE.q = e.target.value; PAGES.preorders.render(); }, 160);
     pg.querySelectorAll('[data-pref]').forEach(b => b.onclick = () => { PRE.f = b.dataset.pref; PAGES.preorders.render(); });
     if ($('#preAllFix')) $('#preAllFix').onclick = async () => { const ids = list.filter(x => x.s.k === 'declined').map(x => x.o.id); if (!await ask(`Mark ${plural(ids.length, 'pre-order')} as updated?\n\nDo this once you’ve changed the card on each of them.`)) return; snapshot('mark pre-orders updated'); state.orders.forEach(o => { if (ids.includes(o.id)) markPayFixed(o, true); }); save(); refresh(); toast(`Marked ${plural(ids.length, 'pre-order')} updated`, { undo: true }); };

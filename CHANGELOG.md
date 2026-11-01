@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.13.1 — Pre-orders: card not updated (2026-11-01)
+
+- Pre-orders cancelled for item demand or a quantity limit no longer show on the Pre-orders page.
+- New “Cancelled — card not updated” group for pre-orders the store cancelled because the card wasn’t changed in time, with how many happened today.
+- Those cancels are labeled “card not updated” everywhere and don’t count against a profile.
+- Notifications now catch changes that happened while Crown Tools was closed.
+
 ## v0.13.0 — ACO, notifications and StockX (2026-10-31)
 
 - New ACO section: clients, their bot profiles, every checkout on them with the time, item and fee, and invoices.

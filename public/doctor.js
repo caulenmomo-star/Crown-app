@@ -46,6 +46,7 @@ const CANCEL_KINDS = {
   limit: { l: 'Quantity limit', short: 'limit', c: 'var(--accent)' },
   demand: { l: 'Item demand', short: 'demand', c: 'var(--warn)' },
   flag: { l: 'Payment / policy', short: 'flag', c: 'var(--danger)' },
+  card: { l: 'Card not updated', short: 'card not updated', c: 'var(--danger)' },
 };
 const LIMIT_WINDOW = 14 * 864e5;
 const prodKeys = o => (o.items || []).map(i => i.name).filter(Boolean);
@@ -65,12 +66,19 @@ function limitHits(o) {
   return (doctorIndex().byHouse.get(hk) || []).filter(x => x !== o && isStuck(x) && (!o.store || !x.store || x.store === o.store) && Math.abs(oDay(x) - t) <= LIMIT_WINDOW)
     .filter(x => { const xn = prodKeys(x); return names.length && xn.length ? names.some(a => xn.some(b => sameProduct(a, b))) : Math.abs(oDay(x) - t) <= 3 * 864e5; });
 }
+function payCancelled(o) {
+  const ev = o.payEvents || []; let d = '', p = '';
+  for (const e of ev) { if (e.kind === 'declined' && e.date > d) d = e.date; if (e.kind === 'paid' && e.date > p) p = e.date; }
+  return !!d && !(p > d);
+}
 function cancelInfo(o) {
   if (!o || !isCancelled(o)) return null;
   if (!_cinfo) _cinfo = new Map();
   if (_cinfo.has(o.id)) return _cinfo.get(o.id);
   let r; const jig = isJig(o), hits = limitHits(o);
   if (CANCEL_KINDS[o.cancelWhy]) r = { kind: o.cancelWhy, by: 'you', why: 'Set by you' };
+  // the store asked for a new payment method and nothing came after: it auto-cancelled because the card wasn't changed
+  else if (payCancelled(o)) r = { kind: 'card', by: 'email', why: 'The store asked for a new payment method and it wasn’t updated in time' };
   else if (CANCEL_KINDS[o.cancelReason]) r = { kind: o.cancelReason, by: 'email', why: 'The store’s email said so' };
   else if (hits.length) r = { kind: 'limit', by: 'house', why: `${plural(hits.length, 'order')} of this item already got through to this house` };
   else r = { kind: 'demand', by: 'house', why: oHouse(o) ? 'Nothing for this item got through to this house' : 'No address to compare against' };
@@ -93,7 +101,7 @@ function cancelChip(o) {
 }
 // counts by kind for a list of orders
 function cancelTally(list) {
-  const t = { demand: 0, flag: 0, limit: 0, limitJig: 0, limitPlain: 0 };
+  const t = { demand: 0, flag: 0, card: 0, limit: 0, limitJig: 0, limitPlain: 0 };
   for (const o of list) { const c = cancelInfo(o); if (!c) continue; t[c.kind]++; if (c.kind === 'limit') t[c.caught ? 'limitJig' : 'limitPlain']++; }
   return t;
 }

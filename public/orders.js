@@ -465,7 +465,7 @@ const oView = () => { try { const v = localStorage.getItem('crown.oview'); if (v
 function orderWhen(o) {
   const tk = todayKey(), rel = k => { const r = relDay(k); return /^(today|tomorrow|yesterday)$/i.test(r) ? r.toLowerCase() : fmtDate(k, { weekday: true }); };
   if (o.status === 'delivered') { const d = o.deliveredAt ? dayKey(toDate(o.deliveredAt)) : o.eta; return { cls: 's-delivered', step: 4, t: 'Delivered' + (d ? ' · ' + rel(d) : '') }; }
-  if (isDead(o)) { const c = o.status === 'cancelled' && typeof cancelInfo === 'function' ? cancelInfo(o) : null; return { cls: 's-dead', step: 0, t: STATUS[o.status].l + (c && c.kind !== 'flag' ? ' · ' + (c.kind === 'limit' ? 'quantity limit' : 'item demand') : '') }; }
+  if (isDead(o)) { const c = o.status === 'cancelled' && typeof cancelInfo === 'function' ? cancelInfo(o) : null; return { cls: 's-dead', step: 0, t: STATUS[o.status].l + (c ? ' · ' + CANCEL_KINDS[c.kind].l.toLowerCase() : '') }; }
   const late = o.eta && o.eta < tk;
   if (o.status === 'out') return { cls: 's-transit', step: 3, t: 'Out for delivery · arrives today' };
   if (o.status === 'ready') return { cls: 's-transit', step: 3, t: 'Ready for pickup' };

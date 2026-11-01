@@ -167,6 +167,7 @@ function scheduleSync() {
 }
 function onUnlocked() {
   if (typeof takeStockxPending === "function") takeStockxPending();
+  if (typeof notifScan === "function" && (notifScan() || NF.snapChanged)) { NF.snapChanged = false; save(); } // catch up on what changed since last time
   if (typeof maybeShowIosTip === 'function') setTimeout(maybeShowIosTip, 2500);
   if (state.settings.theme) applyTheme(state.settings.theme);
   if (typeof maybeShowChangelog === 'function') maybeShowChangelog();

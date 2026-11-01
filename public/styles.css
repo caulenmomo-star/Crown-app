@@ -1007,3 +1007,4 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 #dlgAcoInv .dfoot{flex-wrap:wrap;gap:6px}
 @media (max-width:760px){.ivline{grid-template-columns:minmax(0,1fr) 90px auto}}
 @media (max-width:430px){.brand .ver{display:none}.topbtns{gap:4px}}
+@media (max-width:760px){.hero-tiles>.htile:nth-child(3):last-child{grid-column:1 / -1}}

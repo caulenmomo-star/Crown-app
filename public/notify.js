@@ -44,21 +44,25 @@ function notifScan() {
   if (!cryptoKey || !state.orders) return 0;
   const snap = state.notifSnap, fresh = {}; let added = 0;
   for (const o of state.orders) fresh[o.id] = orderSig(o);
+  NF.snapChanged = !snap || Object.keys(snap).length !== state.orders.length || state.orders.some(o => snap[o.id] !== fresh[o.id]);
   if (!snap) { state.notifSnap = fresh; return 0; } // first run: remember where everything is, no flood
   const batch = {}; const push = (kind, o, title, body, key) => { (batch[kind] = batch[kind] || []).push({ o, title, body, key }); };
   for (const o of state.orders) {
     const was = snap[o.id], now = fresh[o.id]; if (was === now) continue;
     const [ws, wp] = (was || '|').split('|'), [ns, np] = now.split('|');
     if (byHand(o) && was) continue;
+    // first time we see it (a fresh sync) but it already needs a new card, or was already cancelled for it: say so
+    if (!was && (np === 'declined' || np === 'lost')) { const s = payState(o); push('preorder', o, (np === 'lost' ? 'Cancelled — card wasn’t updated: ' : 'Pre-order needs a new card: ') + oName(o), (np === 'declined' && s.due ? 'Fix by ' + fmtDate(s.due, { weekday: true }) + ' · ' : '') + (s.last4 ? 'Declined •••• ' + s.last4 + ' · ' : '') + oWhere(o), (np === 'lost' ? 'lost:' : 'pay:') + o.id + (np === 'lost' ? '' : ':' + (s.at || ''))); continue; }
     if (!was) { if (!isDead(o)) { if (o.source === 'bot') push('checkout', o, 'Bot checkout: ' + oName(o), [o.bot ? botLabel(o.bot.bot) : '', oWhere(o)].filter(Boolean).join(' · '), 'new:' + o.id); else push('order', o, 'New order: ' + oName(o), oWhere(o), 'new:' + o.id); } continue; }
     if (ns !== ws) {
       if (ns === 'shipped') push('shipped', o, 'Shipped: ' + oName(o), (o.eta ? 'Arrives ' + fmtDate(o.eta, { weekday: true }) + ' · ' : '') + oWhere(o), 'st:' + o.id + ':shipped');
       else if (ns === 'out') push('out', o, 'Out for delivery: ' + oName(o), oWhere(o), 'st:' + o.id + ':out');
       else if (ns === 'delivered') push('delivered', o, 'Delivered: ' + oName(o), oWhere(o), 'st:' + o.id + ':delivered');
-      else if (ns === 'cancelled') { const c = typeof cancelInfo === 'function' ? cancelInfo(o) : null; push('cancelled', o, 'Cancelled: ' + oName(o), (c ? (c.kind === 'limit' ? 'Quantity limit' : c.kind === 'demand' ? 'Item demand' : 'Flagged / payment') + ' · ' : '') + oWhere(o), 'st:' + o.id + ':cancelled'); }
+      else if (ns === 'cancelled' && np !== 'lost') { const c = typeof cancelInfo === 'function' ? cancelInfo(o) : null; push('cancelled', o, 'Cancelled: ' + oName(o), (c ? CANCEL_KINDS[c.kind].l + ' · ' : '') + oWhere(o), 'st:' + o.id + ':cancelled'); }
     }
     if (np !== wp && np) {
       if (np === 'declined') push('preorder', o, 'Pre-order needs a new card: ' + oName(o), (() => { const s = payState(o); return (s.due ? 'Fix by ' + fmtDate(s.due, { weekday: true }) + ' · ' : '') + (s.last4 ? 'Declined •••• ' + s.last4 + ' · ' : '') + oWhere(o); })(), 'pay:' + o.id + ':' + (payState(o).at || ''));
+      else if (np === 'lost') push('preorder', o, 'Cancelled — card wasn’t updated: ' + oName(o), (payState(o).last4 ? 'Declined •••• ' + payState(o).last4 + ' · ' : '') + oWhere(o), 'lost:' + o.id);
       else if (np === 'paid' && wp === 'declined') push('preorder', o, 'Pre-order payment updated: ' + oName(o), 'Charged — pre-order secured · ' + oWhere(o), 'pay:' + o.id + ':paid');
     }
   }
@@ -82,8 +86,9 @@ function notifScan() {
   return added;
 }
 // re-check shortly after anything is saved (email sync, tracking, Discord, ACO...) and every 10 minutes
-function scheduleNotifScan() { clearTimeout(NF.timer); NF.timer = setTimeout(() => { if (notifScan()) save(); }, 1500); }
-setInterval(() => { if (cryptoKey && notifScan()) save(); }, 10 * 60e3);
+// the snapshot is saved too, so a change that happens while Crown Tools is closed still gets noticed next time
+function scheduleNotifScan() { clearTimeout(NF.timer); NF.timer = setTimeout(() => { if (notifScan() || NF.snapChanged) { NF.snapChanged = false; save(); } }, 1500); }
+setInterval(() => { if (cryptoKey && (notifScan() || NF.snapChanged)) { NF.snapChanged = false; save(); } }, 10 * 60e3);
 
 /* ---------- the bell ---------- */
 function renderBell() {
