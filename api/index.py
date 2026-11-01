@@ -36,7 +36,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.12.4"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.13.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1444,6 +1444,228 @@ def market_prices(req):
     return {"ok": True, "prices": out, "failedSets": errors, "at": time.time()}
 
 
+# ---------------------------------------------------------------- StockX (prices for sneakers, LEGO, consoles...)
+# Uses StockX's official API. The app owner registers a StockX developer app and sets STOCKX_CLIENT_ID,
+# STOCKX_CLIENT_SECRET and STOCKX_API_KEY; each person then signs in to StockX once (OAuth) and their tokens are kept
+# inside their own encrypted Crown Tools data, sent along with each price request.
+STOCKX_API = (os.environ.get("CROWN_STOCKX_API") or "https://api.stockx.com/v2").rstrip("/")
+STOCKX_AUTH = (os.environ.get("CROWN_STOCKX_AUTH") or "https://accounts.stockx.com").rstrip("/")
+
+
+def stockx_conf():
+    return {"id": os.environ.get("STOCKX_CLIENT_ID", ""), "secret": os.environ.get("STOCKX_CLIENT_SECRET", ""), "key": os.environ.get("STOCKX_API_KEY", "")}
+
+
+def stockx_ready():
+    c = stockx_conf()
+    return bool(c["id"] and c["secret"] and c["key"])
+
+
+def stockx_status(req):
+    return {"ok": True, "configured": stockx_ready()}
+
+
+def stockx_login_url(redirect_uri, state):
+    c = stockx_conf()
+    if not stockx_ready():
+        raise UserError("StockX isn't set up on this Crown Tools yet.")
+    q = urllib.parse.urlencode({"response_type": "code", "client_id": c["id"], "redirect_uri": redirect_uri, "scope": "offline_access openid",
+                                "audience": "gateway.stockx.com", "state": state})
+    return STOCKX_AUTH + "/authorize?" + q
+
+
+def _stockx_token(data):
+    c = stockx_conf()
+    data = dict(data, client_id=c["id"], client_secret=c["secret"])
+    try:
+        j = _api_json(STOCKX_AUTH + "/oauth/token", data, form=True)
+    except CarrierError as e:
+        raise UserError("StockX sign-in didn't work (%s). Connect StockX again in Settings." % (e.args[1] if len(e.args) > 1 else e))
+    if not j.get("access_token"):
+        raise UserError("StockX sign-in didn't work. Connect StockX again in Settings.")
+    return {"access": j["access_token"], "refresh": j.get("refresh_token") or data.get("refresh_token") or "", "exp": int(time.time()) + int(j.get("expires_in") or 3600) - 60}
+
+
+def stockx_exchange(code, redirect_uri):
+    return _stockx_token({"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri})
+
+
+def _stockx_auth(req):
+    """The caller's tokens, refreshed when they're about to run out. Returns (tokens, changed)."""
+    a = req.get("auth") or {}
+    if not stockx_ready():
+        raise UserError("StockX isn't set up on this Crown Tools yet.")
+    if not a.get("refresh") and not a.get("access"):
+        raise UserError("Connect StockX in Settings first.")
+    if a.get("access") and int(a.get("exp") or 0) > time.time():
+        return a, False
+    if not a.get("refresh"):
+        raise UserError("Your StockX sign-in ran out. Connect StockX again in Settings.")
+    return _stockx_token({"grant_type": "refresh_token", "refresh_token": a["refresh"]}), True
+
+
+def _stockx_get(path, tok):
+    try:
+        return _api_json(STOCKX_API + path, headers={"Authorization": "Bearer " + tok["access"], "x-api-key": stockx_conf()["key"]})
+    except CarrierError as e:
+        if e.args and e.args[0] in (401, 403):
+            raise UserError("StockX turned the request down. Connect StockX again in Settings.")
+        if e.args and e.args[0] == 429:
+            raise UserError("StockX is busy - try again in a minute.")
+        raise UserError("StockX didn't answer (%s)." % (e.args[0] if e.args else "error"))
+
+
+def stockx_search(req):
+    q = str(req.get("q") or "").strip()[:120]
+    if len(q) < 2:
+        raise UserError("Type what to search for.")
+    tok, changed = _stockx_auth(req)
+    j = _stockx_get("/catalog/search?" + urllib.parse.urlencode({"query": q, "pageNumber": 1, "pageSize": 12}), tok)
+    out = []
+    for p in (j.get("products") or [])[:12]:
+        a = p.get("productAttributes") or {}
+        out.append({"id": p.get("productId"), "title": p.get("title") or "", "brand": p.get("brand") or "", "type": p.get("productType") or "",
+                    "urlKey": p.get("urlKey") or "", "style": p.get("styleId") or "", "retail": a.get("retailPrice"), "released": a.get("releaseDate") or ""})
+    r = {"ok": True, "results": [x for x in out if x["id"]]}
+    if changed:
+        r["auth"] = tok
+    return r
+
+
+def _num(v):
+    try:
+        f = float(v)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def stockx_prices(req):
+    ids = [str(i) for i in (req.get("ids") or []) if re.fullmatch(r"[A-Za-z0-9\-]{6,64}", str(i))][:60]
+    if not ids:
+        return {"ok": True, "prices": {}}
+    tok, changed = _stockx_auth(req)
+    prices = {}
+    for pid in ids:
+        try:
+            j = _stockx_get("/catalog/products/%s/market-data?currencyCode=USD" % pid, tok)
+        except UserError:
+            continue
+        rows = j if isinstance(j, list) else (j.get("variants") or j.get("marketData") or [j])
+        vals, asks, bids = [], [], []
+        for v in rows:
+            ask, bid = _num(v.get("lowestAskAmount")), _num(v.get("highestBidAmount"))
+            if ask:
+                asks.append(ask)
+            if bid:
+                bids.append(bid)
+            if ask and bid:
+                vals.append(min(ask, (ask + bid) / 2))
+            elif ask or bid:
+                vals.append(ask or bid)
+        if vals:
+            vals.sort()
+            mid = vals[len(vals) // 2]
+            prices[pid] = {"value": round(mid, 2), "ask": round(min(asks), 2) if asks else None, "bid": round(max(bids), 2) if bids else None, "at": int(time.time())}
+    r = {"ok": True, "prices": prices}
+    if changed:
+        r["auth"] = tok
+    return r
+
+
+def stockx_done_page(payload):
+    """After StockX sign-in: back to Crown Tools with the tokens in the part of the link that never reaches a server."""
+    frag = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Crown Tools</title>"
+            "<meta http-equiv=refresh content='0;url=/#stockx=%s'><p style='font:16px system-ui;padding:24px'>Connecting StockX...</p>" % frag)
+
+
+# ---------------------------------------------------------------- ACO invoices: card payments through the user's Stripe
+ACO_STRIPE = (os.environ.get("CROWN_ACO_STRIPE_API") or os.environ.get("STRIPE_API_BASE") or "https://api.stripe.com").rstrip("/")
+
+
+def _aco_key(req):
+    k = str(req.get("key") or "").strip()
+    if not re.fullmatch(r"(sk|rk)_(live|test)_[A-Za-z0-9]{10,200}", k):
+        raise UserError("That doesn't look like a Stripe secret key (sk_live_... or rk_live_...).")
+    return k
+
+
+def _aco_stripe(key, method, path, params=None):
+    def flat(d, prefix=""):
+        out = []
+        for k, v in (d or {}).items():
+            name = "%s[%s]" % (prefix, k) if prefix else k
+            if isinstance(v, dict):
+                out += flat(v, name)
+            elif isinstance(v, list):
+                for i, x in enumerate(v):
+                    out += flat(x, "%s[%d]" % (name, i)) if isinstance(x, dict) else [("%s[%d]" % (name, i), str(x))]
+            elif v is not None:
+                out.append((name, "true" if v is True else "false" if v is False else str(v)))
+        return out
+    body = urllib.parse.urlencode(flat(params)).encode() if method == "POST" else None
+    url = ACO_STRIPE + path + ("?" + urllib.parse.urlencode(flat(params)) if method == "GET" and params else "")
+    req = urllib.request.Request(url, data=body, method=method, headers={"Authorization": "Bearer " + key, "Content-Type": "application/x-www-form-urlencoded", "Stripe-Version": "2024-06-20"})
+    try:
+        with urllib.request.urlopen(req, timeout=20, context=ssl_context()) as r:
+            return json.loads(r.read().decode("utf-8") or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            msg = (json.loads(e.read().decode("utf-8", "replace")).get("error") or {}).get("message") or ""
+        except Exception:
+            msg = ""
+        if e.code == 401:
+            raise UserError("Stripe didn't accept that key.")
+        if e.code == 403:
+            raise UserError("That Stripe key isn't allowed to do this - give it write access to Prices and Payment Links and read access to Checkout Sessions.")
+        raise UserError("Stripe: " + (msg[:200] or "error %d" % e.code))
+    except (urllib.error.URLError, socket.timeout, OSError):
+        raise UserError("Couldn't reach Stripe - check the internet connection.")
+
+
+def aco_stripe_test(req):
+    key = _aco_key(req)
+    j = _aco_stripe(key, "GET", "/v1/payment_links", {"limit": 1})
+    acct = ""
+    try:
+        a = _aco_stripe(key, "GET", "/v1/account")
+        acct = (a.get("settings") or {}).get("dashboard", {}).get("display_name") or a.get("business_profile", {}).get("name") or ""
+    except UserError:
+        pass
+    return {"ok": True, "account": acct, "live": key.split("_")[1] == "live", "links": len(j.get("data") or [])}
+
+
+def aco_stripe_link(req):
+    key = _aco_key(req)
+    amount = int(req.get("amount") or 0)
+    if amount < 50 or amount > 5000000:
+        raise UserError("Card payments need an amount between $0.50 and $50,000.")
+    name = str(req.get("name") or "Invoice")[:120]
+    inv = str(req.get("invoice") or "")[:40]
+    price = _aco_stripe(key, "POST", "/v1/prices", {"currency": "usd", "unit_amount": amount, "product_data": {"name": name}})
+    link = _aco_stripe(key, "POST", "/v1/payment_links", {"line_items": [{"price": price["id"], "quantity": 1}], "metadata": {"crown_invoice": inv, "client": str(req.get("client") or "")[:80]},
+                                                           "payment_intent_data": {"description": name}, "after_completion": {"type": "hosted_confirmation", "hosted_confirmation": {"custom_message": "Thanks! Your payment for %s went through." % (inv or "the invoice")}}})
+    return {"ok": True, "id": link.get("id"), "url": link.get("url")}
+
+
+def aco_stripe_check(req):
+    key = _aco_key(req)
+    link = str(req.get("link") or "")
+    if not re.fullmatch(r"plink_[A-Za-z0-9]{3,120}", link):
+        raise UserError("No card payment link on this invoice.")
+    j = _aco_stripe(key, "GET", "/v1/checkout/sessions", {"payment_link": link, "limit": 10})
+    paid = [x for x in (j.get("data") or []) if x.get("payment_status") == "paid" or x.get("status") == "complete"]
+    if not paid:
+        return {"ok": True, "paid": False}
+    when = max(int(x.get("created") or 0) for x in paid)
+    try:
+        _aco_stripe(key, "POST", "/v1/payment_links/" + link, {"active": False})  # so it can't be paid twice
+    except UserError:
+        pass
+    return {"ok": True, "paid": True, "paidAt": datetime.datetime.fromtimestamp(when, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if when else ""}
+
+
 def free_track(code, carrier):
     carrier = (carrier or "").upper()
     if carrier == "UPS" or code.upper().startswith("1Z"):
@@ -1573,6 +1795,8 @@ class _LocalHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = self.path.split("?")[0]
+        if path in ("/api/stockx/login", "/api/stockx/callback"):
+            return self._stockx_nav(path)
         if path.startswith("/api/"):
             if not self._api_guard():
                 return
@@ -1595,6 +1819,27 @@ class _LocalHandler(BaseHTTPRequestHandler):
         with open(full, "rb") as f:
             data = f.read()
         self._send(200, data, TYPES.get(os.path.splitext(full)[1].lower(), "application/octet-stream"))
+
+    def _stockx_nav(self, path):
+        if not self._host_ok():
+            return self._send(403, "Forbidden", "text/plain")
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        redirect = "http://%s/api/stockx/callback" % (self.headers.get("Host") or "%s:%d" % (HOST, PORT))
+        try:
+            if path.endswith("/login"):
+                url = stockx_login_url(redirect, (q.get("state") or [""])[0][:80])
+                self.send_response(302)
+                self.send_header("Location", url)
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                return
+            if q.get("error"):
+                raise UserError("StockX sign-in was cancelled.")
+            tok = stockx_exchange((q.get("code") or [""])[0], redirect)
+            page = stockx_done_page({"auth": tok, "state": (q.get("state") or [""])[0]})
+        except UserError as e:
+            page = stockx_done_page({"error": str(e)})
+        self._send(200, page.encode(), "text/html; charset=utf-8")
 
     def do_PUT(self):
         if not self._api_guard():
@@ -1632,6 +1877,12 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/market/groups": market_groups,
             "/api/market/search": market_search,
             "/api/market/prices": market_prices,
+            "/api/stockx/status": stockx_status,
+            "/api/stockx/search": stockx_search,
+            "/api/stockx/prices": stockx_prices,
+            "/api/aco/stripe/test": aco_stripe_test,
+            "/api/aco/stripe/link": aco_stripe_link,
+            "/api/aco/stripe/check": aco_stripe_check,
         }
         fn = routes.get(self.path)
         if not fn:
@@ -2458,6 +2709,31 @@ class handler(BaseHTTPRequestHandler):
                         out["search"] = str(e)
                 return out
             return self._run(mstatus)
+        if r in ("/stockx/login", "/stockx/callback"):  # browser sign-in with StockX (no app headers on these)
+            q = self._query()
+            redirect = app_url(h).rstrip("/") + "/api/stockx/callback"
+            try:
+                if r == "/stockx/login":
+                    rate_limit("sxl", client_ip(h), 30, 3600)
+                    url = stockx_login_url(redirect, (q.get("state") or "")[:80])
+                    self.send_response(302)
+                    self.send_header("Location", url)
+                    self.send_header("Cache-Control", "no-store")
+                    self.end_headers()
+                    return
+                if q.get("error"):
+                    raise UserError("StockX sign-in was cancelled.")
+                page = stockx_done_page({"auth": stockx_exchange(q.get("code") or "", redirect), "state": q.get("state") or ""})
+            except (UserError, TooMany) as e:
+                page = stockx_done_page({"error": str(e) or "Too many tries. Wait a bit and try again."})
+            body = page.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if not self._guard():
             return
         if r.startswith("/admin"):
@@ -2769,6 +3045,12 @@ class handler(BaseHTTPRequestHandler):
             "/market/groups": market_groups,
             "/market/search": market_search,
             "/market/prices": market_prices,
+            "/stockx/status": stockx_status,
+            "/stockx/search": stockx_search,
+            "/stockx/prices": stockx_prices,
+            "/aco/stripe/test": aco_stripe_test,
+            "/aco/stripe/link": aco_stripe_link,
+            "/aco/stripe/check": aco_stripe_check,
         }
         fn = routes.get(r)
         if not fn:
@@ -2777,7 +3059,7 @@ class handler(BaseHTTPRequestHandler):
         def go():
             b = self._body()
             u = require_user(h)
-            limits = {"/img": (1500, 3600), "/discord": (300, 3600), "/discord/check": (60, 3600), "/discord/read": (400, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600)}
+            limits = {"/img": (1500, 3600), "/discord": (300, 3600), "/discord/check": (60, 3600), "/discord/read": (400, 3600), "/upc": (60, 3600), "/market/search": (150, 3600), "/market/prices": (60, 3600), "/stockx/search": (150, 3600), "/stockx/prices": (60, 3600), "/aco/stripe/test": (30, 3600), "/aco/stripe/link": (120, 3600), "/aco/stripe/check": (600, 3600)}
             if r in limits:
                 rate_limit("u" + r.replace("/", ""), u["id"], *limits[r])
             if r.startswith("/imap/"):

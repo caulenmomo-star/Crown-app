@@ -849,12 +849,15 @@ function openBotPaste() { $('#botText').value = ''; botPreview(); openDlg('dlgBo
 function botPreview() {
   botRecs = parseBotText($('#botText').value);
   $('#botGo').disabled = !botRecs.length;
-  $('#botPreview').innerHTML = botRecs.length ? `<div class="small muted" style="margin-bottom:6px">Found ${plural(botRecs.length, 'checkout')}:</div><div class="list">${botRecs.map(r => { const ex = r.order && findOrder(r.order, r.store); return `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(r.item || '(no product)')}</div><div class="small muted">${storeBadge(r.store)} ${r.order ? '#' + esc(r.order) : ''} · ${r.price != null ? fmtMoney(r.price) : 'no price'} · ${r.profile ? '✓ ' + esc(r.profile.name) : r.profileName ? `<span style="color:var(--warn)">profile “${esc(r.profileName)}” not found</span>` : 'no profile'}</div></div><span class="badge">${ex ? 'links to existing order' : 'new order'}</span></div>`; }).join('')}</div>` : ($('#botText').value.trim() ? '<div class="note warn">Couldn’t find any checkout details. Make sure the paste includes labels like Product, Price, Profile or Order.</div>' : '');
+  $('#botPreview').innerHTML = botRecs.length ? `<div class="small muted" style="margin-bottom:6px">Found ${plural(botRecs.length, 'checkout')}:</div><div class="list">${botRecs.map(r => { const ex = r.order && findOrder(r.order, r.store); return `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(r.item || '(no product)')}</div><div class="small muted">${storeBadge(r.store)} ${r.order ? '#' + esc(r.order) : ''} · ${r.price != null ? fmtMoney(r.price) : 'no price'} · ${typeof acoClientForProfile === 'function' && acoClientForProfile(r.profileName) ? '👥 ACO · ' + esc(acoClientForProfile(r.profileName).name) : r.profile ? '✓ ' + esc(r.profile.name) : r.profileName ? `<span style="color:var(--warn)">profile “${esc(r.profileName)}” not found</span>` : 'no profile'}</div></div><span class="badge">${typeof acoClientForProfile === 'function' && acoClientForProfile(r.profileName) ? 'client checkout' : ex ? 'links to existing order' : 'new order'}</span></div>`; }).join('')}</div>` : ($('#botText').value.trim() ? '<div class="note warn">Couldn’t find any checkout details. Make sure the paste includes labels like Product, Price, Profile or Order.</div>' : '');
 }
 $('#botText').oninput = debounce(botPreview, 150);
 $('#botGo').onclick = () => {
-  snapshot('bot checkouts'); let added = 0, linked = 0;
+  snapshot('bot checkouts'); let added = 0, linked = 0, aco = 0;
   for (const r of botRecs) {
+    // a client's profile: log it under ACO for that client, never as your own order
+    const cl = typeof acoClientForProfile === 'function' ? acoClientForProfile(r.profileName) : null;
+    if (cl) { const id = 'paste:' + (r.order || uid()); if (!(state.acoCheckouts || []).some(k => k.botId === id || (r.order && k.order === r.order))) { state.acoCheckouts.push({ id: uid(), clientId: cl.id, src: 'paste', botId: id, at: new Date().toISOString(), store: r.store, item: r.item || 'Item', qty: r.qty, price: r.price != null ? Math.round(r.price / r.qty * 100) / 100 : null, profile: r.profileName, bot: '', order: r.order || '', image: '', status: 'success', invoiceId: '', note: 'Pasted', createdAt: Date.now(), updatedAt: Date.now() }); aco++; } continue; }
     let o = r.order ? findOrder(r.order, r.store) : null;
     if (!o) { o = newOrder({ orderNumber: r.order, store: r.store, source: 'bot', history: [] }); setStatus(o, 'placed', o.orderDate, 'bot', 'Pasted bot checkout'); state.orders.push(o); added++; } else linked++;
     if (r.item && !o.items.length) o.items = [{ name: r.item, qty: r.qty, price: r.price != null ? Math.round(r.price / r.qty * 100) / 100 : null }];
@@ -864,7 +867,7 @@ $('#botGo').onclick = () => {
     if (r.profile) { o.profileId = r.profile.id; o.profileLink = 'manual'; if (!o.addr1 && r.profile.shipAddr1) { Object.assign(o, { name: shipName(r.profile), addr1: r.profile.shipAddr1, addr2: r.profile.shipAddr2, city: r.profile.shipCity, state: r.profile.shipState, zip: r.profile.shipZip }); } }
     o.updatedAt = Date.now(); autoLink(o); resolveHouse(o);
   }
-  invalidateStats(); closeDlg('dlgBot'); save(); refresh(); toast(`Added ${plural(added, 'order')}${linked ? `, linked ${linked} existing` : ''}`, { undo: true });
+  invalidateStats(); closeDlg('dlgBot'); save(); refresh(); toast(`Added ${plural(added, 'order')}${linked ? `, linked ${linked} existing` : ''}${aco ? ` · ${plural(aco, 'client checkout')} to ACO` : ''}`, { undo: true });
 };
 
 /* ================= houses ================= */

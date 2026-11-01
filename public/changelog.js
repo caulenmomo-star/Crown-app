@@ -1,6 +1,14 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.13.0', date: '2026-10-31', title: 'ACO, notifications and StockX', items: [
+    'New ACO section: clients, their bot profiles, every checkout on them with the time, item and fee, and invoices.',
+    'Client checkouts from your bot never become your own orders. Unknown profiles wait for you to say whose they are.',
+    'Invoices: a link your client can open, a message to copy, email, and card payments through your own Stripe that mark it paid on their own.',
+    'Notifications: a bell with new orders, shipments, deliveries, cancellations, pre-order card problems, client checkouts and overdue invoices, plus pop-ups on this device.',
+    'StockX prices for LEGO, consoles, sneakers and other collectibles, and you can type a price yourself for anything.',
+    'Fixed: plurals like “addresses” and “inboxes”.',
+  ] },
   { v: '0.12.4', date: '2026-10-31', title: 'Cleaner calendar', items: [
     'The calendar no longer lists cancelled orders under Ordered or counts them in a day’s spending.',
   ] },

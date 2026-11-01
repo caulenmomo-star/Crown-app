@@ -150,7 +150,7 @@ async function syncAll(manual, ids, opts) {
   if (totals.delivered) parts.push(totals.delivered + ' delivered');
   if (totals.cancelled) parts.push(totals.cancelled + ' cancelled');
   const otherUpd = totals.updated - totals.shipped - totals.delivered - totals.cancelled; if (otherUpd > 0) parts.push(plural(otherUpd, 'update'));
-  if (parts.length && state.settings.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') { try { new Notification('Crown Tools', { body: parts.join(' · ') }); } catch (_) { } }
+  if (typeof notifScan === 'function' && notifScan()) save();
   if (manual) toast(errors.length ? errors[0] : parts.length ? 'Sync done: ' + parts.join(', ') : 'Sync done — nothing new');
 }
 async function rescan(id, days) {
@@ -166,6 +166,7 @@ function scheduleSync() {
   syncTimer = setTimeout(() => { if (document.visibilityState === 'hidden') { scheduleSync(); return; } syncAll(false); }, m * 60000);
 }
 function onUnlocked() {
+  if (typeof takeStockxPending === "function") takeStockxPending();
   if (typeof maybeShowIosTip === 'function') setTimeout(maybeShowIosTip, 2500);
   if (state.settings.theme) applyTheme(state.settings.theme);
   if (typeof maybeShowChangelog === 'function') maybeShowChangelog();
@@ -246,7 +247,7 @@ function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); if (typeof refreshPrices === 'function') refreshPrices(false, true); });
 $('#syncNowNav').onclick = () => syncAll(true);
 $('#scanNav').onclick = () => openUniversalScanner();
-Scan.wire(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
+Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
 const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress', OnTrac: 'OnTrac', 'Canada Post': 'CanadaPost' };

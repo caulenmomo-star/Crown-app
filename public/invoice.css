@@ -1,0 +1,33 @@
+:root{--bg:#f4f5f8;--card:#fff;--text:#14161c;--muted:#5d6574;--faint:#9097a3;--line:#e5e7ec;--accent:#5b3df5;--ok:#14915c;--bad:#c9352d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",Inter,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+.inv{max-width:720px;margin:28px auto;padding:0 16px 40px}
+.sheet{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:0 10px 40px rgba(20,22,28,.07)}
+.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.biz{font-size:22px;font-weight:750;letter-spacing:-.3px}
+.label{font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.num{font-size:15px;font-weight:650}
+.status{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;background:#eef0f4;color:var(--muted)}
+.status.paid{background:#e3f6ec;color:var(--ok)}.status.overdue{background:#fbe9e8;color:var(--bad)}.status.void{text-decoration:line-through}
+.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:22px}
+.meta b{display:block;font-size:15px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.5px;padding:0 0 8px;border-bottom:1px solid var(--line)}
+td{padding:11px 0;border-bottom:1px solid var(--line);vertical-align:top}
+td.amt,th.amt{text-align:right;white-space:nowrap;padding-left:16px}
+.tot{display:flex;justify-content:flex-end;gap:24px;margin-top:14px;font-size:14px;color:var(--muted)}
+.grand{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding-top:14px;border-top:2px solid var(--text)}
+.grand b{font-size:28px;font-weight:800;letter-spacing:-.5px}
+.pay{margin-top:26px;padding:18px;border-radius:14px;background:#f7f7fb;border:1px solid var(--line)}
+.pay h2{font-size:15px;margin:0 0 10px}
+.ways{display:flex;flex-wrap:wrap;gap:8px}
+.way{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);text-decoration:none;font-weight:600;font-size:14px}
+.way.card{background:var(--accent);border-color:var(--accent);color:#fff}
+.note{margin-top:14px;color:var(--muted);font-size:14px}
+.muted{color:var(--muted)}
+.foot{margin-top:18px;text-align:center;font-size:12px;color:var(--faint)}
+.btns{display:flex;justify-content:flex-end;margin-bottom:12px}
+.btns button{font:inherit;font-size:14px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;cursor:pointer}
+.paidstamp{margin-top:20px;padding:14px;border-radius:12px;background:#e3f6ec;color:var(--ok);font-weight:700;text-align:center}
+@media (max-width:560px){.sheet{padding:20px}.meta{grid-template-columns:1fr 1fr}.grand b{font-size:24px}}
+@media print{body{background:#fff}.inv{margin:0;max-width:none}.sheet{border:none;box-shadow:none;padding:0}.btns,.foot{display:none}}

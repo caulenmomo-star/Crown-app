@@ -21,3 +21,12 @@ self.addEventListener('fetch', e => {
     return res;
   }).catch(() => caches.match(r).then(hit => hit || (r.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
 });
+// tapping a Crown Tools notification opens the app on the right page
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const hash = (e.notification.data && e.notification.data.nav) ? '#' + e.notification.data.nav : '';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) { if (new URL(c.url).origin === self.location.origin) { c.postMessage({ crownNav: e.notification.data && e.notification.data.nav }); return c.focus(); } }
+    return self.clients.openWindow('./' + hash);
+  }));
+});

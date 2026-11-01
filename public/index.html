@@ -51,7 +51,7 @@
       <div class="pillstat" id="syncStat"><span class="dot"></span><span>Email sync off</span></div>
       <div class="pillstat" id="saveStat"><span class="dot ok"></span><span>Saved</span></div>
       <button class="sm installbtn" id="installNav" hidden>⬇ Install app</button>
-      <div class="hstack topbtns"><button class="sm ibtn" id="scanNav" aria-label="Scan a barcode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5.5A1.5 1.5 0 015.5 4H8M16 4h2.5A1.5 1.5 0 0120 5.5V8M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16M8 20H5.5A1.5 1.5 0 014 18.5V16M7.5 8.5v7M10.5 8.5v7M13 8.5v7M16.5 8.5v7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Scan</span></button><button class="sm ibtn" id="syncNowNav" aria-label="Sync email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 01-14.3 4.9M4 12a8 8 0 0114.3-4.9M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Sync email</span><span class="sdot" id="syncDot"></span></button><button class="sm ibtn" id="lockNow" aria-label="Lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Lock</span></button></div>
+      <div class="hstack topbtns"><button class="sm ibtn bellbtn" id="bellNav" aria-label="Notifications"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16.5V11a6 6 0 0112 0v5.5l1.5 2H4.5z M10 20.5a2.2 2.2 0 004 0" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"/></svg><span class="lbl">Alerts</span><span class="bcount" hidden>0</span></button><button class="sm ibtn" id="scanNav" aria-label="Scan a barcode"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V5.5A1.5 1.5 0 015.5 4H8M16 4h2.5A1.5 1.5 0 0120 5.5V8M20 16v2.5a1.5 1.5 0 01-1.5 1.5H16M8 20H5.5A1.5 1.5 0 014 18.5V16M7.5 8.5v7M10.5 8.5v7M13 8.5v7M16.5 8.5v7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Scan</span></button><button class="sm ibtn" id="syncNowNav" aria-label="Sync email"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 01-14.3 4.9M4 12a8 8 0 0114.3-4.9M18.5 3v4.2h-4.2M5.5 21v-4.2h4.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lbl">Sync email</span><span class="sdot" id="syncDot"></span></button><button class="sm ibtn" id="lockNow" aria-label="Lock"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg><span class="lbl">Lock</span></button></div>
     </div>
   </nav>
   <main id="main">
@@ -101,6 +101,7 @@
     <section class="page" data-page="sales" id="pg-sales"></section>
     <section class="page" data-page="checkin" id="pg-checkin"></section>
     <section class="page" data-page="preorders" id="pg-preorders"></section>
+    <section class="page" data-page="aco" id="pg-aco"></section>
     <section class="page" data-page="inboxes" id="pg-inboxes"></section>
     <section class="page" data-page="settings" id="pg-settings"></section>
   </main>
@@ -169,6 +170,26 @@
 <dialog id="dlgShare" class="wide">
   <div class="dhead">Share your checkouts<button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody" id="shareBody"></div>
+</dialog>
+<dialog id="dlgNotif" class="narrow">
+  <div class="dhead">Notifications<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="notifBody"></div>
+  <div class="dfoot"><button class="ghost" id="notifSet" style="margin-right:auto">Settings</button><button id="notifClear">Clear all</button><button class="primary" id="notifAll">Mark all read</button></div>
+</dialog>
+<dialog id="dlgAcoClient" class="wide">
+  <div class="dhead"><span id="clTitle">Client</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="tabs" id="clTabs"></div><div id="clBody"></div></div>
+  <div class="dfoot"><button class="danger" id="clDelete" style="margin-right:auto">Delete</button><button id="clInvoice">Invoice</button><button data-close>Close</button><button class="primary" id="clSave">Save</button></div>
+</dialog>
+<dialog id="dlgAcoCk">
+  <div class="dhead"><span id="ckTitle">Checkout</span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="ckBody"></div>
+  <div class="dfoot"><button class="danger" id="ckDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="ckSave">Save</button></div>
+</dialog>
+<dialog id="dlgAcoInv" class="wide">
+  <div class="dhead"><span id="ivTitle">Invoice</span><span id="ivBadge" class="hstack"></span><button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="ivBody"></div>
+  <div class="dfoot"></div>
 </dialog>
 <dialog id="dlgPrices">
   <div class="dhead">Review prices<button class="ghost sm x" data-close>✕</button></div>
@@ -373,6 +394,8 @@
 <script src="inventory.js"></script>
 <script src="itemvalue.js"></script>
 <script src="sales.js"></script>
+<script src="notify.js"></script>
+<script src="aco.js"></script>
 <script src="sync.js"></script>
 <script src="colresize.js"></script>
 <script src="catdrop.js"></script>

@@ -1,6 +1,6 @@
 /* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.12.4'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.13.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -30,7 +30,8 @@ const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
 const sum = (arr, f) => arr.reduce((a, x) => a + (Number(f ? f(x) : x) || 0), 0);
 const rint = (a, b) => { a = Math.ceil(a); b = Math.floor(b); if (b < a) [a, b] = [b, a]; return a + Math.floor(Math.random() * (b - a + 1)); };
 const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-const plural = (n, w, p) => n + ' ' + (n === 1 ? w : (p || w + 's'));
+const pluralWord = w => /(s|x|z|ch|sh)$/i.test(w) ? w + 'es' : /[^aeiou]y$/i.test(w) ? w.slice(0, -1) + 'ies' : w + 's';
+const plural = (n, w, p) => n + ' ' + (n === 1 ? w : (p || pluralWord(w)));
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 
 /* ---------- money & dates ---------- */
@@ -84,7 +85,7 @@ function stickInfo(list) {
 /* ---------- state ---------- */
 const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, discordToken: '', discordLookback: 30, easypostKey: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], accountGroups: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], accountGroups: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], notifications: [], acoClients: [], acoCheckouts: [], acoInvoices: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -92,7 +93,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-  for (const k of ['accounts', 'accountGroups', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['accounts', 'accountGroups', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -172,7 +173,7 @@ function readLocal() { if (CLOUD) return null; try { const v = localStorage.getI
 function writeLocal(blob) { if (CLOUD) return true; try { localStorage.setItem(LS_KEY, JSON.stringify(blob)); return true; } catch (_) { return false; } }
 const validBlob = b => !!(b && !b.erased && typeof b.salt === 'string' && typeof b.iv === 'string' && typeof b.ct === 'string');
 let saveTimer = null, saving = false, pendingSave = false, lastSaveOk = true;
-function save() { pendingSave = true; setSaveStat('busy', 'Saving…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, CLOUD ? 700 : 400); }
+function save() { if (typeof scheduleNotifScan === 'function') scheduleNotifScan(); pendingSave = true; setSaveStat('busy', 'Saving…'); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, CLOUD ? 700 : 400); }
 async function saveNow(opts) {
   clearTimeout(saveTimer);
   if (!cryptoKey) return;
@@ -253,7 +254,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'accounts', 'accountGroups', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks']) {
+  for (const k of ['categories', 'profiles', 'accounts', 'accountGroups', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];
@@ -402,6 +403,7 @@ const ICONS = {
   accounts: '<rect x="3.5" y="5" width="17" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="9" cy="11" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.8 16.2c.6-1.7 1.8-2.5 3.2-2.5s2.6.8 3.2 2.5M14.5 10h3.5M14.5 13.5h3.5" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>',
   cards: '<rect x="3" y="5.5" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 9.5h18M6.5 14.5h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   preorders: '<rect x="4" y="5" width="16" height="15" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4 9.5h16M8.5 3v4M15.5 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M12 12.5v3l2 1.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  aco: '<circle cx="8.5" cy="8.5" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="16.5" cy="9.5" r="2.4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M3 19c.6-3.2 2.8-5 5.5-5s4.9 1.8 5.5 5M14.5 14.3c.6-.2 1.3-.3 2-.3 2.3 0 4 1.5 4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   checkin: '<rect x="4" y="4" width="16" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.5 12.3l2.4 2.4 4.8-5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   settings: '<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
 };
@@ -409,7 +411,7 @@ const ICONS = {
 // computers show the hubs as sidebar sections. Keeps the bottom bar short instead of a long "More" list.
 const HUBS = [
   { k: 'home', l: 'Home', side: '', icon: 'dashboard', pages: [['dashboard', 'Dashboard']] },
-  { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards']] },
+  { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards'], ['aco', 'ACO']] },
   { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['preorders', 'Pre-orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
   { k: 'resell', l: 'Resell', side: 'Reselling', icon: 'inventory', pages: [['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending']] },
   { k: 'setup', l: 'More', side: 'Setup', icon: 'more', pages: [['inboxes', 'Inboxes'], ['settings', 'Settings']] },
@@ -430,9 +432,10 @@ function applyRoute() {
   renderNav(); renderPage(); $('#main').scrollTop = 0;
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
-function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length, preorders: typeof preTodoCount === 'function' ? preTodoCount() : 0 }; }
+function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length, aco: typeof acoUnbilledCount === 'function' ? acoUnbilledCount() : 0, preorders: typeof preTodoCount === 'function' ? preTodoCount() : 0 }; }
 const navItem = (k, l, counts) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`;
 function renderNav() {
+  renderNavExtras();
   const counts = navCounts();
   // computer sidebar: each hub is a section
   $('#navlist').innerHTML = HUBS.map(h => (h.side ? `<div class="navgroup">${h.side}</div>` : '') + h.pages.map(([k, l]) => navItem(k, l, counts)).join('')).join('');
@@ -443,6 +446,7 @@ function renderNav() {
   const hub = hubByKey(curHub), sn = $('#subnav');
   if (sn) { sn.hidden = hub.pages.length < 2; sn.innerHTML = hub.pages.length < 2 ? '' : hub.pages.map(([k, l]) => `<button class="subtab ${route.page === k ? 'on' : ''}" data-nav="${k}">${l}${counts[k] ? `<span class="n">${counts[k]}</span>` : ''}</button>`).join(''); }
 }
+function renderNavExtras() { if (typeof renderBell === 'function') renderBell(); }
 function openHub(k) { const h = hubByKey(k); const last = hubLast[k]; go(last && h.pages.some(p => p[0] === last) ? last : h.pages[0][0]); }
 // Page action buttons sit after the header's spacer. Group them so phones can show them as one swipeable row.
 function wrapActs(root) {

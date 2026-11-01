@@ -68,6 +68,8 @@ PAGES.dashboard = {
     buildDupIndex(); const badProfiles = state.profiles.filter(p => health(p).length).length;
     const badInbox = state.imapAccounts.filter(a => a.enabled !== false && a.lastResult && a.lastResult.error);
     const attention = [
+      (() => { const od = (state.acoInvoices || []).filter(i => typeof acoOverdue === 'function' && acoOverdue(i)); return od.length && [`${plural(od.length, 'ACO invoice')} overdue (${fmtMoney(sum(od, acoInvTotal))})`, 'aco', () => { ACO.tab = 'invoices'; ACO.invStatus = 'overdue'; }]; })(),
+      (() => { const n = typeof acoUnclaimed === 'function' && (state.acoClients || []).length ? acoUnclaimed().length : 0; return n && [`${plural(n, 'bot checkout')} on profiles that aren’t yours or a client’s — sort them`, 'aco', () => { ACO.tab = 'checkouts'; }]; })(),
       (() => { const n = typeof preTodoCount === 'function' ? preTodoCount() : 0; return n && [`${plural(n, 'pre-order')} with a declined card — update ${n === 1 ? 'it' : 'them'}`, 'preorders', () => { PRE.f = 'todo'; }]; })(),
       overdue.length && [`${plural(overdue.length, 'order')} past the expected delivery date`, 'orders', () => { OF.status = 'active'; }],
       unlinked && [`${plural(unlinked, 'order')} not linked to a profile`, 'orders', () => { OF.profile = '__none'; OF.status = 'all'; }],
@@ -559,10 +561,7 @@ PAGES.settings = {
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
           <div class="chips" id="stLock">${[[0, 'Never'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([v, l]) => `<button class="chip ${S.autoLockMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
-        <div class="card"><h3>Notifications</h3>
-          <div class="small muted" style="margin-bottom:8px">Show a notification on this device when email sync finds new orders, shipments, deliveries or cancellations.</div>
-          <div class="chips"><button class="chip ${S.notify ? 'on' : ''}" id="stNotify">${S.notify ? 'On' : 'Off'}</button></div>
-          ${S.notify && typeof Notification !== 'undefined' && Notification.permission === 'denied' ? '<div class="note warn">Your browser is blocking notifications for Crown Tools. Allow them in the browser’s site settings.</div>' : ''}</div>
+        ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
           <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS, FedEx and USPS directly for every package: the real delivery date, out for delivery and delivered. Orders and the calendar update on their own after every sync. Keys stay encrypted inside your Crown Tools data.</div>
           ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
@@ -574,6 +573,7 @@ PAGES.settings = {
           <div class="section">EasyPost (optional — DHL, OnTrac, LaserShip, Canada Post, Purolator, Asendia and 100+ more)</div>
           <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div>
           <div class="hstack" style="margin-top:12px"><button id="stTrackNow">Check all packages now</button></div></div>
+        ${stockxCardHtml()}
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
           <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').sort((a, b) => a.label.localeCompare(b.label)).concat([{ key: '__shopify', label: 'Any Shopify store' }]).map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
@@ -615,7 +615,7 @@ PAGES.settings = {
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();
     if (CLOUD && typeof Account !== 'undefined') Account.wireCard();
-    $('#stNotify').onclick = async () => { if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } } S.notify = !S.notify; save(); PAGES.settings.render(); if (S.notify && typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification('Crown Tools', { body: 'Notifications are on 👑' }); };
+    wireNotifCard(); wireStockxCard();
     $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
     pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });

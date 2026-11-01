@@ -38,7 +38,7 @@ function parseDiscordPost(m) {
   (m.embeds || []).forEach((e0, i) => {
     const e = { title: e0.title || '', description: e0.description || '', author: e0.author || '', footer: e0.footer || '', fields: e0.fields || [], thumb: e0.thumb || '' };
     const f = dFields(e); const kind = dKind(e, f); if (kind !== 'success') return;
-    let item = f.item || '', price = f.price ? Number(String(f.price).replace(/[^0-9.]/g, '')) : null;
+    let item = f.item || '', price = f.price && /\d/.test(f.price) ? Number(String(f.price).replace(/[^0-9.]/g, '')) : null;
     const ip = item.match(/^(.*?)\s*[-–—]\s*\$\s*([\d,]+(?:\.\d+)?)\s*$/); if (ip) { item = ip[1].trim(); if (price == null) price = Number(ip[2].replace(/,/g, '')); }
     if (!item && e.description) { const d = String(e.description).split(/\n/).map(dClean).find(Boolean) || ''; if (d && d.length < 200 && !/checked out|success/i.test(d)) item = d; } // Shikari: product link in the description
     const qty = Math.max(1, parseInt(f.qty, 10) || 1);
@@ -54,6 +54,8 @@ function parseDiscordPost(m) {
 
 /* ---------- linking a checkout to orders, profiles, houses and accounts ---------- */
 function linkCheckout(c) {
+  // a client's profile: it's their order and their info - it goes to ACO, never into your own orders
+  if (typeof acoClaimCheckout === 'function' && acoClaimCheckout(c)) return null;
   const prof = c.profile ? profileByName(c.profile) : null;
   let o = c.order ? findOrder(c.order, c.store) : null;
   if (!o && c.orderId) o = state.orders.find(x => x.id === c.orderId) || null;
@@ -80,7 +82,7 @@ function linkCheckout(c) {
 // checkouts still waiting: try again (after new order emails, or after you add the profile)
 function relinkCheckouts() {
   let n = 0;
-  for (const c of state.botCheckouts || []) if (!c.orderId) { if (linkCheckout(c)) { c.updatedAt = Date.now(); n++; } }
+  for (const c of state.botCheckouts || []) if (!c.orderId && !c.clientId) { if (linkCheckout(c)) { c.updatedAt = Date.now(); n++; } }
   if (n) { invalidateStats(); save(); }
   return n;
 }
@@ -89,7 +91,7 @@ function ingestPosts(msgs) {
   for (const m of msgs) for (const c of parseDiscordPost(m)) {
     if (have.has(c.id)) continue; have.add(c.id);
     c.updatedAt = Date.now(); state.botCheckouts.push(c); added++;
-    if (linkCheckout(c)) linked++;
+    if (linkCheckout(c) || c.clientId) linked++;
   }
   if (state.botCheckouts.length > 6000) state.botCheckouts = state.botCheckouts.slice(-6000);
   return { added, linked };
