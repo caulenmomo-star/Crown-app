@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.14.0"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.15.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1741,6 +1741,183 @@ def aco_stripe_check(req):
     return {"ok": True, "paid": True, "paidAt": datetime.datetime.fromtimestamp(when, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if when else ""}
 
 
+# ---- 17TRACK: tracks any package by its number (also ones shipped to you), for UPS, FedEx, USPS, OnTrac, LaserShip,
+# DHL and 3,000+ more. Each package is registered once (that uses one unit of your 17TRACK quota); 17TRACK then keeps
+# following it and Crown Tools reads the latest. Your Security Key is sent with each request and never stored here.
+S17_BASE = os.environ.get("CROWN_17TRACK_URL", "https://api.17track.net/track/v2.2")
+S17_CARRIER = {"ups": 100002, "fedex": 100003, "usps": 21051}
+S17_STATUS = {"InfoReceived": "pre_transit", "InTransit": "in_transit", "OutForDelivery": "out_for_delivery", "Delivered": "delivered",
+              "AvailableForPickup": "exception", "DeliveryFailure": "exception", "Exception": "exception", "Expired": "exception"}
+S17_WHY = {"AvailableForPickup": "Waiting at a pickup point", "Expired": "The carrier hasn't updated it in a long time", "DeliveryFailure": "Delivery attempt failed"}
+
+
+def _s17(key, path, body):
+    for attempt in range(3):
+        req = urllib.request.Request(S17_BASE + path, data=json.dumps(body).encode(), method="POST",
+                                     headers={"17token": key, "Content-Type": "application/json", "Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=ssl_context()) as r:
+                j = json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:  # 17TRACK allows 3 requests a second
+                time.sleep(1.2)
+                continue
+            if e.code == 429:
+                raise UserError("17TRACK is busy — too many checks right now. Crown Tools will try again later.")
+            if e.code in (401, 403):
+                raise UserError("17TRACK rejected the Security Key. Check it in Settings → Carrier tracking.")
+            raise UserError("17TRACK error %s." % e.code)
+        except urllib.error.URLError as e:
+            raise UserError("Couldn't reach 17TRACK (%s)." % e.reason)
+        code = j.get("code")
+        if code not in (0, None):
+            msg = str(j.get("message") or ((j.get("data") or {}).get("errors") or [{}])[0].get("message") or "")
+            if re.search(r"token|security key|unauthori|access", msg, re.I):
+                raise UserError("17TRACK rejected the Security Key. Check it in Settings → Carrier tracking.")
+            raise UserError("17TRACK: %s" % (msg or "error %s" % code))
+        return j.get("data") or {}
+    raise UserError("17TRACK is busy right now.")
+
+
+def _s17_err(code, msg):
+    code = int(code or 0)
+    if code == -18019908:
+        return "Your 17TRACK quota is used up. Add more at 17track.net (about 2¢ a package)."
+    if code == -18019907:
+        return "17TRACK's daily limit is reached. Crown Tools will try again tomorrow."
+    if code == -18019903:
+        return "17TRACK couldn't tell which carrier this is."
+    if code in (-18010012, -18010013):
+        return "17TRACK says this isn't a valid tracking number."
+    return "17TRACK: %s" % (msg or "couldn't track this number")
+
+
+def _s17_place(a):
+    a = a or {}
+    return _place(a.get("city"), a.get("state"))
+
+
+def _s17_parse(code, kind, ti):
+    ls = ti.get("latest_status") or {}
+    main = str(ls.get("status") or "")
+    provs = ((ti.get("tracking") or {}).get("providers") or [])
+    prov = provs[0] if provs else {}
+    evs_raw = []
+    for p in provs:
+        evs_raw.extend(p.get("events") or [])
+    evs_raw.sort(key=lambda e: str(e.get("time_utc") or e.get("time_iso") or ""))
+    events, deliv = [], ""
+    for e in evs_raw[-TRACK_EVENTS:]:
+        sub = str(e.get("sub_status") or e.get("stage") or "")
+        when = e.get("time_iso") or e.get("time_utc") or ""
+        if sub.startswith("Delivered"):
+            deliv = _ymd(when)
+        events.append({"date": when, "message": str(e.get("description") or "").strip(), "status": "",
+                       "x": sub.startswith(("DeliveryFailure", "Exception")),
+                       "location": _s17_place(e.get("address")) or str(e.get("location") or "").strip()})
+    if main == "NotFound" or not main:
+        return {"ok": True, "status": "unknown", "pending": True, "carrier": CARRIER_NAMES.get(kind, ""), "est": "", "deliveredOn": "",
+                "statusText": "17TRACK is still looking this up at the carrier", "events": events, "publicUrl": "", "source": "17track"}
+    status = S17_STATUS.get(main, "in_transit")
+    le = ti.get("latest_event") or {}
+    text = str(le.get("description") or "").strip() or main
+    ed = ((ti.get("time_metrics") or {}).get("estimated_delivery_date") or {})
+    est = "" if status == "delivered" else _ymd(ed.get("to") or ed.get("from"))
+    window = ["", ""]
+    if ed.get("from") and ed.get("to") and _ymd(ed["from"]) == _ymd(ed["to"]) and "T" in str(ed["from"]):
+        window = [ed["from"], ed["to"]]
+    misc = ti.get("misc_info") or {}
+    wm = re.match(r"\s*([\d.]+)\s*([A-Za-z]+)", str(misc.get("weight_raw") or ""))
+    weight = _weight(wm.group(1), wm.group(2)) if wm else (_weight(misc.get("weight_kg"), "kg") if misc.get("weight_kg") else "")
+    si = ti.get("shipping_info") or {}
+    left = ""
+    if status == "delivered":
+        m = re.search(r"(?:delivered,?\s*(?:to\s+|at\s+)?|left at\s+)([A-Za-z/ ]{3,40})$", text, re.I)
+        if m and not re.fullmatch(r"\s*(delivered|package|individual)\s*", m.group(1), re.I):
+            left = m.group(1).strip()
+    cname = str((prov.get("provider") or {}).get("name") or "").strip() or CARRIER_NAMES.get(kind, "")
+    pub = {"ups": "https://www.ups.com/track?loc=en_US&tracknum=", "fedex": "https://www.fedex.com/fedextrack/?trknbr=",
+           "usps": "https://tools.usps.com/go/TrackConfirmAction?tLabels="}.get(kind)
+    out = {"status": status, "carrier": cname, "est": est, "deliveredOn": deliv or (_ymd(le.get("time_iso")) if status == "delivered" else ""),
+           "window": window, "statusText": text, "service": str(misc.get("service_type") or prov.get("service_type") or "").strip(), "weight": weight,
+           "from": _s17_place(si.get("shipper_address")), "to": _s17_place(si.get("recipient_address")), "leftAt": left,
+           "problem": (S17_WHY.get(main, "") + (": " if S17_WHY.get(main) and text else "") + text) if status == "exception" else "",
+           "publicUrl": (pub + code) if pub else "https://t.17track.net/en#nums=" + urllib.parse.quote(code), "source": "17track"}
+    return _finish(out, events)
+
+
+def s17_lookup(key, items):
+    """items: [{"number", "kind"}] -> {number: result or {"ok": False, "error": message}}. Registers numbers 17TRACK doesn't know yet."""
+    key = str(key or "").strip()
+    if not key:
+        raise UserError("Add your 17TRACK Security Key in Settings → Carrier tracking first.")
+    out, kinds = {}, {}
+    for it in items[:200]:
+        n = re.sub(r"\s+", "", str(it.get("number") or "")).upper()
+        if n:
+            kinds[n] = str(it.get("kind") or "other")
+    nums = list(kinds)
+    body = lambda ns: [dict({"number": n}, **({"carrier": S17_CARRIER[kinds[n]]} if kinds[n] in S17_CARRIER else {})) for n in ns]
+    unreg = []
+    for i in range(0, len(nums), 40):
+        d = _s17(key, "/gettrackinfo", body(nums[i:i + 40]))
+        for a in d.get("accepted") or []:
+            n = str(a.get("number") or "").upper()
+            if n in kinds:
+                out[n] = _s17_parse(n, kinds[n], a.get("track_info") or {})
+        for r in d.get("rejected") or []:
+            n, e = str(r.get("number") or "").upper(), r.get("error") or {}
+            if n not in kinds:
+                continue
+            if int(e.get("code") or 0) == -18019902:  # not registered yet
+                unreg.append(n)
+            else:
+                out[n] = {"ok": False, "error": _s17_err(e.get("code"), e.get("message"))}
+    registered = 0
+    for i in range(0, len(unreg), 40):
+        d = _s17(key, "/register", body(unreg[i:i + 40]))
+        for a in d.get("accepted") or []:
+            n = str(a.get("number") or "").upper()
+            if n in kinds:
+                registered += 1
+                out[n] = {"ok": True, "status": "unknown", "pending": True, "carrier": CARRIER_NAMES.get(kinds[n], ""), "est": "", "deliveredOn": "",
+                          "statusText": "Added to 17TRACK — the first scans show up in a few minutes", "events": [], "publicUrl": "", "source": "17track"}
+        for r in d.get("rejected") or []:
+            n, e = str(r.get("number") or "").upper(), r.get("error") or {}
+            if n not in kinds:
+                continue
+            if int(e.get("code") or 0) == -18019901:  # registered meanwhile
+                out[n] = {"ok": True, "status": "unknown", "pending": True, "carrier": CARRIER_NAMES.get(kinds[n], ""), "est": "", "deliveredOn": "",
+                          "statusText": "17TRACK is still looking this up at the carrier", "events": [], "publicUrl": "", "source": "17track"}
+            else:
+                out[n] = {"ok": False, "error": _s17_err(e.get("code"), e.get("message"))}
+    for n in nums:
+        out.setdefault(n, {"ok": False, "error": "17TRACK didn't return anything for this number."})
+    res = {"ok": True, "results": out}
+    if registered:
+        try:
+            q = _s17(key, "/getquota", [])
+            res["quotaLeft"] = q.get("quota_remain")
+        except UserError:
+            pass
+    return res
+
+
+def track17(req):
+    items = req.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise UserError("No tracking numbers.")
+    return s17_lookup(req.get("key"), items)
+
+
+def s17_test(req):
+    key = str(req.get("key") or "").strip()
+    if not key:
+        raise UserError("Paste your 17TRACK Security Key.")
+    q = _s17(key, "/getquota", [])
+    return {"ok": True, "quotaLeft": q.get("quota_remain"), "quotaTotal": q.get("quota_total")}
+
+
 def free_track(code, carrier):
     carrier = (carrier or "").upper()
     if carrier == "UPS" or code.upper().startswith("1Z"):
@@ -1749,7 +1926,7 @@ def free_track(code, carrier):
 
 
 def track(req):
-    """Live tracking. Order: the carrier's official API (free UPS / FedEx developer keys) -> EasyPost -> UPS's website."""
+    """Live tracking. Order: the carrier's official API (free developer keys) -> 17TRACK -> EasyPost -> UPS's website."""
     key = str(req.get("apiKey") or "").strip()
     code0 = re.sub(r"\s+", "", str(req.get("tracking") or "")).upper()
     if not code0:
@@ -1766,6 +1943,15 @@ def track(req):
         return ups_api_track(code0, ups["id"], ups["secret"])
     if is_fedex and fx.get("id") and fx.get("secret"):
         return fedex_api_track(code0, fx["id"], fx["secret"])
+    if str(req.get("s17Key") or "").strip():
+        kind = "ups" if is_ups else "usps" if is_usps else "fedex" if is_fedex else "other"
+        r = s17_lookup(req["s17Key"], [{"number": code0, "kind": kind}])
+        one = r["results"].get(code0) or {}
+        if not one.get("ok"):
+            raise UserError(one.get("error") or "17TRACK couldn't track this number.")
+        if r.get("quotaLeft") is not None:
+            one["quotaLeft"] = r["quotaLeft"]
+        return one
     if not key:
         if is_ups:
             try:
@@ -1773,8 +1959,8 @@ def track(req):
             except UserError:
                 raise
             except Exception:
-                raise UserError("Add your free UPS developer keys in Settings → Carrier tracking to get UPS delivery dates.")
-        raise UserError("Add your free %s developer keys in Settings → Carrier tracking to get delivery dates." % ("FedEx" if is_fedex else "USPS" if is_usps else "carrier"))
+                raise UserError("Add a 17TRACK key in Settings → Carrier tracking to track UPS packages.")
+        raise UserError("Add a 17TRACK key in Settings → Carrier tracking to track %s packages." % ("FedEx" if is_fedex else "USPS" if is_usps else "these"))
     key = str(req.get("apiKey") or "").strip()
     code = re.sub(r"\s+", "", str(req.get("tracking") or ""))
     if not key:
@@ -1954,6 +2140,8 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/imap/bodies": imap_bodies,
             "/api/track": track,
             "/api/carriertest": carrier_test,
+            "/api/track17": track17,
+            "/api/s17test": s17_test,
             "/api/discord": discord_send,
             "/api/discord/check": discord_check,
             "/api/img": image_fetch,
@@ -3122,6 +3310,8 @@ class handler(BaseHTTPRequestHandler):
             "/imap/bodies": imap_bodies,
             "/track": track,
             "/carriertest": carrier_test,
+            "/track17": track17,
+            "/s17test": s17_test,
             "/discord": discord_send,
             "/discord/check": discord_check,
             "/img": image_fetch,

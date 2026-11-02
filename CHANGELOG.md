@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.15.0 — 17TRACK tracking (2026-11-01)
+
+- Track any UPS, FedEx, USPS, OnTrac, LaserShip or DHL package with a 17TRACK key, including packages shipped to you. No carrier account needed.
+- New packages are added to 17TRACK automatically and checked together. Each package counts once against your 17TRACK plan.
+- Settings shows how many packages your 17TRACK plan has left and warns you when it’s running low.
+
 ## v0.14.0 — Packages (2026-11-01)
 
 - New Packages page: every package on your orders with a progress bar, the arrival date and delivery window, and the latest scan.

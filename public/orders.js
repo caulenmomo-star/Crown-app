@@ -670,7 +670,7 @@ ${o.bot ? `        <div class="k">Bot checkout</div><div>${esc(botLabel(o.bot.bo
       <div class="section">Tracking</div>
       ${o.tracking.length ? o.tracking.map((t, i) => `<div class="card" style="padding:10px 12px;margin-bottom:8px"><div class="hstack"><b>${esc(t.carrier || 'Carrier')}</b><a class="mono small" href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener">${esc(t.number)} ↗</a><div class="spacer"></div>${SERVER ? `<button class="sm" data-live="${i}">${t.live ? '↻ Refresh' : 'Live tracking'}</button>` : ''}</div>
         ${t.liveError && (!t.live || t.liveError.at > t.live.checkedAt) ? `<div class="small" style="margin-top:6px;color:var(--warn)">${esc(t.liveError.msg)}</div>` : ''}
-        ${pkOrderBlock(o, t, i)}</div>`).join('') : `<div class="faint small">No tracking numbers yet — they’re added automatically from shipping emails.${trackingReady() ? '' : ' Add your free UPS / FedEx keys in Settings → Carrier tracking for live dates.'}</div>`}
+        ${pkOrderBlock(o, t, i)}</div>`).join('') : `<div class="faint small">No tracking numbers yet — they’re added automatically from shipping emails.${trackingReady() ? '' : ' Add a 17TRACK key in Settings → Carrier tracking for live tracking.'}</div>`}
       <div class="section">Timeline</div>
       <div class="timeline">${o.history.length ? o.history.slice().reverse().map(hh => `<div class="tl" style="--c:${histColor(hh)}"><div><b>${esc(histLabel(hh))}</b> <span class="faint small">${fmtDT(hh.date)} · ${esc(hh.source)}</span></div>${hh.note ? `<div class="small muted ellipsis">${esc(hh.note)}</div>` : ''}</div>`).join('') : '<div class="faint small">No history yet.</div>'}</div>
     </div></div>`;

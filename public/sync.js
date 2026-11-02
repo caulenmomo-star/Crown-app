@@ -253,8 +253,9 @@ Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSale
 /* ---------- live tracking (EasyPost via helper) ---------- */
 const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress', OnTrac: 'OnTrac', 'Canada Post': 'CanadaPost' };
 const carrierKeys = () => { const c = state.settings.carriers || {}; return { ups: c.ups && c.ups.id ? c.ups : null, fedex: c.fedex && c.fedex.id ? c.fedex : null, usps: c.usps && c.usps.id ? c.usps : null }; };
-// Is there any way to look packages up? (UPS / FedEx developer keys, an EasyPost key, or the Mac helper trying ups.com)
-const trackingReady = () => { const k = carrierKeys(); return !!(k.ups || k.fedex || k.usps || state.settings.easypostKey || (SERVER && !CLOUD)); };
+// Is there any way to look packages up? (17TRACK, the carriers' developer keys, an EasyPost key, or the Mac helper trying ups.com)
+const s17Key = () => String(state.settings.s17Key || '').trim();
+const trackingReady = () => { const k = carrierKeys(); return !!(k.ups || k.fedex || k.usps || s17Key() || state.settings.easypostKey || (SERVER && !CLOUD)); };
 const ymdOnly = v => { const m = String(v || '').match(/^(\d{4}-\d{2}-\d{2})/); return m ? m[1] : (v ? dayKey(new Date(v)) : ''); };
 // Apply what the carrier says to the order: the real arrival date, out for delivery, delivered (and on which day).
 function applyTracking(o) {
@@ -283,48 +284,80 @@ function trkKind(t) {
 }
 // a carrier that said "too many checks" gets a rest (USPS's free plan allows about 60 an hour)
 const TRK_COOL = {};
+// who looks a package up: the carrier itself (your developer keys), 17TRACK, or whatever else is set up
+const trkRoute = t => carrierKeys()[trkKind(t)] ? trkKind(t) : s17Key() ? 's17' : trkKind(t);
+// put what the carrier said on the package and the order (shared by single checks and 17TRACK batches)
+function applyLiveResult(o, t, r) {
+  const evs = (r.events || []).slice(-40), prev = t.live || null;
+  const delDay = r.deliveredOn ? ymdOnly(r.deliveredOn) : r.status === 'delivered' ? ymdOnly((evs.slice(-1)[0] || {}).date) : '';
+  const est = r.status === 'delivered' ? '' : ymdOnly(r.est);
+  // the first arrival date the carrier gave; a later one means it's running behind
+  const firstEst = (prev && (prev.firstEst || prev.est)) || est;
+  const text = r.statusText || '';
+  // 17TRACK hasn't got anything yet: keep what we already knew, just note that it's been asked
+  if (r.pending && prev && !prev.pending) { prev.checkedAt = Date.now(); delete t.liveError; return; }
+  t.live = { status: r.status, est, firstEst: firstEst || '', deliveredOn: delDay, carrier: r.carrier || t.carrier || '', text, events: evs, publicUrl: r.publicUrl, checkedAt: Date.now(),
+    window: Array.isArray(r.window) && r.window.some(Boolean) ? r.window.slice(0, 2) : null, service: r.service || '', weight: r.weight || '', from: r.from || '', to: r.to || '',
+    leftAt: r.leftAt || '', signedBy: r.signedBy || '', problem: r.problem || '', pending: !!r.pending, via: r.source || '',
+    changedAt: !prev || prev.status !== r.status || prev.text !== text || prev.est !== est || (prev.events || []).length !== evs.length ? Date.now() : (prev.changedAt || prev.checkedAt || Date.now()) };
+  delete t.liveError;
+  if (r.carrier && !t.carrier && !r.pending) t.carrier = r.carrier;
+  if (r.quotaLeft != null) state.settings.s17Left = r.quotaLeft;
+  applyTracking(o);
+  // a problem or a later arrival date: worth a notification (out for delivery / delivered come from the order itself)
+  if (typeof addNotif === 'function' && !r.pending) {
+    const nm = typeof oName === 'function' ? oName(o) : (o.orderNumber || 'Order'), wh = typeof oWhere === 'function' ? oWhere(o) : '';
+    let n = null;
+    if (r.status === 'exception' && (!prev || prev.status !== 'exception')) n = addNotif('problem', 'Delivery problem: ' + nm, [t.live.problem || text || 'The carrier reported a problem', t.live.carrier, wh].filter(Boolean).join(' · '), 'packages', 'trkx:' + t.number + ':' + (t.live.problem || text));
+    else if (prev && prev.est && est && est > prev.est && r.status !== 'delivered') n = addNotif('late', 'Delayed: ' + nm, `Now arriving ${fmtDate(est, { weekday: true })} (was ${fmtDate(prev.est, { weekday: true })})` + (wh ? ' · ' + wh : ''), 'packages', 'delay:' + t.number + ':' + est);
+    if (n) renderBell();
+  }
+  o.updatedAt = Date.now();
+}
+function noteTrackError(t, msg) {
+  t.liveError = { msg, at: Date.now() };
+  if (/too many checks/i.test(msg)) { const k = /17TRACK/.test(msg) ? 's17' : trkKind(t); TRK_COOL[k] = Date.now() + (k === 'usps' ? 3600e3 : k === 's17' ? 120e3 : 900e3); }
+}
 async function liveTrack(orderId, idx, btn, quiet) {
   const o = state.orders.find(x => x.id === orderId); if (!o || !o.tracking[idx]) return false;
   if (!SERVER) { if (!quiet) toast('Live tracking needs Crown Tools’ helper running'); return false; }
   const t = o.tracking[idx];
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {
-    const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || '' });
+    const r = await api('/api/track', { apiKey: state.settings.easypostKey, carriers: carrierKeys(), s17Key: s17Key(), tracking: t.number, carrier: EP_CARRIER[t.carrier] || '' });
     if (!cryptoKey) return false;
-    const evs = (r.events || []).slice(-40), prev = t.live || null;
-    const delDay = r.deliveredOn ? ymdOnly(r.deliveredOn) : r.status === 'delivered' ? ymdOnly((evs.slice(-1)[0] || {}).date) : '';
-    const est = r.status === 'delivered' ? '' : ymdOnly(r.est);
-    // the first arrival date the carrier gave; a later one means it's running behind
-    const firstEst = (prev && (prev.firstEst || prev.est)) || est;
-    const text = r.statusText || '';
-    t.live = { status: r.status, est, firstEst: firstEst || '', deliveredOn: delDay, carrier: r.carrier || t.carrier || '', text, events: evs, publicUrl: r.publicUrl, checkedAt: Date.now(),
-      window: Array.isArray(r.window) && r.window.some(Boolean) ? r.window.slice(0, 2) : null, service: r.service || '', weight: r.weight || '', from: r.from || '', to: r.to || '',
-      leftAt: r.leftAt || '', signedBy: r.signedBy || '', problem: r.problem || '',
-      changedAt: !prev || prev.status !== r.status || prev.text !== text || prev.est !== est || (prev.events || []).length !== evs.length ? Date.now() : (prev.changedAt || prev.checkedAt || Date.now()) };
-    delete t.liveError;
-    if (r.carrier && !t.carrier) t.carrier = r.carrier;
-    applyTracking(o);
-    // a problem or a later arrival date: worth a notification (out for delivery / delivered come from the order itself)
-    if (typeof addNotif === 'function') {
-      const nm = typeof oName === 'function' ? oName(o) : (o.orderNumber || 'Order'), wh = typeof oWhere === 'function' ? oWhere(o) : '';
-      let n = null;
-      if (r.status === 'exception' && (!prev || prev.status !== 'exception')) n = addNotif('problem', 'Delivery problem: ' + nm, [t.live.problem || text || 'The carrier reported a problem', t.live.carrier, wh].filter(Boolean).join(' · '), 'packages', 'trkx:' + t.number + ':' + (t.live.problem || text));
-      else if (prev && prev.est && est && est > prev.est && r.status !== 'delivered') n = addNotif('late', 'Delayed: ' + nm, `Now arriving ${fmtDate(est, { weekday: true })} (was ${fmtDate(prev.est, { weekday: true })})` + (wh ? ' · ' + wh : ''), 'packages', 'delay:' + t.number + ':' + est);
-      if (n) renderBell();
-    }
-    o.updatedAt = Date.now(); save();
+    applyLiveResult(o, t, r); save();
     if ($('#dlgOrder').open && curOrder && curOrder.id === o.id) { curOrder = JSON.parse(JSON.stringify(o)); renderOrderDlg(); }
     if (!quiet) softRefresh();
     return true;
   } catch (e) {
-    t.liveError = { msg: e.message, at: Date.now() };
-    if (/too many checks/i.test(e.message)) TRK_COOL[trkKind(t)] = Date.now() + (trkKind(t) === 'usps' ? 3600e3 : 900e3);
-    if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = 'Live tracking'; } return false;
+    noteTrackError(t, e.message);
+    if (!quiet) toast(e.message); if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; } return false;
   }
+}
+// 17TRACK takes up to 40 numbers a request, so packages going through it are checked together
+async function track17Batch(jobs) {
+  let n = 0;
+  for (let i = 0; i < jobs.length; i += 80) {
+    if (!cryptoKey || (TRK_COOL.s17 || 0) > Date.now()) break;
+    const part = jobs.slice(i, i + 80).map(([id, k]) => { const o = state.orders.find(x => x.id === id); return o && o.tracking[k] ? { o, t: o.tracking[k] } : null; }).filter(Boolean);
+    try {
+      const r = await api('/api/track17', { key: s17Key(), items: part.map(x => ({ number: x.t.number, kind: trkKind(x.t) })) });
+      if (!cryptoKey) return n;
+      if (r.quotaLeft != null) state.settings.s17Left = r.quotaLeft;
+      part.forEach(({ o, t }) => {
+        const one = (r.results || {})[String(t.number).replace(/\s+/g, '').toUpperCase()];
+        if (one && one.ok) { applyLiveResult(o, t, one); n++; } else noteTrackError(t, (one && one.error) || '17TRACK didn’t return anything for this number.');
+      });
+    } catch (e) { part.forEach(({ t }) => noteTrackError(t, e.message)); if (/Security Key/.test(e.message)) break; }
+  }
+  if (n || jobs.length) save();
+  return n;
 }
 // how long a package's last check stays fresh: out for delivery or arriving soon gets checked more often
 function trackFreshFor(l) {
   if (!l) return 0;
+  if (l.pending) return 10 * 60e3; // just added to 17TRACK: look again soon
   if (l.status === 'out_for_delivery') return 30 * 60e3;
   if (l.status === 'exception' || (l.est && l.est <= dayKey(new Date(Date.now() + 864e5)))) return 3600e3;
   if (l.status === 'pre_transit') return 6 * 3600e3;
@@ -338,17 +371,20 @@ async function refreshStaleTracking(force) {
     const jobs = [], now = Date.now(), perKind = {};
     state.orders.filter(o => isActive(o) && o.tracking.length).forEach(o => o.tracking.forEach((t, i) => {
       if (t.live && t.live.status === 'delivered') return;
-      if ((TRK_COOL[trkKind(t)] || 0) > now) return; // that carrier asked us to slow down
+      const route = trkRoute(t);
+      if ((TRK_COOL[route] || 0) > now) return; // that carrier (or 17TRACK) asked us to slow down
       if (!force && t.liveError && now - t.liveError.at < 3600e3) return; // don't hammer a failing lookup
-      if (force || !t.live || now - (t.live.checkedAt || 0) >= trackFreshFor(t.live)) jobs.push([o.id, i, t.live ? t.live.checkedAt || 0 : 0, trkKind(t)]);
+      if (force || !t.live || now - (t.live.checkedAt || 0) >= trackFreshFor(t.live)) jobs.push([o.id, i, t.live ? t.live.checkedAt || 0 : 0, route]);
     }));
     jobs.sort((a, b) => a[2] - b[2]);
     // USPS's free plan allows about 60 checks an hour, so take at most 25 USPS packages per round
-    const cap = { usps: 25 }, list = jobs.filter(j => (perKind[j[3]] = (perKind[j[3]] || 0) + 1) <= (cap[j[3]] || 999)).slice(0, force ? 150 : 60);
-    let n = 0;
-    for (let i = 0; i < list.length; i += 4) {
+    const cap = { usps: 25 }, one = jobs.filter(j => j[3] !== 's17' && (perKind[j[3]] = (perKind[j[3]] || 0) + 1) <= (cap[j[3]] || 999)).slice(0, force ? 150 : 60);
+    // packages going through 17TRACK: a few big requests instead of one each
+    const s17 = jobs.filter(j => j[3] === 's17');
+    let n = s17.length ? await track17Batch(force ? s17 : s17.slice(0, 400)) : 0;
+    for (let i = 0; i < one.length; i += 4) {
       if (!cryptoKey) return;
-      const r = await Promise.all(list.slice(i, i + 4).map(([id, k, , kind]) => (TRK_COOL[kind] || 0) > Date.now() ? false : liveTrack(id, k, null, true)));
+      const r = await Promise.all(one.slice(i, i + 4).map(([id, k, , kind]) => (TRK_COOL[kind] || 0) > Date.now() ? false : liveTrack(id, k, null, true)));
       n += r.filter(Boolean).length;
     }
     // delivered a month ago: keep the last few scans only, so your data stays small
@@ -362,7 +398,7 @@ setInterval(() => { if (cryptoKey) refreshStaleTracking(); }, 15 * 60e3);
 async function refreshAllTracking() {
   const total = state.orders.filter(o => isActive(o) && o.tracking.length).reduce((a, o) => a + o.tracking.length, 0);
   if (!total) { toast('No active orders with tracking numbers'); return; }
-  if (!trackingReady()) { toast('Add your free UPS / FedEx / USPS keys in Settings → Carrier tracking first'); return; }
+  if (!trackingReady()) { toast('Add a 17TRACK key in Settings → Carrier tracking first'); return; }
   toast(`Checking ${plural(Math.min(total, 150), 'package')}…`);
   const ok = await refreshStaleTracking(true) || 0;
   softRefresh(); const errs = state.orders.flatMap(o => o.tracking).filter(t => t.liveError && Date.now() - t.liveError.at < 120000);

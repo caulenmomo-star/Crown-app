@@ -564,14 +564,19 @@ PAGES.settings = {
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
         ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
-          <div class="small muted" style="margin-bottom:10px">With these free keys Crown Tools asks UPS, FedEx and USPS directly for every package: every scan, the real delivery date and window, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page. Orders and the calendar update on their own. Keys stay encrypted inside your Crown Tools data.</div>
+          <div class="small muted" style="margin-bottom:10px">Crown Tools looks up every package: every scan, the arrival date, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page; orders and the calendar update on their own. Keys stay encrypted inside your Crown Tools data.</div>
+          <div class="section" style="margin-top:6px">17TRACK (recommended) ${S.s17Key ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
+          <div class="small faint" style="margin-bottom:6px">Tracks any UPS, FedEx, USPS, OnTrac, LaserShip or DHL package by its number, including packages shipped to you, with no carrier account. The first 200 packages are free, then it’s about 2¢ a package. Each package counts once, however often it’s checked. Sign up at api.17track.net → Settings → Security Key → copy it. <a href="https://api.17track.net/en" target="_blank" rel="noopener">Open 17TRACK ↗</a>${S.s17Key && S.s17Left != null ? ` · <b>${esc(String(S.s17Left))}</b> package${S.s17Left === 1 ? '' : 's'} left on your plan` : ''}</div>
+          <div class="hstack" style="flex-wrap:wrap"><input id="s17Key" type="password" autocomplete="off" placeholder="17TRACK Security Key" value="${esc(S.s17Key || '')}" style="flex:1;min-width:200px"><button id="s17Save">Save &amp; test</button>${S.s17Key ? '<button class="ghost" id="s17Del">Remove</button>' : ''}</div>
+          ${S.s17Key && S.s17Left != null && S.s17Left < 25 ? `<div class="note warn small" style="margin-top:8px">${S.s17Left ? 'Only ' + esc(String(S.s17Left)) + ' left' : 'Your 17TRACK packages are used up'}. Add more at 17track.net so new packages keep getting tracked.</div>` : ''}
+          <div class="section">The carriers’ own free keys (optional, used first for that carrier)</div>
           ${[['ups', 'UPS', 'https://developer.ups.com', 'Sign in at developer.ups.com with a free UPS account → Apps → Create App (choose “I want to integrate UPS technology into my business”, add the <b>Tracking</b> API) → copy the Client ID and Client Secret.'],
              ['fedex', 'FedEx', 'https://developer.fedex.com', 'Sign in at developer.fedex.com with a free FedEx account → My Projects → Create API Project → pick <b>Track API</b> → choose Production → copy the API Key (Client ID) and Secret Key.'],
              ['usps', 'USPS', 'https://developers.usps.com', 'Sign in at developers.usps.com with a free USPS Business account → Apps → Add App → add the <b>Tracking</b> API → copy the Consumer Key (Client ID) and Consumer Secret.']].map(([k, label, url, how]) => { const c = (S.carriers || {})[k] || {}; return `
           <div class="section" style="margin-top:6px">${label} ${c.id ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
           <div class="small faint" style="margin-bottom:6px">${how} <a href="${url}" target="_blank" rel="noopener">Open ${label} developer site ↗</a></div>
           <div class="hstack" style="flex-wrap:wrap"><input id="c_${k}_id" autocomplete="off" placeholder="${label} Client ID / API key" value="${esc(c.id || '')}" style="flex:1;min-width:180px"><input id="c_${k}_sec" type="password" autocomplete="off" placeholder="Client Secret" value="${esc(c.secret || '')}" style="flex:1;min-width:160px"><button data-csave="${k}">Save &amp; test</button>${c.id ? `<button class="ghost" data-cdel="${k}">Remove</button>` : ''}</div>`; }).join('')}
-          <div class="section">EasyPost (optional — DHL, OnTrac, LaserShip, Canada Post, Purolator, Asendia and 100+ more)</div>
+          <div class="section">EasyPost (optional)</div>
           <div class="hstack"><input id="stEp" type="password" autocomplete="off" placeholder="EZ… API key" value="${esc(S.easypostKey)}" style="flex:1;min-width:200px"><button id="stEpSave">Save key</button></div>
           <div class="hstack" style="margin-top:12px"><button id="stTrackNow">Check all packages now</button></div></div>
         ${stockxCardHtml()}
@@ -620,6 +625,13 @@ PAGES.settings = {
     $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
     pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });
+    $('#s17Save').onclick = async () => {
+      const key = $('#s17Key').value.trim(); if (!key) { toast('Paste your 17TRACK Security Key first'); return; }
+      const b = $('#s17Save'); b.disabled = true; b.textContent = 'Testing…';
+      try { const r = await api('/api/s17test', { key }); S.s17Key = key; S.s17Left = r.quotaLeft; save(); toast(`17TRACK connected${r.quotaLeft != null ? ' · ' + plural(r.quotaLeft, 'package') + ' left' : ''} — checking your packages…`); PAGES.settings.render(); refreshStaleTracking(true); }
+      catch (e) { toast(e.message); b.disabled = false; b.textContent = 'Save & test'; }
+    };
+    if ($('#s17Del')) $('#s17Del').onclick = () => { S.s17Key = ''; delete S.s17Left; save(); toast('17TRACK key removed'); PAGES.settings.render(); };
     $('#stEpSave').onclick = () => { S.easypostKey = $('#stEp').value.trim(); save(); toast(S.easypostKey ? 'EasyPost key saved' : 'EasyPost key removed'); };
     $$('#carrierCard [data-csave]').forEach(b => b.onclick = async () => {
       const k = b.dataset.csave, id = $('#c_' + k + '_id').value.trim(), secret = $('#c_' + k + '_sec').value.trim();

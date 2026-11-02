@@ -26,7 +26,8 @@ function pkWindow(l) {
 }
 // everything the page needs to know about one package
 function pkgInfo(o, t, i) {
-  const l = t.live || null;
+  // just added to 17TRACK and nothing back yet: go by the emails until the first scans arrive
+  const l = t.live && !t.live.pending ? t.live : null, waiting = !!(t.live && t.live.pending);
   let st = l ? l.status : ({ delivered: 'delivered', out: 'out_for_delivery', shipped: 'in_transit' }[o.status] || 'pre_transit');
   if (!(st in PK_STEP)) st = st === 'unknown' || !st ? (o.status === 'delivered' ? 'delivered' : 'pre_transit') : st === 'available_for_pickup' ? 'exception' : 'in_transit';
   if (st !== 'delivered' && o.status === 'delivered' && !l) st = 'delivered';
@@ -39,10 +40,10 @@ function pkgInfo(o, t, i) {
   const late = !delivered && st !== 'out_for_delivery' && !!est && est < todayKey();
   const stuck = !delivered && st !== 'out_for_delivery' && st !== 'exception' && quiet != null && quiet >= PK_STUCK_DAYS;
   const kind = typeof trkKind === 'function' ? trkKind(t) : 'other', ep = !!state.settings.easypostKey;
-  const canLook = kind !== 'other' || ep;
+  const canLook = kind !== 'other' || ep || !!s17Key();
   // can Crown Tools look it up right now? (its carrier's keys, EasyPost, or the Mac app reading ups.com)
-  const lookable = !!carrierKeys()[kind] || ep || (kind === 'ups' && SERVER && !CLOUD);
-  return { o, t, i, l, st, last, quiet, est, delivered, deliveredOn, delayed, late, stuck, kind, canLook, lookable, problem: st === 'exception' || delayed || late || stuck, key: o.id + ':' + i };
+  const lookable = !!carrierKeys()[kind] || !!s17Key() || ep || (kind === 'ups' && SERVER && !CLOUD);
+  return { o, t, i, l, st, last, quiet, est, delivered, deliveredOn, delayed, late, stuck, kind, canLook, lookable, waiting, problem: st === 'exception' || delayed || late || stuck, key: o.id + ':' + i };
 }
 function allPackages() {
   const out = [];
@@ -97,7 +98,7 @@ function pkCardHtml(x) {
   const when = x.delivered ? `<div><span>Delivered</span><b>${x.deliveredOn ? esc(fmtDate(x.deliveredOn, { weekday: true })) : '—'}</b><i>${x.deliveredOn ? esc(relDay(x.deliveredOn)) : ''}</i></div>`
     : `<div class="${x.late ? 'late' : x.delayed ? 'soon' : ''}"><span>Arrives</span><b>${x.est ? esc(fmtDate(x.est, { weekday: true })) : '—'}</b><i>${x.est ? esc([relDay(x.est), x.est >= todayKey() ? pkWindow(l) : ''].filter(Boolean).join(' · ')) : l ? 'no date yet' : 'not checked yet'}</i></div>`;
   const lastBox = last ? `<div class="wide"><span>Latest scan</span><b class="ellipsis">${esc(last.message || '—')}</b><i class="ellipsis">${esc([last.location, last.date ? (relDay(last.date) === 'today' && pkTime(String(last.date)) ? 'today ' + pkTime(String(last.date)) : fmtDT(last.date)) : ''].filter(Boolean).join(' · '))}</i></div>`
-    : `<div class="wide"><span>Latest scan</span><b>—</b><i>${l ? 'none yet' : !x.canLook ? 'open the carrier’s site' : x.lookable ? 'checking soon' : 'add carrier keys to see scans'}</i></div>`;
+    : `<div class="wide"><span>Latest scan</span><b>—</b><i>${l ? 'none yet' : x.waiting ? 'added to 17TRACK — first scans in a few minutes' : !x.canLook ? 'open the carrier’s site' : x.lookable ? 'checking soon' : 'add a tracking key to see scans'}</i></div>`;
   const third = x.delivered && l && l.leftAt ? `<div><span>Left at</span><b class="ellipsis">${esc(l.leftAt)}</b></div>` : `<div><span>${h ? 'House' : 'Profile'}</span><b class="ellipsis">${h ? esc(houseLabel(h)) : esc((profileById(o.profileId) || {}).name || '—')}</b></div>`;
   return `<div class="ocard pkcard pk-${x.st}${x.problem ? ' pk-warn' : ''}" data-pk="${esc(x.key)}">
     <div class="otop"><div class="opic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div>
@@ -114,8 +115,9 @@ function pkCardHtml(x) {
 // the same details inside an order's window
 function pkOrderBlock(o, t, i) {
   const x = pkgInfo(o, t, i), issue = pkIssue(x);
+  if (x.waiting) return `<div class="small faint" style="margin-top:6px">Added to 17TRACK — the first scans show up in a few minutes.</div>`;
   if (!t.live) return issue ? `<div class="note ${issue.c} small" style="margin-top:6px">${esc(issue.t)}</div>` : '';
-  const l = t.live, last = x.last;
+  const l = x.l, last = x.last;
   return `<div style="margin-top:10px">${pkBar(x)}</div>
     <div class="small" style="margin-top:6px"><b>${esc(l.text || PK_LABEL[x.st])}</b>${x.delivered && x.deliveredOn ? ' · delivered ' + esc(fmtDate(x.deliveredOn, { weekday: true })) + (l.leftAt ? ' · ' + esc(l.leftAt) : '') : x.est ? ' · arrives ' + esc(fmtDate(x.est, { weekday: true })) + (x.est >= todayKey() && pkWindow(l) ? ' ' + esc(pkWindow(l)) : '') : ''} <span class="faint">· checked ${esc(ago(l.checkedAt))}</span></div>
     ${issue ? `<div class="note ${issue.c} small" style="margin-top:6px">${esc(issue.t)}</div>` : ''}
@@ -133,18 +135,18 @@ PAGES.packages = {
     list.sort((a, b) => rank(a) - rank(b) || (a.delivered ? String(b.deliveredOn).localeCompare(String(a.deliveredOn)) : String(a.est || '9999').localeCompare(String(b.est || '9999'))) || String(b.o.orderDate).localeCompare(String(a.o.orderDate)));
     const onWay = cnt('transit'), out = cnt('out'), today = cnt('today'), probs = cnt('problems');
     const week = all.filter(x => x.delivered && x.deliveredOn && x.deliveredOn >= dayKey(new Date(Date.now() - 6 * 864e5))).length;
-    const keys = carrierKeys(), anyKeys = !!(keys.ups || keys.fedex || keys.usps || state.settings.easypostKey), ready = trackingReady(), checked = all.map(x => x.l && x.l.checkedAt || 0).reduce((a, b) => Math.max(a, b), 0);
+    const keys = carrierKeys(), anyKeys = !!(keys.ups || keys.fedex || keys.usps || s17Key() || state.settings.easypostKey), ready = trackingReady(), checked = all.map(x => x.l && x.l.checkedAt || 0).reduce((a, b) => Math.max(a, b), 0);
     const shown = list.slice(0, PK.limit);
     pg.innerHTML = `<div class="pagehead"><h1>Packages</h1><span class="sub">${plural(onWay, 'package')} on the way${checked ? ' · checked ' + esc(ago(checked)) : ''}</span><div class="spacer"></div>
         ${ready && SERVER ? '<button id="pkNow">Check all now</button>' : ''}<button class="primary" data-nav="orders">All orders</button></div>
-      ${!anyKeys ? `<div class="note warn pkkeys"><b>${ready ? 'Live tracking is only partly on.' : 'Live tracking is off.'}</b>${ready ? ' Right now only UPS packages are checked (from ups.com).' : ''} Add your free UPS, FedEx and USPS developer keys (about 5 minutes each) and every package here gets the carrier’s own scans, delivery window, where it was left and problem alerts. Until then, packages show what the shipping emails said. <button class="sm primary" id="pkSetup">Set up carrier keys</button></div>` : ''}
+      ${!anyKeys ? `<div class="note warn pkkeys"><b>${ready ? 'Live tracking is only partly on.' : 'Live tracking is off.'}</b>${ready ? ' Right now only UPS packages are checked (from ups.com).' : ''} Add a 17TRACK key (200 packages free, no carrier account needed) and every package here gets the carrier’s scans, arrival date, where it was left and problem alerts. Until then, packages show what the shipping emails said. <button class="sm primary" id="pkSetup">Set up tracking</button></div>` : ''}
       ${all.length ? `<div class="hero"><div class="hero-l">On the way</div><div class="hero-v">${onWay}</div><div class="hero-s">${out ? `<b>${out} out for delivery</b> · ` : ''}${today ? `${today} arriving today · ` : ''}${probs ? `${probs} need${probs === 1 ? 's' : ''} a look` : 'nothing needs a look 👑'}</div>
         <div class="hero-tiles"><button class="htile" data-pkf="out"><span>Out for delivery</span><b>${out}</b><i>${out ? 'arriving today' : 'none right now'}</i></button><button class="htile" data-pkf="today"><span>Arriving today</span><b>${today}</b><i>${esc(fmtDate(todayKey(), { weekday: true }))}</i></button><button class="htile" data-pkf="problems"><span>Needs a look</span><b>${probs}</b><i>${probs ? 'problems, delays, no scans' : 'all moving'}</i></button><button class="htile" data-pkf="delivered"><span>Delivered</span><b>${week}</b><i>last 7 days</i></button></div></div>` : ''}
       <div class="toolbar"><input class="search" data-search id="pkQ" placeholder="Search tracking #, order #, item, house, city…" value="${esc(PK.q)}">
         <div class="pills" id="pkF">${PK_FILTERS.map(([k, l]) => `<button class="chip ${PK.f === k ? 'on' : ''}" data-pkf="${k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div></div>
       ${shown.length ? `<div class="olist pklist">${shown.map(pkCardHtml).join('')}</div>${list.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button id="pkMore">Show ${Math.min(120, list.length - shown.length)} more</button></div>` : ''}`
         : `<div class="empty">${all.length ? (PK.f === 'problems' ? 'Every package is moving on time. 👑' : PK.f === 'out' ? 'Nothing is out for delivery right now.' : PK.f === 'today' ? 'Nothing is due today.' : PK.f === 'transit' ? 'Nothing on the way right now.' : 'No packages match.') : 'No packages yet. Tracking numbers come in automatically from shipping emails, and every one shows up here.'}</div>`}
-      <div class="note small">Packages show up here as soon as a shipping email with a tracking number syncs. With carrier keys, Crown Tools asks the carrier directly while it’s open: every 30 minutes once a package is out for delivery, every hour when it’s due within a day, and every 2 hours otherwise. <b>Needs a look</b> means the carrier reported a problem, the arrival date moved later, it’s past its date, or there haven’t been any new scans for ${PK_STUCK_DAYS} days.</div>`;
+      <div class="note small">Packages show up here as soon as a shipping email with a tracking number syncs. With 17TRACK or carrier keys, Crown Tools checks while it’s open: every 30 minutes once a package is out for delivery, every hour when it’s due within a day, and every 2 hours otherwise. <b>Needs a look</b> means the carrier reported a problem, the arrival date moved later, it’s past its date, or there haven’t been any new scans for ${PK_STUCK_DAYS} days.</div>`;
     $('#pkQ').oninput = debounce(e => { PK.q = e.target.value; PK.limit = 120; PAGES.packages.render(); }, 160);
     pg.querySelectorAll('[data-pkf]').forEach(b => b.onclick = () => { PK.f = b.dataset.pkf; PK.limit = 120; PAGES.packages.render(); });
     if ($('#pkNow')) $('#pkNow').onclick = () => refreshAllTracking();
