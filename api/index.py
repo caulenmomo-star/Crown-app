@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.15.0"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.16.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1360,6 +1360,111 @@ def upc_lookup(req):
             "category": _clip(it.get("category"), 120)}
 
 
+# ---------------------------------------------------------------- SKU lookup (SKU lists)
+# Reads a store's public product page (the same page you'd open) for the product's name, picture and, when the page
+# includes it, the price. Only well-known store sites are read. A barcode (UPC) goes to the barcode lookup instead.
+SKU_STORES = {"target.com": "Target", "walmart.com": "Walmart", "bestbuy.com": "Best Buy", "pokemoncenter.com": "Pokémon Center",
+              "gamestop.com": "GameStop", "costco.com": "Costco", "samsclub.com": "Sam's Club", "amazon.com": "Amazon",
+              "barnesandnoble.com": "Barnes & Noble", "walgreens.com": "Walgreens", "kohls.com": "Kohl's", "meijer.com": "Meijer"}
+SKU_TARGET_URL = os.environ.get("CROWN_TARGET_URL", "https://www.target.com")
+_SKUCACHE = {}
+
+
+def _sku_store(host):
+    host = (host or "").lower()
+    for d, n in SKU_STORES.items():
+        if host == d or host.endswith("." + d):
+            return n
+    return ""
+
+
+def _meta(html, *names):
+    for n in names:
+        for pat in (r'<meta[^>]+(?:property|name|itemprop)=["\']%s["\'][^>]*content=["\']([^"\']*)["\']' % re.escape(n),
+                    r'<meta[^>]+content=["\']([^"\']*)["\'][^>]*(?:property|name|itemprop)=["\']%s["\']' % re.escape(n)):
+            m = re.search(pat, html, re.I)
+            if m and m.group(1).strip():
+                return _html.unescape(m.group(1).strip())
+    return ""
+
+
+def _ld_price(html):
+    for blk in re.findall(r'<script[^>]+application/ld\+json[^>]*>(.*?)</script>', html, re.S | re.I)[:8]:
+        m = re.search(r'"price"\s*:\s*"?(\d+(?:\.\d{1,2})?)', blk)
+        if m:
+            return float(m.group(1))
+    return None
+
+
+def sku_info(req):
+    raw = str(req.get("sku") or "").strip()[:500]
+    store = str(req.get("store") or "").strip()
+    if not raw:
+        raise UserError("Type a SKU or paste a product link.")
+    url, tcin = "", ""
+    m = re.search(r"https?://[^\s<>\"']+", raw)
+    if m:
+        url = m.group(0)
+        t = re.search(r"/A-(\d{6,12})", url)
+        if t and _sku_store(urllib.parse.urlsplit(url).hostname) == "Target":
+            tcin = t.group(1)
+    elif re.fullmatch(r"\d{6,12}", raw) and store.lower() in ("", "target"):
+        tcin = raw
+    elif re.fullmatch(r"\d{12,14}", re.sub(r"\D", "", raw)) and re.fullmatch(r"[\d\s-]+", raw):
+        r = upc_lookup({"code": raw})
+        return {"ok": True, "found": bool(r.get("found")), "sku": re.sub(r"\D", "", raw), "store": store, "name": r.get("name") or "",
+                "image": r.get("image") or "", "price": r.get("msrp"), "priceFrom": "barcode lookup" if r.get("msrp") else "", "url": ""}
+    if tcin:
+        url = SKU_TARGET_URL + "/p/-/A-" + tcin
+    if not url:
+        return {"ok": True, "found": False, "sku": raw, "store": store, "why": "Paste the product link for %s items so Crown Tools can read it." % (store or "this store's")}
+    u = urllib.parse.urlsplit(url)
+    sname = _sku_store(u.hostname) or ("Target" if tcin else "")
+    local_ok = os.environ.get("CROWN_TARGET_URL") and url.startswith(SKU_TARGET_URL)
+    if not local_ok and (u.scheme != "https" or not sname):
+        raise UserError("Crown Tools can only read product pages from big stores (Target, Walmart, Best Buy, Pokémon Center…).")
+    key = url.split("#")[0]
+    hit = _SKUCACHE.get(key)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    rq = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; CrownTools/%s; +https://crowntools.vercel.app)" % VERSION,
+                                              "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"})
+    try:
+        with urllib.request.urlopen(rq, timeout=20, context=ssl_context()) as resp:
+            html = resp.read(900_000).decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            out = {"ok": True, "found": False, "sku": tcin or raw, "store": sname, "url": url, "why": "%s says this product doesn't exist (any more)." % sname}
+            _SKUCACHE[key] = (time.time() + 6 * 3600, out)
+            return out
+        return {"ok": True, "found": False, "sku": tcin or raw, "store": sname, "url": url, "why": "%s didn't answer (%s). Try again later or type the name." % (sname, e.code)}
+    except urllib.error.URLError as e:
+        return {"ok": True, "found": False, "sku": tcin or raw, "store": sname, "url": url, "why": "Couldn't reach %s (%s)." % (sname, e.reason)}
+    name = _meta(html, "og:title", "twitter:title")
+    if not name:
+        t = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
+        name = _html.unescape(t.group(1)).strip() if t else ""
+    name = re.sub(r"\s*[:|\-–]\s*(Target|Walmart\.com|Best Buy|Pok[eé]mon Center|GameStop|Costco|Amazon\.com)\s*$", "", name, flags=re.I).strip()
+    img = _meta(html, "og:image", "twitter:image")
+    price = None
+    pm = _meta(html, "product:price:amount", "og:price:amount", "price")
+    try:
+        price = float(re.sub(r"[^\d.]", "", pm)) if pm else None
+    except ValueError:
+        price = None
+    if price is None:
+        price = _ld_price(html)
+    found = bool(name) and not re.search(r"(page not found|product not found|access denied|robot|captcha)", name, re.I)
+    out = {"ok": True, "found": found, "sku": tcin or raw, "store": sname, "url": url, "name": _clip(name, 200) if found else "",
+           "image": img if found and img.startswith("https://") else "", "price": price if found and price and 0 < price < 100000 else None,
+           "priceFrom": sname if found and price else ""}
+    if not found:
+        out["why"] = "%s didn't show this product's details." % sname
+    else:
+        _SKUCACHE[key] = (time.time() + 6 * 3600, out)
+    return out
+
+
 # ---------------------------------------------------------------- market prices (TCGplayer data via tcgcsv.com)
 TCG_BASE = os.environ.get("CROWN_TCGCSV_URL", "https://tcgcsv.com/tcgplayer")
 _MCACHE = {}
@@ -2141,6 +2246,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/track": track,
             "/api/carriertest": carrier_test,
             "/api/track17": track17,
+            "/api/skuinfo": sku_info,
             "/api/s17test": s17_test,
             "/api/discord": discord_send,
             "/api/discord/check": discord_check,
@@ -3311,6 +3417,7 @@ class handler(BaseHTTPRequestHandler):
             "/track": track,
             "/carriertest": carrier_test,
             "/track17": track17,
+            "/skuinfo": sku_info,
             "/s17test": s17_test,
             "/discord": discord_send,
             "/discord/check": discord_check,

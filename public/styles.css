@@ -1031,3 +1031,10 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 .pklink{white-space:nowrap}
 .pkkeys{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
 @media (max-width:760px){.pkfacts{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.pkfacts .wide{grid-column:1 / -1;order:3}}
+
+/* SKU lists */
+.skutbl td{vertical-align:middle}
+#sklAdd{min-height:76px;height:76px}#sklOut{min-height:56px;height:auto;max-height:150px}.skutbl .skuname{max-width:420px;font-weight:600}
+.skutbl .skqty{width:58px;text-align:right;padding:5px 6px}
+@media (max-width:760px){.skutbl .skuname{max-width:200px}}
+.pkoldlink{color:inherit;text-decoration:underline;padding:0 2px;font:inherit;background:none;border:0}

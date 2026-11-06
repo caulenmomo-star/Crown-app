@@ -34,6 +34,39 @@ function pairProfileGroup(g) {
   g.categoryId = ensureCategory(g.name); g.updatedAt = Date.now();
   return !had;
 }
+// Cards on your profiles are copied into Cards on their own: every profile group gets a card group with the same name
+// holding all the cards its profiles use. A card that's already saved stays in its group; missing expiry or CVV gets
+// filled in from the profile. Returns how many cards were added or filled in.
+function syncProfileCards() {
+  if (state.settings.cardSync === false) return 0;
+  state.cards = state.cards || []; state.cardGroups = state.cardGroups || [];
+  const have = new Map(state.cards.map(c => [cardDigits(c.number), c]));
+  let n = 0;
+  for (const cat of state.categories) {
+    const profs = state.profiles.filter(p => p.categoryId === cat.id && luhn(p.cardNumber));
+    if (!profs.length) continue;
+    let g = state.cardGroups.find(x => x.categoryId === cat.id) || null;
+    for (const p of profs) {
+      const d = cardDigits(p.cardNumber), mo = normExpMonth(p.cardExpMonth), yr = normExpYear(p.cardExpYear), cvv = String(p.cardCvv || '').replace(/\D/g, '').slice(0, 4);
+      const ex = have.get(d);
+      if (ex) {
+        let ch = false;
+        if (!ex.month && mo) { ex.month = mo; ch = true; } if (!ex.year && yr) { ex.year = yr; ch = true; } if (!ex.cvv && cvv) { ex.cvv = cvv; ch = true; }
+        if (!ex.name && p.cardName) { ex.name = String(p.cardName).trim(); ch = true; }
+        if (ch) { ex.updatedAt = Date.now(); n++; }
+        continue;
+      }
+      if (!g) {
+        g = state.cardGroups.find(x => x.name.toLowerCase() === cat.name.toLowerCase() && !(x.categoryId && state.categories.some(c => c.id === x.categoryId && c.id !== cat.id)));
+        if (!g) { g = newCardGroup(cat.name); state.cardGroups.push(g); }
+        g.categoryId = cat.id; g.updatedAt = Date.now();
+      }
+      const c = newCard({ groupId: g.id, number: d, month: mo, year: yr, cvv, name: String(p.cardName || '').trim(), status: 'active', fromProfile: true, updatedAt: Date.now() });
+      state.cards.push(c); have.set(d, c); n++;
+    }
+  }
+  return n;
+}
 // card number -> the profiles that use it
 function cardProfileIndex() { const m = new Map(); for (const p of state.profiles) { const d = cardDigits(p.cardNumber); if (!d) continue; const a = m.get(d); a ? a.push(p) : m.set(d, [p]); } return m; }
 function cardProfilesHtml(list) {
@@ -114,6 +147,7 @@ function visibleCards() {
 let CPX = new Map();
 PAGES.cards = {
   render() {
+    if (syncProfileCards()) save();
     const pg = $('#pg-cards'); const all = state.cards || [];
     const list = visibleCards();
     for (const id of [...cardSel]) if (!all.some(c => c.id === id)) cardSel.delete(id);
@@ -126,6 +160,7 @@ PAGES.cards = {
       <div class="split"><div class="catlist"><div id="cgList">${h}</div><button id="cgAdd" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New group</button></div>
       <div style="min-width:0">
         ${dead ? `<div class="docbar bad" style="margin-bottom:12px"><div class="docmsg"><b>${plural(dead, 'card')} looks dead</b><span class="small">Expired, or cancelled every time with nothing shipping.</span></div><div class="docacts"><button class="sm" data-cf="dead">Show them</button></div></div>` : ''}
+        <label class="small muted hstack" style="gap:6px;margin-bottom:10px;width:auto"><input type="checkbox" id="cdSync" ${state.settings.cardSync === false ? '' : 'checked'} style="width:auto"> Add the cards on my profiles here automatically, in a group named after each profile group</label>
         <div class="toolbar"><input class="search" data-search id="cdQ" placeholder="Search last 4, name, notes…  ( / )" value="${esc(CF.q)}">
           <div class="chips" id="cdStatus">${[['all', 'All']].concat(CARD_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${CF.status === k ? 'on' : ''}" data-cf="${k}">${esc(l)}</button>`).join('')}</div></div>
         ${cardSel.size ? `<div class="selbar"><strong>${cardSel.size} selected</strong><select id="cdMove" style="width:auto"><option value="">Move to group…</option>${state.cardGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><select id="cdSetStatus" style="width:auto"><option value="">Set status…</option>${CARD_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><button class="sm danger" id="cdDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="cdClr">Clear</button></div>` : ''}
@@ -138,6 +173,7 @@ PAGES.cards = {
           : `<div class="empty">${all.length ? 'No cards match.' : 'No cards yet. Make a group like “Cap One VCCs”, then <b>Add cards</b> and paste them straight from your bank’s virtual-card page or a spreadsheet.'}</div>`}
       </div></div>`;
     $('#cdAdd').onclick = () => openCardAdd(cardGroupView !== 'all' ? cardGroupView : (state.cardGroups[0] || {}).id);
+    $('#cdSync').onchange = e => { state.settings.cardSync = e.target.checked; save(); if (e.target.checked) { const n = syncProfileCards(); if (n) save(); toast(n ? `Added ${plural(n, 'card')} from your profiles` : 'Your profiles’ cards are all here'); } PAGES.cards.render(); };
     $('#cgAdd').onclick = async () => { const n = await askText('New card group', '', { placeholder: 'Cap One VCCs, Amex…', ok: 'Add group' }); if (n && n.trim()) { snapshot('add card group'); const id = ensureCardGroup(n); cardGroupView = id; save(); refresh(); } };
     if ($('#cdAssign')) $('#cdAssign').onclick = () => openCardAssign(cardGroupView !== 'all' ? cardGroupView : '');
     if ($('#cdExp')) $('#cdExp').onclick = openCardExport;

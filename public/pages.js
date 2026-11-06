@@ -70,7 +70,7 @@ PAGES.dashboard = {
     const attention = [
       (() => { const od = (state.acoInvoices || []).filter(i => typeof acoOverdue === 'function' && acoOverdue(i)); return od.length && [`${plural(od.length, 'ACO invoice')} overdue (${fmtMoney(sum(od, acoInvTotal))})`, 'aco', () => { ACO.tab = 'invoices'; ACO.invStatus = 'overdue'; }]; })(),
       (() => { const n = typeof acoUnclaimed === 'function' && (state.acoClients || []).length ? acoUnclaimed().length : 0; return n && [`${plural(n, 'bot checkout')} on profiles that aren’t yours or a client’s — sort them`, 'aco', () => { ACO.tab = 'checkouts'; }]; })(),
-      (() => { const n = typeof allPackages === 'function' ? allPackages().filter(x => x.st === 'exception' || x.delayed || x.stuck).length : 0; return n && [`${plural(n, 'package')} need${n === 1 ? 's' : ''} a look — a delivery problem, a delay or no new scans`, 'packages', () => { PK.f = 'problems'; }]; })(),
+      (() => { const n = typeof allPackages === 'function' ? allPackages().filter(x => !x.old && (x.st === 'exception' || x.delayed || x.stuck)).length : 0; return n && [`${plural(n, 'package')} need${n === 1 ? 's' : ''} a look — a delivery problem, a delay or no new scans`, 'packages', () => { PK.f = 'problems'; }]; })(),
       (() => { const n = typeof preTodoCount === 'function' ? preTodoCount() : 0; return n && [`${plural(n, 'pre-order')} with a declined card — update ${n === 1 ? 'it' : 'them'}`, 'preorders', () => { PRE.f = 'todo'; }]; })(),
       overdue.length && [`${plural(overdue.length, 'order')} past the expected delivery date`, 'orders', () => { OF.status = 'active'; }],
       unlinked && [`${plural(unlinked, 'order')} not linked to a profile`, 'orders', () => { OF.profile = '__none'; OF.status = 'all'; }],

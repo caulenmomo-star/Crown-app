@@ -177,7 +177,7 @@ function renderTable() {
 $('#cats').onclick = async e => {
   const ren = e.target.dataset.ren, del = e.target.dataset.del;
   if (e.target.dataset.addrs) { openAddresses(e.target.dataset.addrs); return; }
-  if (ren) { const c = state.categories.find(c => c.id === ren); const n = await askText('Rename category', c.name); if (n && n.trim()) { c.name = n.trim(); save(); refresh(); } return; }
+  if (ren) { const c = state.categories.find(c => c.id === ren); const n = await askText('Rename category', c.name); if (n && n.trim()) { const g = (state.cardGroups || []).find(x => x.categoryId === c.id && x.name.toLowerCase() === c.name.toLowerCase()); if (g) { g.name = n.trim(); g.updatedAt = Date.now(); } c.name = n.trim(); save(); refresh(); } return; }
   if (del) {
     const n = state.profiles.filter(p => p.categoryId === del).length;
     if (state.categories.length === 1) { toast('You need at least one category'); return; }

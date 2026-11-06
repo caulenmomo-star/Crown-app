@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.16.0 — SKU lists (2026-11-06)
+
+- New SKU lists under Checkout. Save the SKUs you run in your bots, paste them in as numbers or product links, and copy them out one per line or comma separated.
+- Each SKU shows its product name and picture, with the price from the store, from what you paid in your orders, or what you type in. Trading-card products show their TCGplayer value too.
+- The cards on your profiles are added to Cards automatically, in a group named after each profile group.
+- Packages with no news for two weeks move to “Old — probably delivered”. Mark them all delivered at once, mark one delivered, or hide it.
+
 ## v0.15.0 — 17TRACK tracking (2026-11-01)
 
 - Track any UPS, FedEx, USPS, OnTrac, LaserShip or DHL package with a 17TRACK key, including packages shipped to you. No carrier account needed.

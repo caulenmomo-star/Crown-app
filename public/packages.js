@@ -10,6 +10,7 @@ const PK_CLS = { pre_transit: 's-confirmed', in_transit: 's-transit', out_for_de
 const PK_STEPS = ['Label created', 'Shipped', 'Out for delivery', 'Delivered'];
 const PK_STEP = { pre_transit: 0, in_transit: 1, exception: 1, out_for_delivery: 2, delivered: 3 };
 const PK_STUCK_DAYS = 4;
+const PK_OLD_DAYS = 14; // no news for this long and no upcoming date: it was almost surely delivered
 // the last scan the carrier gave us (older saved lookups don't have .last)
 const pkLast = l => l ? (l.last || (l.events || []).slice(-1)[0] || null) : null;
 // "by 9:00 PM", "10:00 AM – 2:00 PM": UPS sends HHMMSS, FedEx sends date-times
@@ -43,26 +44,43 @@ function pkgInfo(o, t, i) {
   const canLook = kind !== 'other' || ep || !!s17Key();
   // can Crown Tools look it up right now? (its carrier's keys, EasyPost, or the Mac app reading ups.com)
   const lookable = !!carrierKeys()[kind] || !!s17Key() || ep || (kind === 'ups' && SERVER && !CLOUD);
-  return { o, t, i, l, st, last, quiet, est, delivered, deliveredOn, delayed, late, stuck, kind, canLook, lookable, waiting, problem: st === 'exception' || delayed || late || stuck, key: o.id + ':' + i };
+  // old: nothing new (no scan, no email) for 2 weeks and no arrival date coming up
+  const newest = [last && last.date, o.statusAt, o.orderDate].map(v => v ? toDate(v) : null).filter(Boolean).reduce((a, b) => (b > a ? b : a), null);
+  const age = newest ? Math.floor((Date.now() - newest) / 864e5) : 999;
+  const old = !delivered && age >= PK_OLD_DAYS && !(est && est >= dayKey(new Date(Date.now() - 3 * 864e5)));
+  return { o, t, i, l, st, last, quiet, est, delivered, deliveredOn, delayed, late, stuck, kind, canLook, lookable, waiting, old, age, problem: !old && (st === 'exception' || delayed || late || stuck), key: o.id + ':' + i };
 }
 function allPackages() {
   const out = [];
-  state.orders.forEach(o => { if (isDead(o) || !(o.tracking || []).length) return; o.tracking.forEach((t, i) => { if (t && t.number) out.push(pkgInfo(o, t, i)); }); });
+  state.orders.forEach(o => { if (isDead(o) || !(o.tracking || []).length) return; o.tracking.forEach((t, i) => { if (t && t.number && !t.hidden) out.push(pkgInfo(o, t, i)); }); });
   return out;
 }
 const pkRecent = x => { if (!x.delivered) return true; const d = x.deliveredOn || dayKey(new Date(x.o.updatedAt || 0)); return d >= dayKey(new Date(Date.now() - 30 * 864e5)); };
 const PK_FILTERS = [
-  ['transit', 'On the way', x => !x.delivered],
+  ['transit', 'On the way', x => !x.delivered && !x.old],
   ['problems', 'Needs a look', x => x.problem],
-  ['out', 'Out for delivery', x => x.st === 'out_for_delivery'],
+  ['out', 'Out for delivery', x => x.st === 'out_for_delivery' && !x.old],
   ['today', 'Arriving today', x => !x.delivered && x.st !== 'out_for_delivery' && x.est === todayKey()],
   ['delivered', 'Delivered', x => x.delivered && pkRecent(x)],
+  ['old', 'Old — probably delivered', x => x.old],
   ['all', 'All', x => pkRecent(x)],
 ];
 const pkProblemCount = () => allPackages().filter(x => x.problem).length;
+// you know it arrived: mark it delivered (on its arrival date if that's passed, otherwise today)
+function pkMarkDelivered(list) {
+  if (!list.length) return;
+  snapshot(list.length === 1 ? 'mark package delivered' : 'mark packages delivered');
+  for (const x of list) {
+    const day = x.est && x.est <= todayKey() ? x.est : todayKey(), prev = x.t.live || {};
+    x.t.live = Object.assign({}, prev, { status: 'delivered', deliveredOn: day, est: '', text: 'Marked delivered by you', manual: true, pending: false, checkedAt: Date.now(), events: prev.events || [], carrier: prev.carrier || x.t.carrier || '' });
+    delete x.t.liveError; applyTracking(x.o); x.o.updatedAt = Date.now();
+  }
+  invalidateStats(); save(); toast(list.length === 1 ? 'Marked delivered' : `Marked ${plural(list.length, 'package')} delivered`, { undo: true }); softRefresh();
+}
 // what's wrong, in plain words (empty when nothing is)
 function pkIssue(x) {
   const l = x.l || {};
+  if (x.old) return { c: 'warn', t: `Nothing new for ${x.age} days — this was probably delivered. Mark it delivered or hide it.` };
   if (x.st === 'exception') return { c: 'bad', t: l.problem || l.text || 'The carrier reported a problem with this package.' };
   if (x.delayed) return { c: 'warn', t: `Running behind — ${x.l.carrier || 'the carrier'} first said ${fmtDate(x.l.firstEst, { weekday: true })}, now ${fmtDate(x.est, { weekday: true })}.` + (l.problem ? ' ' + l.problem : '') };
   if (x.late) return { c: 'warn', t: `Was due ${fmtDate(x.est, { weekday: true })} and hasn’t arrived yet.` };
@@ -110,7 +128,7 @@ function pkCardHtml(x) {
     <div class="prefacts pkfacts">${when}${lastBox}${third}</div>
     ${pkExtras(x)}${pkScans(x)}
     ${err ? `<div class="small" style="color:var(--warn)">${esc(err)}</div>` : ''}
-    <div class="iacts">${SERVER && x.lookable && !x.delivered ? `<button class="sm" data-pkref="${esc(x.key)}">↻ Refresh</button>` : ''}<a class="small pklink" href="${esc(url)}" target="_blank" rel="noopener">${esc((l && l.carrier) || t.carrier || 'Carrier')} site ↗</a><span class="spacer"></span>${l && l.checkedAt ? `<span class="small faint">checked ${esc(ago(l.checkedAt))}</span>` : ''}<button class="sm ghost" data-pkopen="${o.id}">Order</button></div></div>`;
+    <div class="iacts">${SERVER && x.lookable && !x.delivered ? `<button class="sm" data-pkref="${esc(x.key)}">↻ Refresh</button>` : ''}<a class="small pklink" href="${esc(url)}" target="_blank" rel="noopener">${esc((l && l.carrier) || t.carrier || 'Carrier')} site ↗</a>${!x.delivered ? `<button class="sm${x.old ? ' primary' : ' ghost'}" data-pkdel="${esc(x.key)}">✓ Delivered</button>` : ''}<span class="spacer"></span>${l && l.checkedAt ? `<span class="small faint">checked ${esc(ago(l.checkedAt))}</span>` : ''}<button class="sm ghost" data-pkhide="${esc(x.key)}" title="Remove from Packages (the order stays)">Hide</button><button class="sm ghost" data-pkopen="${o.id}">Order</button></div></div>`;
 }
 // the same details inside an order's window
 function pkOrderBlock(o, t, i) {
@@ -140,23 +158,27 @@ PAGES.packages = {
     pg.innerHTML = `<div class="pagehead"><h1>Packages</h1><span class="sub">${plural(onWay, 'package')} on the way${checked ? ' · checked ' + esc(ago(checked)) : ''}</span><div class="spacer"></div>
         ${ready && SERVER ? '<button id="pkNow">Check all now</button>' : ''}<button class="primary" data-nav="orders">All orders</button></div>
       ${!anyKeys ? `<div class="note warn pkkeys"><b>${ready ? 'Live tracking is only partly on.' : 'Live tracking is off.'}</b>${ready ? ' Right now only UPS packages are checked (from ups.com).' : ''} Add a 17TRACK key (200 packages free, no carrier account needed) and every package here gets the carrier’s scans, arrival date, where it was left and problem alerts. Until then, packages show what the shipping emails said. <button class="sm primary" id="pkSetup">Set up tracking</button></div>` : ''}
-      ${all.length ? `<div class="hero"><div class="hero-l">On the way</div><div class="hero-v">${onWay}</div><div class="hero-s">${out ? `<b>${out} out for delivery</b> · ` : ''}${today ? `${today} arriving today · ` : ''}${probs ? `${probs} need${probs === 1 ? 's' : ''} a look` : 'nothing needs a look 👑'}</div>
+      ${all.length ? `<div class="hero"><div class="hero-l">On the way</div><div class="hero-v">${onWay}</div><div class="hero-s">${out ? `<b>${out} out for delivery</b> · ` : ''}${today ? `${today} arriving today · ` : ''}${probs ? `${probs} need${probs === 1 ? 's' : ''} a look` : 'nothing needs a look 👑'}${cnt('old') ? ` · <button class="ghost sm pkoldlink" data-pkf="old">${cnt('old')} old, probably delivered</button>` : ''}</div>
         <div class="hero-tiles"><button class="htile" data-pkf="out"><span>Out for delivery</span><b>${out}</b><i>${out ? 'arriving today' : 'none right now'}</i></button><button class="htile" data-pkf="today"><span>Arriving today</span><b>${today}</b><i>${esc(fmtDate(todayKey(), { weekday: true }))}</i></button><button class="htile" data-pkf="problems"><span>Needs a look</span><b>${probs}</b><i>${probs ? 'problems, delays, no scans' : 'all moving'}</i></button><button class="htile" data-pkf="delivered"><span>Delivered</span><b>${week}</b><i>last 7 days</i></button></div></div>` : ''}
       <div class="toolbar"><input class="search" data-search id="pkQ" placeholder="Search tracking #, order #, item, house, city…" value="${esc(PK.q)}">
         <div class="pills" id="pkF">${PK_FILTERS.map(([k, l]) => `<button class="chip ${PK.f === k ? 'on' : ''}" data-pkf="${k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div></div>
+      ${PK.f === 'old' && shown.length ? `<div class="docbar" style="margin-bottom:12px"><div class="docmsg"><b>${plural(list.length, 'package')} with no news for over 2 weeks</b><span class="small">No scans, no emails and no upcoming date — these almost surely arrived. They don’t count as on the way.</span></div><div class="docacts"><button class="sm primary" id="pkOldAll">Mark all ${list.length} delivered</button></div></div>` : ''}
       ${shown.length ? `<div class="olist pklist">${shown.map(pkCardHtml).join('')}</div>${list.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button id="pkMore">Show ${Math.min(120, list.length - shown.length)} more</button></div>` : ''}`
-        : `<div class="empty">${all.length ? (PK.f === 'problems' ? 'Every package is moving on time. 👑' : PK.f === 'out' ? 'Nothing is out for delivery right now.' : PK.f === 'today' ? 'Nothing is due today.' : PK.f === 'transit' ? 'Nothing on the way right now.' : 'No packages match.') : 'No packages yet. Tracking numbers come in automatically from shipping emails, and every one shows up here.'}</div>`}
+        : `<div class="empty">${all.length ? (PK.f === 'problems' ? 'Every package is moving on time. 👑' : PK.f === 'out' ? 'Nothing is out for delivery right now.' : PK.f === 'today' ? 'Nothing is due today.' : PK.f === 'transit' ? 'Nothing on the way right now.' : PK.f === 'old' ? 'No old packages — everything has news. 👑' : 'No packages match.') : 'No packages yet. Tracking numbers come in automatically from shipping emails, and every one shows up here.'}</div>`}
       <div class="note small">Packages show up here as soon as a shipping email with a tracking number syncs. With 17TRACK or carrier keys, Crown Tools checks while it’s open: every 30 minutes once a package is out for delivery, every hour when it’s due within a day, and every 2 hours otherwise. <b>Needs a look</b> means the carrier reported a problem, the arrival date moved later, it’s past its date, or there haven’t been any new scans for ${PK_STUCK_DAYS} days.</div>`;
     $('#pkQ').oninput = debounce(e => { PK.q = e.target.value; PK.limit = 120; PAGES.packages.render(); }, 160);
     pg.querySelectorAll('[data-pkf]').forEach(b => b.onclick = () => { PK.f = b.dataset.pkf; PK.limit = 120; PAGES.packages.render(); });
     if ($('#pkNow')) $('#pkNow').onclick = () => refreshAllTracking();
     if ($('#pkSetup')) $('#pkSetup').onclick = () => { go('settings'); setTimeout(() => { const c = $('#carrierCard'); if (c) c.scrollIntoView({ block: 'start' }); }, 150); };
+    if ($('#pkOldAll')) $('#pkOldAll').onclick = async () => { if (!await ask(`Mark ${plural(list.length, 'package')} delivered?\n\nTheir orders move to Delivered. You can undo this.`, { ok: 'Mark delivered' })) return; pkMarkDelivered(list); };
     if ($('#pkMore')) $('#pkMore').onclick = () => { PK.limit += 120; PAGES.packages.render(); };
     const ol = pg.querySelector('.pklist');
     if (ol) ol.onclick = e => {
       const cp = e.target.closest('[data-pkcopy]'); if (cp) { e.stopPropagation(); copyText(cp.dataset.pkcopy, 'Tracking number'); return; }
       const sm = e.target.closest('summary'); if (sm) { const d = sm.parentElement; setTimeout(() => { d.open ? PK.open.add(d.dataset.pkd) : PK.open.delete(d.dataset.pkd); }, 0); return; }
       const rf = e.target.closest('[data-pkref]'); if (rf) { e.stopPropagation(); const [id, i] = rf.dataset.pkref.split(':'); liveTrack(id, +i, rf); return; }
+      const dl = e.target.closest('[data-pkdel]'); if (dl) { const x = all.find(y => y.key === dl.dataset.pkdel); if (x) pkMarkDelivered([x]); return; }
+      const hd = e.target.closest('[data-pkhide]'); if (hd) { const x = all.find(y => y.key === hd.dataset.pkhide); if (x) { snapshot('hide package'); x.t.hidden = true; x.o.updatedAt = Date.now(); save(); toast('Hidden from Packages', { undo: true }); PAGES.packages.render(); } return; }
       const op = e.target.closest('[data-pkopen]'); if (op) { openOrder(op.dataset.pkopen); return; }
       if (e.target.closest('button, a, details')) return;
       const c = e.target.closest('[data-pk]'); if (c) openOrder(c.dataset.pk.split(':')[0]);

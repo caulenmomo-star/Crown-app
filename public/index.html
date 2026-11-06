@@ -93,6 +93,7 @@
     </section>
     <section class="page" data-page="accounts" id="pg-accounts"></section>
     <section class="page" data-page="cards" id="pg-cards"></section>
+    <section class="page" data-page="skus" id="pg-skus"></section>
     <section class="page" data-page="orders" id="pg-orders"></section>
     <section class="page" data-page="houses" id="pg-houses"></section>
     <section class="page" data-page="calendar" id="pg-calendar"></section>
@@ -202,6 +203,12 @@
   <div class="dhead"><span id="cardTitle">Card</span><button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody" id="cardBody"></div>
   <div class="dfoot"><button class="danger" id="cardDelete" style="margin-right:auto">Delete</button><button data-close>Cancel</button><button class="primary" id="cardSave">Save</button></div>
+</dialog>
+
+<dialog id="dlgSku" class="narrow">
+  <div class="dhead">SKU<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody" id="dlgSkuBody"></div>
+  <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="skeSave">Save</button></div>
 </dialog>
 
 <dialog id="dlgCardAdd">
@@ -384,6 +391,7 @@
 <script src="doctor.js"></script>
 <script src="accounts.js"></script>
 <script src="cards.js"></script>
+<script src="skus.js"></script>
 <script src="addresses.js"></script>
 <script src="builder.js"></script>
 <script src="orders.js"></script>
