@@ -1038,3 +1038,4 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 .skutbl .skqty{width:58px;text-align:right;padding:5px 6px}
 @media (max-width:760px){.skutbl .skuname{max-width:200px}}
 .pkoldlink{color:inherit;text-decoration:underline;padding:0 2px;font:inherit;background:none;border:0}
+.cdalso{color:var(--warn);font-weight:600;font-size:12px}

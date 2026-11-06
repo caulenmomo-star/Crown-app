@@ -41,11 +41,16 @@ function syncProfileCards() {
   if (state.settings.cardSync === false) return 0;
   state.cards = state.cards || []; state.cardGroups = state.cardGroups || [];
   const have = new Map(state.cards.map(c => [cardDigits(c.number), c]));
-  let n = 0;
+  let n = 0, madeGroup = false;
   for (const cat of state.categories) {
     const profs = state.profiles.filter(p => p.categoryId === cat.id && luhn(p.cardNumber));
     if (!profs.length) continue;
     let g = state.cardGroups.find(x => x.categoryId === cat.id) || null;
+    if (!g) {
+      g = state.cardGroups.find(x => x.name.toLowerCase() === cat.name.toLowerCase() && !(x.categoryId && state.categories.some(c => c.id === x.categoryId && c.id !== cat.id)));
+      if (!g) { g = newCardGroup(cat.name); state.cardGroups.push(g); }
+      g.categoryId = cat.id; g.updatedAt = Date.now(); madeGroup = true;
+    }
     for (const p of profs) {
       const d = cardDigits(p.cardNumber), mo = normExpMonth(p.cardExpMonth), yr = normExpYear(p.cardExpYear), cvv = String(p.cardCvv || '').replace(/\D/g, '').slice(0, 4);
       const ex = have.get(d);
@@ -56,16 +61,39 @@ function syncProfileCards() {
         if (ch) { ex.updatedAt = Date.now(); n++; }
         continue;
       }
-      if (!g) {
-        g = state.cardGroups.find(x => x.name.toLowerCase() === cat.name.toLowerCase() && !(x.categoryId && state.categories.some(c => c.id === x.categoryId && c.id !== cat.id)));
-        if (!g) { g = newCardGroup(cat.name); state.cardGroups.push(g); }
-        g.categoryId = cat.id; g.updatedAt = Date.now();
-      }
       const c = newCard({ groupId: g.id, number: d, month: mo, year: yr, cvv, name: String(p.cardName || '').trim(), status: 'active', fromProfile: true, updatedAt: Date.now() });
       state.cards.push(c); have.set(d, c); n++;
     }
   }
+  if (madeGroup && !n) save();
   return n;
+}
+// For a card group made from a profile group: which of those profiles' cards are here, which are saved in another
+// group, which profiles have a number that isn't a real card number, and which have no card at all.
+function profileCardReport(g) {
+  const cat = g && g.categoryId && state.categories.find(c => c.id === g.categoryId); if (!cat) return null;
+  const profs = state.profiles.filter(p => p.categoryId === cat.id);
+  const by = new Map((state.cards || []).map(c => [cardDigits(c.number), c]));
+  const r = { cat, profiles: profs.length, here: 0, elsewhere: new Map(), bad: [], none: 0 }, seen = new Set();
+  for (const p of profs) {
+    const d = cardDigits(p.cardNumber);
+    if (!d) { r.none++; continue; }
+    if (!luhn(d)) { r.bad.push(p); continue; }
+    if (seen.has(d)) continue; seen.add(d);
+    const c = by.get(d);
+    if (!c) continue;
+    if (c.groupId === g.id) r.here++;
+    else { const a = r.elsewhere.get(c.groupId) || []; a.push(c); r.elsewhere.set(c.groupId, a); }
+  }
+  r.otherN = [...r.elsewhere.values()].reduce((n, a) => n + a.length, 0);
+  return r;
+}
+function profileCardReportHtml(g) {
+  const r = profileCardReport(g); if (!r || (!r.otherN && !r.bad.length)) return '';
+  const where = [...r.elsewhere.entries()].map(([gid, a]) => `${a.length} in “${esc((cardGroupById(gid) || {}).name || 'no group')}”`).join(', ');
+  return `<div class="docbar" style="margin-bottom:12px"><div class="docmsg"><b>${r.otherN ? `${plural(r.otherN, 'card')} on your “${esc(r.cat.name)}” profiles ${r.otherN === 1 ? 'is' : 'are'} also saved in another group` : `Some “${esc(r.cat.name)}” profiles need a look`}</b>
+    <span class="small">${r.otherN ? `${where}. ${r.otherN === 1 ? 'It shows' : 'They show'} here too, marked “Also in”. Move ${r.otherN === 1 ? 'it' : 'them'} if you only want ${r.otherN === 1 ? 'it' : 'them'} in this group.` : ''}${r.bad.length ? ` ${plural(r.bad.length, 'profile')} ${r.bad.length === 1 ? 'has a card number that isn’t' : 'have card numbers that aren’t'} a real card number (a typo?): ${r.bad.slice(0, 6).map(p => esc(p.name || 'Untitled')).join(', ')}${r.bad.length > 6 ? ` and ${r.bad.length - 6} more` : ''}.` : ''}${r.none ? ` ${plural(r.none, 'profile')} ${r.none === 1 ? 'has' : 'have'} no card.` : ''}</span></div>
+    <div class="docacts">${r.otherN ? `<button class="sm" data-cgpull="${g.id}">Move ${r.otherN === 1 ? 'it' : 'all ' + r.otherN} here</button>` : ''}${r.bad.length ? `<button class="sm" data-cgbad="${r.cat.id}">Show those profiles</button>` : ''}</div></div>`;
 }
 // card number -> the profiles that use it
 function cardProfileIndex() { const m = new Map(); for (const p of state.profiles) { const d = cardDigits(p.cardNumber); if (!d) continue; const a = m.get(d); a ? a.push(p) : m.set(d, [p]); } return m; }
@@ -134,11 +162,25 @@ function cardVerdict(c) {
 }
 
 /* ---------- page ---------- */
-const cardGroupCount = id => (state.cards || []).filter(c => c.groupId === id).length;
+// a card group made from a profile group also shows its profiles' cards that are saved in another group (marked so)
+let CGD = null;
+function groupDigits(id) {
+  if (!CGD) {
+    CGD = new Map();
+    for (const g of state.cardGroups || []) {
+      if (!g.categoryId) continue; const set = new Set();
+      for (const p of state.profiles) if (p.categoryId === g.categoryId) { const d = cardDigits(p.cardNumber); if (d && luhn(d)) set.add(d); }
+      CGD.set(g.id, set);
+    }
+  }
+  return CGD.get(id) || null;
+}
+const inCardGroup = (c, id) => c.groupId === id || !!(groupDigits(id) && groupDigits(id).has(cardDigits(c.number)));
+const cardGroupCount = id => (state.cards || []).filter(c => inCardGroup(c, id)).length;
 function visibleCards() {
   const q = CF.q.trim().toLowerCase();
   return (state.cards || []).filter(c => {
-    if (cardGroupView !== 'all' && c.groupId !== cardGroupView) return false;
+    if (cardGroupView !== 'all' && !inCardGroup(c, cardGroupView)) return false;
     if (CF.status !== 'all' && c.status !== CF.status) return false;
     if (!q) return true;
     return [c.number.slice(-4), c.name, c.notes, cardExp(c)].some(v => String(v || '').toLowerCase().includes(q));
@@ -147,7 +189,8 @@ function visibleCards() {
 let CPX = new Map();
 PAGES.cards = {
   render() {
-    if (syncProfileCards()) save();
+    if (syncProfileCards()) { save(); renderNav(); }
+    CGD = null;
     const pg = $('#pg-cards'); const all = state.cards || [];
     const list = visibleCards();
     for (const id of [...cardSel]) if (!all.some(c => c.id === id)) cardSel.delete(id);
@@ -159,6 +202,7 @@ PAGES.cards = {
         <button id="cdAdd">＋ Add cards</button><button id="cdAssign" ${all.length ? '' : 'disabled'}>Assign to profiles</button><button id="cdExp" ${all.length ? '' : 'disabled'}>Export</button></div>
       <div class="split"><div class="catlist"><div id="cgList">${h}</div><button id="cgAdd" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New group</button></div>
       <div style="min-width:0">
+        ${cardGroupView !== 'all' ? profileCardReportHtml(cardGroupById(cardGroupView)) : (state.cardGroups || []).filter(g => { const r = profileCardReport(g); return r && (r.otherN || r.bad.length); }).slice(0, 3).map(g => { const r = profileCardReport(g); return `<div class="small muted" style="margin:-4px 0 10px">${r.otherN ? `${plural(r.otherN, 'card')} on your “${esc(g.name)}” profiles ${r.otherN === 1 ? 'is' : 'are'} also in another group` : `Some “${esc(g.name)}” profiles have a card number with a typo`} — <a href="#" data-cgopen="${g.id}">see them</a></div>`; }).join('')}
         ${dead ? `<div class="docbar bad" style="margin-bottom:12px"><div class="docmsg"><b>${plural(dead, 'card')} looks dead</b><span class="small">Expired, or cancelled every time with nothing shipping.</span></div><div class="docacts"><button class="sm" data-cf="dead">Show them</button></div></div>` : ''}
         <label class="small muted hstack" style="gap:6px;margin-bottom:10px;width:auto"><input type="checkbox" id="cdSync" ${state.settings.cardSync === false ? '' : 'checked'} style="width:auto"> Add the cards on my profiles here automatically, in a group named after each profile group</label>
         <div class="toolbar"><input class="search" data-search id="cdQ" placeholder="Search last 4, name, notes…  ( / )" value="${esc(CF.q)}">
@@ -168,11 +212,19 @@ PAGES.cards = {
           ${(() => { CPX = cardProfileIndex(); return ''; })()}${list.map(c => { const v = cardVerdict(c), shown = CF.reveal.has(c.id), t = cardOrderTally(cardDigits(c.number).slice(-4)), g = cardGroupById(c.groupId); return `<tr data-card="${c.id}" class="${cardSel.has(c.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-ccb="${c.id}" ${cardSel.has(c.id) ? 'checked' : ''}></td>
             <td class="c-num"><div class="cellflex"><span class="faint small">${esc(cardBrand(c.number))}</span> <span class="mono">${shown ? esc(c.number.replace(/(.{4})/g, '$1 ').trim()) : '•••• ' + esc(c.number.slice(-4))}</span><button class="ghost sm icopy" data-creveal="${c.id}">${shown ? 'Hide' : 'Show'}</button><button class="ghost sm icopy" data-ccopy="${c.id}" title="Copy number">⧉</button></div></td>
             <td class="c-exp ${cardExpired(c) ? 'bad' : ''}">${esc(cardExp(c)) || '<span class="faint">—</span>'}</td><td class="mono">${shown ? esc(c.cvv) : (c.cvv ? '•••' : '')}</td>
-            <td class="c-prof"><div class="ellipsis">${g ? esc(g.name) : '<span class="faint">—</span>'}</div><div class="small ellipsis">${cardProfilesHtml(CPX.get(cardDigits(c.number)))}</div></td><td><span class="hpill"><i style="background:${LEVEL[v.level] ? LEVEL[v.level].c : CARDS[v.level] ? CARDS[v.level].c : 'var(--faint)'}"></i>${esc(v.level === 'watch' ? 'Watch' : (CARDS[v.level] || {}).l || LEVEL[v.level].l)}</span>${v.why ? `<div class="small faint">${esc(v.why)}</div>` : ''}</td>
+            <td class="c-prof"><div class="ellipsis">${cardGroupView !== 'all' && c.groupId !== cardGroupView ? `<span class="cdalso" title="This card is saved in another group and used on a profile in this one">Also in “${esc(g ? g.name : 'no group')}”</span>` : g ? esc(g.name) : '<span class="faint">—</span>'}</div><div class="small ellipsis">${cardProfilesHtml(CPX.get(cardDigits(c.number)))}</div></td><td><span class="hpill"><i style="background:${LEVEL[v.level] ? LEVEL[v.level].c : CARDS[v.level] ? CARDS[v.level].c : 'var(--faint)'}"></i>${esc(v.level === 'watch' ? 'Watch' : (CARDS[v.level] || {}).l || LEVEL[v.level].l)}</span>${v.why ? `<div class="small faint">${esc(v.why)}</div>` : ''}</td>
             <td class="right">${t.n ? `${t.n}<span class="small faint"> · ${t.stuck}✓ ${t.dead}✕</span>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
           : `<div class="empty">${all.length ? 'No cards match.' : 'No cards yet. Make a group like “Cap One VCCs”, then <b>Add cards</b> and paste them straight from your bank’s virtual-card page or a spreadsheet.'}</div>`}
       </div></div>`;
     $('#cdAdd').onclick = () => openCardAdd(cardGroupView !== 'all' ? cardGroupView : (state.cardGroups[0] || {}).id);
+    pg.querySelectorAll('[data-cgopen]').forEach(a => a.onclick = e => { e.preventDefault(); cardGroupView = a.dataset.cgopen; cardSel.clear(); PAGES.cards.render(); });
+    pg.querySelectorAll('[data-cgpull]').forEach(b => b.onclick = () => {
+      const g = cardGroupById(b.dataset.cgpull), r = profileCardReport(g); if (!r) return;
+      snapshot('move cards to profile group'); let n = 0;
+      for (const a of r.elsewhere.values()) for (const c of a) { c.groupId = g.id; c.updatedAt = Date.now(); n++; }
+      save(); toast(`Moved ${plural(n, 'card')} into “${g.name}”`, { undo: true }); PAGES.cards.render();
+    });
+    pg.querySelectorAll('[data-cgbad]').forEach(b => b.onclick = () => { const r = profileCardReport(cardGroupById(cardGroupView)); if (!r) return; view = b.dataset.cgbad; selected.clear(); r.bad.forEach(p => selected.add(p.id)); go('profiles'); setTimeout(() => toast(`Selected the ${plural(r.bad.length, 'profile')} with a bad card number`), 300); });
     $('#cdSync').onchange = e => { state.settings.cardSync = e.target.checked; save(); if (e.target.checked) { const n = syncProfileCards(); if (n) save(); toast(n ? `Added ${plural(n, 'card')} from your profiles` : 'Your profiles’ cards are all here'); } PAGES.cards.render(); };
     $('#cgAdd').onclick = async () => { const n = await askText('New card group', '', { placeholder: 'Cap One VCCs, Amex…', ok: 'Add group' }); if (n && n.trim()) { snapshot('add card group'); const id = ensureCardGroup(n); cardGroupView = id; save(); refresh(); } };
     if ($('#cdAssign')) $('#cdAssign').onclick = () => openCardAssign(cardGroupView !== 'all' ? cardGroupView : '');

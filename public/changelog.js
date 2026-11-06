@@ -1,6 +1,10 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.16.1', date: '2026-11-06', title: 'Missing profile cards', items: [
+    'A card group made from a profile group now lists every card on its profiles. Cards also saved in another group are marked “Also in” with that group’s name.',
+    'It also says which profiles have a card number with a typo, and you can move the other group’s cards into it with one tap.',
+  ] },
   { v: '0.16.0', date: '2026-11-06', title: 'SKU lists', items: [
     'New SKU lists under Checkout. Save the SKUs you run in your bots, paste them in as numbers or product links, and copy them out one per line or comma separated.',
     'Each SKU shows its product name and picture, with the price from the store, from what you paid in your orders, or what you type in. Trading-card products show their TCGplayer value too.',

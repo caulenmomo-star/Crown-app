@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.16.1 — Missing profile cards (2026-11-06)
+
+- A card group made from a profile group now lists every card on its profiles. Cards also saved in another group are marked “Also in” with that group’s name.
+- It also says which profiles have a card number with a typo, and you can move the other group’s cards into it with one tap.
+
 ## v0.16.0 — SKU lists (2026-11-06)
 
 - New SKU lists under Checkout. Save the SKUs you run in your bots, paste them in as numbers or product links, and copy them out one per line or comma separated.
