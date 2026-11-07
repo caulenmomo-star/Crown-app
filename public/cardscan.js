@@ -1,5 +1,6 @@
-/* Crown Tools - add cards from photos. Pick photos or screenshots of the front of each card (an Amex has its 4-digit
-   CID on the front), and Crown Tools reads the number, expiry, CID and name on this device with the Tesseract text
+/* Crown Tools - add cards from photos. Either one picture per card (a screenshot of a virtual card, or a card with
+   everything on the front) or two (front and back, like an Amex: name and 4-digit CID on the front, number and expiry
+   on the back - the two are matched up into one card). Crown Tools reads them on this device with the Tesseract text
    reader in vendor/ocr. The pictures are never uploaded or saved: only the cards you add are kept, encrypted. */
 'use strict';
 const CardScan = (() => {
@@ -32,23 +33,37 @@ const CardScan = (() => {
     // dark card: read the inverted one first
     const dark = mean < 110;
     const a = await make(dark), b = await make(!dark);
-    return [a, b];
+    // local versions: each pixel against its surroundings (glare, coloured cards, a black stripe across the back),
+    // one for light text and one for dark text; the likelier one first
+    const r = Math.max(8, Math.round(Math.min(W, H) / 30)), ii = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) { let row = 0; for (let x = 0; x < W; x++) { row += g[y * W + x]; ii[(y + 1) * (W + 1) + x + 1] = ii[y * (W + 1) + x + 1] + row; } }
+    const loc = light => {
+      for (let y = 0, j = 0; y < H; y++) {
+        const y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+        for (let x = 0; x < W; x++, j++) {
+          const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1);
+          const m = (ii[y1 * (W + 1) + x1] - ii[y0 * (W + 1) + x1] - ii[y1 * (W + 1) + x0] + ii[y0 * (W + 1) + x0]) / ((y1 - y0) * (x1 - x0));
+          const ink = light ? g[j] - m > 12 : m - g[j] > 12, v = ink ? 0 : 255, i = j * 4;
+          d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+        }
+      }
+      cx.putImageData(img, 0, 0);
+      return new Promise(res => cv.toBlob(async bl => res(new Uint8Array(await bl.arrayBuffer())), 'image/png'));
+    };
+    const l1 = await loc(dark), l2 = await loc(!dark);
+    return [a, l1, l2, b];
   }
-  async function read(file) {
-    const [a, b] = await variants(file);
-    const texts = [];
-    const tryOne = async (bytes, psm) => { texts.push(await ocr(bytes.slice(), psm)); return parseCardText(texts.join('\n')); };
-    let r = await tryOne(a, 11);
-    const done = x => x.number && x.month && (x.cvv || !/^3[47]/.test(x.number)) && x.name;
-    if (!done(r)) r = await tryOne(b, 11);
-    if (!done(r)) r = await tryOne(a, 6);
-    return Object.assign(r, { text: texts.join('\n----\n') });
+  // done(text) says when enough was read; otherwise up to 4 passes (cleaned up, two local versions, inverted)
+  async function read(file, done) {
+    const vs = await variants(file), texts = [];
+    for (const v of vs) { texts.push(await ocr(v.slice(), 11)); if (done(texts.join('\n'))) break; }
+    return texts.join('\n');
   }
   return { read, warm };
 })();
 
 // ---- turning the text into card fields
-const CS_STOP = new Set('AMERICAN EXPRESS AMEX MEMBER SINCE VALID THRU GOOD UNTIL EXPIRES EXPIRY EXP DATE CARD CARDHOLDER CARDMEMBER PLATINUM GOLD GREEN BLUE CASH BUSINESS CORPORATE DELTA SKYMILES HILTON HONORS MARRIOTT BONVOY RESERVE SAPPHIRE PREFERRED VIRTUAL NUMBER SECURITY CODE CID CVV CVC DEBIT CREDIT VISA MASTERCARD DISCOVER BANK CAPITAL ONE CHASE NAME ON THE ACCOUNT PREPAID REWARDS SIGNATURE WORLD ELITE INFINITE PRIVATE CLIENT CENTURION BLACK SILVER EVERYDAY BRILLIANT ASPIRE SURPASS ACTIVATE COPY HIDE SHOW DETAILS ADD WALLET LOCK FREEZE CARDS'.split(' '));
+const CS_STOP = new Set('AMERICAN EXPRESS AMEX MEMBER SINCE VALID THRU GOOD UNTIL EXPIRES EXPIRY EXP DATE CARD CARDHOLDER CARDMEMBER PLATINUM GOLD GREEN BLUE CASH BUSINESS CORPORATE DELTA SKYMILES HILTON HONORS MARRIOTT BONVOY RESERVE SAPPHIRE PREFERRED VIRTUAL NUMBER SECURITY CODE CID CVV CVC DEBIT CREDIT VISA MASTERCARD DISCOVER BANK CAPITAL ONE CHASE NAME ON THE ACCOUNT PREPAID REWARDS SIGNATURE WORLD ELITE INFINITE PRIVATE CLIENT CENTURION BLACK SILVER EVERYDAY BRILLIANT ASPIRE SURPASS ACTIVATE COPY HIDE SHOW DETAILS ADD WALLET LOCK FREEZE CARDS LLC INC CORP CO COMPANY LTD GROUP SERVICES ENTERPRISES HOLDINGS'.split(' '));
 function csLuhn(s) { let t = 0; for (let i = 0; i < s.length; i++) { let n = +s[s.length - 1 - i]; if (i % 2) { n *= 2; if (n > 9) n -= 9; } t += n; } return s.length >= 13 && t % 10 === 0; }
 // fix letters the reader mixes up with digits, only inside number-looking pieces
 const csDigits = t => t.replace(/[0-9OoIl|SBZ]{2,}/g, m => (m.replace(/\D/g, '').length * 2 >= m.length ? m.replace(/[Oo]/g, '0').replace(/[Il|]/g, '1').replace(/S/g, '5').replace(/B/g, '8').replace(/Z/g, '2') : m));
@@ -57,8 +72,16 @@ function parseCardText(text) {
   const out = { number: '', month: '', year: '', cvv: '', name: '', sure: {} };
   // card number: a 15- or 16-digit run on one line that passes the card-number check (Amex 4-6-5, others 4-4-4-4)
   const found = [];
-  lines.forEach((l, li) => {
+  // on a card-number line a "7" is often read as "/": try that too (only kept if the number passes the card check)
+  const tries = [];
+  lines.forEach((l, li) => { tries.push([l, li, false]); if (/\d\/|\/\d/.test(l) && l.replace(/\D/g, '').length >= 10 && !/(THRU|EXP|SINCE|VALID)/i.test(l)) { tries.push([l.replace(/\//g, '7'), li, true]); tries.push([l.replace(/\//g, '1'), li, true]); } });
+  const shaped = gs => { const k = gs.map(x => x.length).join('-'); return k === '4-6-5' || k === '4-4-4-4'; };
+  tries.forEach(([l, li, fixed]) => {
     const groups = l.match(/\d+/g) || [];
+    if (fixed) { // a corrected line only counts with the exact card layout
+      for (let s0 = 0; s0 < groups.length; s0++) for (const len of [3, 4]) { const gs = groups.slice(s0, s0 + len); const n = gs.join(''); if (gs.length === len && shaped(gs) && csLuhn(n)) found.push({ n, li, groups: gs }); }
+      return;
+    }
     for (let s = 0; s < groups.length; s++) for (let e = s; e < groups.length; e++) {
       const n = groups.slice(s, e + 1).join(''); if (n.length > 19) break;
       if ((n.length === 15 && /^3[47]/.test(n)) || (n.length === 16 && /^[3-6]/.test(n))) if (csLuhn(n)) found.push({ n, li, groups: groups.slice(s, e + 1) });
@@ -66,12 +89,16 @@ function parseCardText(text) {
     const all = l.replace(/\D/g, '');
     if (!found.some(f => f.li === li)) for (const len of [15, 16]) for (let i = 0; i + len <= all.length; i++) { const n = all.slice(i, i + len); if (((len === 15 && /^3[47]/.test(n)) || (len === 16 && /^[3-6]/.test(n))) && csLuhn(n)) found.push({ n, li, groups: [] }); }
   });
-  const best = found.find(f => /^3[47]/.test(f.n) && f.n.length === 15) || found[0];
+  // several reading passes: the number they agree on most wins (an Amex first)
+  const votes = new Map(); found.forEach(f => votes.set(f.n, (votes.get(f.n) || 0) + 1));
+  const rank = f => (/^3[47]/.test(f.n) && f.n.length === 15 ? 100 : 0) + votes.get(f.n);
+  const best = found.slice().sort((a, b) => rank(b) - rank(a))[0];
   if (best) { out.number = best.n; out.sure.number = true; }
   // expiry: MM/YY after "thru / exp / expires / valid / good"; otherwise the latest date that isn't "member since"
   const now = new Date(), cy = now.getFullYear();
   const dates = [];
   lines.forEach((l, li) => {
+    l = l.replace(/((?:THRU|EXP\w*|VALID|GOOD)\W{0,3})[689]([1-9])(\s?[\/\-.]\s?\d{2})/i, '$10$2$3'); // "THRU 92/31", "63/29": a misread 0
     const re = /(0[1-9]|1[0-2])\s?[\/\-.]\s?(20\d{2}|\d{2})(?!\d)/g; let m;
     while ((m = re.exec(l))) {
       const before = (lines[li - 1] || '') + ' ' + l.slice(0, m.index);
@@ -109,83 +136,161 @@ function parseCardText(text) {
   return out;
 }
 
+// the front of an Amex: the 4-digit CID printed on its own, and the name (no card number)
+function csFront(text) {
+  const lines = String(text || '').split(/\r?\n/).map(l => csDigits(l).trim()).filter(Boolean), cands = [];
+  for (const l of lines) {
+    if (/(SINCE|THRU|EXP|VALID)/i.test(l) || l.replace(/\D/g, '').length > 8) continue;
+    for (const m of l.matchAll(/(?<![\d\/])(\d{4})(?![\d\/])/g)) cands.push({ v: m[1], alone: l.replace(/\s/g, '') === m[1] });
+  }
+  const uniq = [...new Map(cands.map(c => [c.v, c])).values()].sort((a, b) => b.alone - a.alone);
+  const p = parseCardText(text);
+  const lab = p.sure.cvv && /^\d{4}$/.test(p.cvv) ? p.cvv : '';
+  return { cid: lab || (uniq[0] || {}).v || '', cidSure: !!lab || (uniq.length === 1 && uniq[0].alone), name: p.name };
+}
+
 // ---- the window
-let CSX = { rows: [], group: '' };
+// CSX.pics: every picture in the order added; rows are made from them (one or two per card, see csRows).
+// CSX.typed: cards typed by hand. CSX.edits: your changes to a row, by row key (its pictures' ids).
+let CSX = { pics: [], typed: [], edits: {}, group: '' };
+const csPairs = () => state.settings.cardScanPairs !== false;
+const csSameName = () => (state.settings.cardScanSame && String(state.settings.cardScanName || '').trim()) || '';
 function openCardScan(groupId) {
   if (!state.cardGroups.length) { ensureCardGroup('My cards'); save(); }
-  CSX = { rows: [], group: groupId && cardGroupById(groupId) ? groupId : (cardGroupView !== 'all' && cardGroupById(cardGroupView) ? cardGroupView : (state.cardGroups[0] || {}).id) };
+  CSX = { pics: [], typed: [], edits: {}, group: groupId && cardGroupById(groupId) ? groupId : (cardGroupView !== 'all' && cardGroupById(cardGroupView) ? cardGroupView : (state.cardGroups[0] || {}).id) };
   $('#csGroup').innerHTML = state.cardGroups.map(g => `<option value="${g.id}" ${g.id === CSX.group ? 'selected' : ''}>${esc(g.name)}</option>`).join('') + '<option value="__new">+ New group…</option>';
+  $('#csPairs').checked = csPairs(); $('#csSame').checked = !!state.settings.cardScanSame; $('#csName').value = state.settings.cardScanName || ''; $('#csName').disabled = !state.settings.cardScanSame;
   csRender(); openDlg('dlgCardScan');
   CardScan.warm(); // start loading the reader while you pick photos
 }
+// what a picture shows: the back (has the card number), the front (a CID and/or name, no number), everything, or nothing yet
+function csKind(p) {
+  if (p.reading) return '?';
+  if (!p.read) return 'none';
+  if (p.read.number) return p.read.cvv && p.read.sure.cvv && /^3[47]/.test(p.read.number) && /^\d{4}$/.test(p.read.cvv) ? 'both' : 'back';
+  return p.front && (p.front.cid || p.front.name) ? 'front' : 'none';
+}
+// group the pictures into cards. One per card: each picture alone. Two per card: a front and a back next to each
+// other. Crown Tools works out the order you took them in (front first, back first, or mixed) and pairs by it, so a
+// missing or extra picture only leaves that one card alone instead of shifting every card after it.
+function csGroups() {
+  if (!csPairs()) return CSX.pics.map(p => [p]);
+  const ks = CSX.pics.map(csKind), wild = k => k === '?' || k === 'none';
+  const plan = first => {
+    const out = []; let pend = null, pk = '';
+    CSX.pics.forEach((p, i) => {
+      const k = ks[i];
+      if (k === 'both') { if (pend) out.push([pend]); pend = null; out.push([p]); return; }
+      if (!pend) { if (first && !wild(k) && k !== first) { out.push([p]); return; } pend = p; pk = k; return; }
+      const fits = wild(pk) || wild(k) || (first ? k !== first : k !== pk);
+      if (fits) { out.push([pend, p]); pend = null; return; }
+      out.push([pend]); pend = p; pk = k;
+    });
+    if (pend) out.push([pend]);
+    return out;
+  };
+  const lone = g => g.filter(x => x.length === 1 && ks[CSX.pics.indexOf(x[0])] !== 'both').length;
+  let best = null;
+  for (const first of ['front', 'back', null]) { const g = plan(first); if (!best || lone(g) < lone(best)) best = g; }
+  return best;
+}
+// one card's fields from its pictures, plus anything you typed
+function csRows() {
+  const same = csSameName();
+  const rows = csGroups().map(ps => {
+    const key = ps.map(p => p.id).join('+');
+    const back = ps.find(p => p.read && p.read.number) || null, front = ps.find(p => p !== back && p.front && (p.front.cid || p.front.name)) || null;
+    const rd = back ? back.read : (ps.find(p => p.read) || {}).read || {};
+    const amex = /^3[47]/.test(rd.number || '');
+    let cvv = '', cvvSure = false;
+    if (front && front.front.cid) { cvv = front.front.cid; cvvSure = front.front.cidSure; }
+    else if (rd.cvv && (!amex || /^\d{4}$/.test(rd.cvv))) { cvv = rd.cvv; cvvSure = !!(rd.sure && rd.sure.cvv); }
+    const r = { id: key, pics: ps, reading: ps.some(p => p.reading), error: ps.every(p => p.error) ? ps[0].error : '',
+      number: rd.number ? cardFmt(rd.number) : '', month: rd.month || '', year: rd.year || '', cvv, name: (front && front.front.name) || rd.name || '', sure: { cvv: cvvSure },
+      alone: csPairs() && ps.length === 1 && csKind(ps[0]) !== 'both' && !ps[0].reading };
+    Object.assign(r, CSX.edits[key] || {});
+    if (r.edCvv) r.sure = { cvv: true };
+    if (same) r.name = same;
+    return r;
+  });
+  return rows.concat(CSX.typed.map(t => Object.assign({}, t, same ? { name: same } : {})));
+}
 const csExisting = () => new Set((state.cards || []).map(c => cardDigits(c.number)));
 // seen: number -> id of the first row with it (later rows with the same number are the duplicates)
-function csSeen() { const m = new Map(); CSX.rows.forEach(r => { const n = cardDigits(r.number); if (n && !m.has(n)) m.set(n, r.id); }); return m; }
+function csSeen(rows) { const m = new Map(); rows.forEach(r => { const n = cardDigits(r.number); if (n && !m.has(n)) m.set(n, r.id); }); return m; }
 function csRowState(r, have, seen) {
   const n = cardDigits(r.number);
   if (r.reading) return { c: '', t: 'Reading…' };
   if (r.error) return { c: 'bad', t: r.error };
-  if (!n) return { c: 'bad', t: 'No card number found — type it in' };
+  if (!n) return { c: 'bad', t: r.alone ? 'No card number — add the back of this card, or type it' : 'No card number found — type it in' };
   if (!luhn(n)) return { c: 'bad', t: 'That isn’t a real card number — check it' };
   if (have.has(n)) return { c: 'dup', t: 'Already saved' };
   if (seen.get(n) !== r.id) return { c: 'dup', t: 'Already in this list' };
   if (!r.month || !r.year) return { c: 'need', t: 'Add the expiry' };
-  if (/^3[47]/.test(n) && !/^\d{4}$/.test(r.cvv)) return { c: 'need', t: 'Add the 4-digit CID from the front of the card' };
-  if (!/^3[47]/.test(n) && !/^\d{3}$/.test(r.cvv)) return { c: 'warn', t: 'No CVV — it’s on the back; add it if your bot needs it' };
+  if (/^3[47]/.test(n) && !/^\d{4}$/.test(r.cvv)) return { c: 'need', t: r.alone ? 'Add the front of this card (or type its 4-digit CID)' : 'Add the 4-digit CID from the front of the card' };
+  if (!/^3[47]/.test(n) && !/^\d{3,4}$/.test(r.cvv)) return { c: 'warn', t: 'No CVV — it’s on the back; add it if your bot needs it' };
+  if (!r.name) return { c: 'warn', t: 'No name — type it, or use “Same name on every card”' };
   if (!r.sure || !r.sure.cvv) return { c: 'warn', t: 'Check the security code' };
   return { c: 'ok', t: 'Ready' };
 }
+const csStIcon = x => x.c === 'ok' ? '✓ ' : x.c === 'warn' || x.c === 'need' ? '⚠ ' : '';
 function csRowHtml(r, x) {
-  return `<div class="csrow cs-${x.c}" data-csr="${r.id}">
-      <div class="csimg">${r.url ? `<img src="${r.url}" alt="">` : '<span>⌨︎</span>'}</div>
+  const dis = r.reading ? 'disabled' : '', same = !!csSameName();
+  const pics = (r.pics || []).map(p => `<img src="${p.url}" alt="">`).join('');
+  return `<div class="csrow cs-${x.c}" data-csr="${esc(r.id)}">
+      <div class="csimg${r.pics && r.pics.length === 2 ? ' two' : ''}">${pics || '<span>⌨︎</span>'}</div>
       <div class="csf"><div class="fgrid">
-        <div class="s2"><label>Card number</label><input class="mono" data-csk="number" value="${esc(r.number)}" inputmode="numeric" autocomplete="cc-number" placeholder="${r.reading ? 'Reading…' : '3782 822463 10005'}" ${r.reading ? 'disabled' : ''}></div>
-        <div><label>Expiry</label><input data-csk="exp" value="${esc(r.month ? r.month + '/' + String(r.year).slice(-2) : '')}" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/YY" ${r.reading ? 'disabled' : ''}></div>
-        <div><label>${/^3[47]/.test(cardDigits(r.number)) ? 'CID (front)' : 'CVV'}</label><input class="mono" data-csk="cvv" value="${esc(r.cvv)}" inputmode="numeric" autocomplete="cc-csc" maxlength="4" ${r.reading ? 'disabled' : ''}></div>
-        <div class="s2"><label>Name on card</label><input data-csk="name" value="${esc(r.name)}" autocomplete="cc-name" ${r.reading ? 'disabled' : ''}></div>
-      </div><div class="small csst">${x.c === 'ok' ? '✓ ' : x.c === 'warn' || x.c === 'need' ? '⚠ ' : ''}${esc(x.t)}${cardDigits(r.number) ? ` · <span class="faint">${esc(cardBrand(cardDigits(r.number)))}</span>` : ''}</div></div>
-      <button class="ghost sm" data-csdel="${r.id}" aria-label="Remove">✕</button></div>`;
+        <div class="s2"><label>Card number</label><input class="mono" data-csk="number" value="${esc(r.number)}" inputmode="numeric" autocomplete="cc-number" placeholder="${r.reading ? 'Reading…' : '3782 822463 10005'}" ${dis}></div>
+        <div><label>Expiry</label><input data-csk="exp" value="${esc(r.month ? r.month + '/' + String(r.year).slice(-2) : '')}" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/YY" ${dis}></div>
+        <div><label>${/^3[47]/.test(cardDigits(r.number)) ? 'CID (front)' : 'CVV'}</label><input class="mono" data-csk="cvv" value="${esc(r.cvv)}" inputmode="numeric" autocomplete="cc-csc" maxlength="4" ${dis}></div>
+        <div class="s2"><label>Name on card</label><input data-csk="name" value="${esc(r.name)}" autocomplete="cc-name" ${dis || (same ? 'disabled title="Using the same name for every card"' : '')}></div>
+      </div><div class="small csst">${csStIcon(x)}${esc(x.t)}${cardDigits(r.number) ? ` · <span class="faint">${esc(cardBrand(cardDigits(r.number)))}</span>` : ''}</div></div>
+      <button class="ghost sm" data-csdel="${esc(r.id)}" aria-label="Remove">✕</button></div>`;
 }
 function csRender() {
-  const have = csExisting(), seen = csSeen();
-  const st = CSX.rows.map(r => csRowState(r, have, seen));
-  $('#csList').innerHTML = CSX.rows.length ? CSX.rows.map((r, i) => csRowHtml(r, st[i])).join('')
-    : `<div class="csdrop" id="csDrop"><b>Drop card photos or screenshots here</b><span class="small muted">or use the buttons above. One card per picture, front side.</span></div>`;
-  csFoot(st);
+  const rows = csRows(), have = csExisting(), seen = csSeen(rows);
+  const st = rows.map(r => csRowState(r, have, seen));
+  $('#csList').innerHTML = rows.length ? rows.map((r, i) => csRowHtml(r, st[i])).join('')
+    : `<div class="csdrop" id="csDrop"><b>Drop card photos or screenshots here</b><span class="small muted">or use the buttons above. ${csPairs() ? 'Two pictures per card — front and back, one card after another, in the same order each time.' : 'One picture per card.'}</span></div>`;
+  csFoot(rows, st);
 }
 // refresh each row's colour and message and the totals, without redrawing the boxes you're typing in
 function csStatus() {
-  const have = csExisting(), seen = csSeen();
-  const st = CSX.rows.map(r => csRowState(r, have, seen));
-  CSX.rows.forEach((r, i) => {
-    const el = $(`#csList [data-csr="${r.id}"]`); if (!el) return;
+  const rows = csRows(), have = csExisting(), seen = csSeen(rows);
+  const st = rows.map(r => csRowState(r, have, seen));
+  rows.forEach((r, i) => {
+    const el = [...$('#csList').querySelectorAll('[data-csr]')].find(e => e.dataset.csr === r.id); if (!el) return;
     el.className = 'csrow cs-' + st[i].c; const n = cardDigits(r.number);
-    el.querySelector('.csst').innerHTML = `${st[i].c === 'ok' ? '✓ ' : st[i].c === 'warn' || st[i].c === 'need' ? '⚠ ' : ''}${esc(st[i].t)}${n ? ` · <span class="faint">${esc(cardBrand(n))}</span>` : ''}`;
+    el.querySelector('.csst').innerHTML = `${csStIcon(st[i])}${esc(st[i].t)}${n ? ` · <span class="faint">${esc(cardBrand(n))}</span>` : ''}`;
     const lab = el.querySelector('[data-csk="cvv"]'); if (lab) lab.previousElementSibling.textContent = /^3[47]/.test(n) ? 'CID (front)' : 'CVV';
   });
-  csFoot(st);
+  csFoot(rows, st);
 }
-function csFoot(st) {
-  const ready = st.filter(x => x.c === 'ok' || x.c === 'warn').length, need = st.filter(x => x.c === 'need').length, reading = CSX.rows.filter(r => r.reading).length;
+function csFoot(rows, st) {
+  const ready = st.filter(x => x.c === 'ok' || x.c === 'warn').length, need = st.filter(x => x.c === 'need').length, reading = CSX.pics.filter(p => p.reading).length;
   $('#csGo').disabled = !ready || !!reading;
   $('#csGo').textContent = reading ? `Reading ${plural(reading, 'picture')}…` : ready ? `Add ${plural(ready, 'card')}` : 'Add cards';
   const warn = st.filter(s => s.c === 'warn').length, no = st.filter(s => s.c === 'bad' || s.c === 'dup').length;
-  $('#csSum').textContent = CSX.rows.length ? `${plural(CSX.rows.length, 'card')} · ${ready} ready${warn ? ` · ${warn} to double-check` : ''}${need ? ` · ${need} missing something` : ''}${no ? ` · ${no} won’t be added` : ''}` : '';
+  $('#csSum').textContent = rows.length ? `${CSX.pics.length ? plural(CSX.pics.length, 'picture') + ' → ' : ''}${plural(rows.length, 'card')} · ${ready} ready${warn ? ` · ${warn} to double-check` : ''}${need ? ` · ${need} missing something` : ''}${no ? ` · ${no} won’t be added` : ''}` : '';
 }
 async function csAddFiles(files) {
   const imgs = [...files].filter(f => /^image\//.test(f.type) || /\.(heic|heif|jpe?g|png|webp)$/i.test(f.name || ''));
   if (!imgs.length) { toast('Pick photos or screenshots of the cards'); return; }
-  const rows = imgs.map(f => ({ id: uid(), file: f, url: URL.createObjectURL(f), reading: true, number: '', month: '', year: '', cvv: '', name: '' }));
-  CSX.rows.push(...rows); csRender();
-  for (const r of rows) {
-    if (!$('#dlgCardScan').open) return;
+  const pics = imgs.map(f => ({ id: uid(), file: f, url: URL.createObjectURL(f), reading: true }));
+  CSX.pics.push(...pics); csRender();
+  for (const p of pics) {
+    if (!$('#dlgCardScan').open || !CSX.pics.includes(p)) continue;
     try {
-      const x = await CardScan.read(r.file);
-      Object.assign(r, { number: x.number ? cardFmt(x.number) : '', month: x.month, year: x.year, cvv: x.cvv, name: x.name, sure: x.sure, text: x.text });
-    } catch (e) { r.error = e.message; }
-    r.reading = false; delete r.file;
-    const el = $(`#csList [data-csr="${r.id}"]`);
-    if (el) { el.outerHTML = csRowHtml(r, { c: '', t: '' }); csStatus(); } else csRender();
+      // enough read: the back (number + expiry), or the front (a 4-digit code on its own line + a name)
+      // stop early only when the whole card is there (number, expiry and, for an Amex, its 4-digit CID); a front or a
+      // back on its own gets every pass, so nothing on it is missed
+      const text = await CardScan.read(p.file, t => { const r = parseCardText(t); return !!(r.number && r.month && (!/^3[47]/.test(r.number) || (r.sure.cvv && /^\d{4}$/.test(r.cvv)))); });
+      p.read = parseCardText(text); p.front = csFront(text); p.text = text;
+      if (!p.read.number && !p.front.cid && !p.front.name) p.error = 'Couldn’t read this picture — try a sharper photo, or type the card';
+    } catch (e) { p.error = e.message; }
+    p.reading = false; delete p.file;
+    if (state.settings.cardScanSame && !String(state.settings.cardScanName || '').trim()) { const nm = (p.front && p.front.name) || (p.read && p.read.name); if (nm) { state.settings.cardScanName = nm; $('#csName').value = nm; save(); } }
+    csRender();
   }
 }
 const cardFmt = n => /^3[47]\d{13}$/.test(n) ? n.replace(/^(\d{4})(\d{6})(\d{5})$/, '$1 $2 $3') : n.replace(/(\d{4})(?=\d)/g, '$1 ');
@@ -194,8 +299,15 @@ function wireCardScan() {
   $('#csPick').onclick = () => pick.click(); $('#csTake').onclick = () => cam.click();
   pick.onchange = e => { const f = [...e.target.files]; e.target.value = ''; csAddFiles(f); };
   cam.onchange = e => { const f = [...e.target.files]; e.target.value = ''; csAddFiles(f); };
-  $('#csType').onclick = () => { CSX.rows.push({ id: uid(), number: '', month: '', year: '', cvv: '', name: '', sure: { cvv: true } }); csRender(); const last = $('#csList').lastElementChild; if (last) { last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus(); } };
+  $('#csType').onclick = () => { CSX.typed.push({ id: 't' + uid(), number: '', month: '', year: '', cvv: '', name: '', sure: { cvv: true } }); csRender(); const last = $('#csList').lastElementChild; if (last) { last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus(); } };
   $('#csGroup').onchange = async e => { if (e.target.value === '__new') { const n = await askText('New card group', '', { ok: 'Add group' }); const id = n && n.trim() ? ensureCardGroup(n) : CSX.group; save(); CSX.group = id; $('#csGroup').innerHTML = state.cardGroups.map(g => `<option value="${g.id}" ${g.id === id ? 'selected' : ''}>${esc(g.name)}</option>`).join('') + '<option value="__new">+ New group…</option>'; } else CSX.group = e.target.value; };
+  $('#csPairs').onchange = e => { state.settings.cardScanPairs = e.target.checked; save(); CSX.edits = {}; csRender(); };
+  $('#csSame').onchange = e => {
+    state.settings.cardScanSame = e.target.checked; $('#csName').disabled = !e.target.checked;
+    if (e.target.checked && !String(state.settings.cardScanName || '').trim()) { const r = csRows().find(x => x.name); if (r) { state.settings.cardScanName = r.name; $('#csName').value = r.name; } }
+    save(); csRender(); if (e.target.checked && !$('#csName').value) $('#csName').focus();
+  };
+  $('#csName').oninput = debounce(e => { state.settings.cardScanName = e.target.value.trim(); save(); csRender(); }, 250);
   const box = $('#dlgCardScan');
   box.addEventListener('dragover', e => { e.preventDefault(); });
   box.addEventListener('drop', e => { e.preventDefault(); if (e.dataTransfer && e.dataTransfer.files.length) csAddFiles(e.dataTransfer.files); });
@@ -203,17 +315,23 @@ function wireCardScan() {
   const list = $('#csList');
   list.addEventListener('input', e => {
     const inp = e.target.closest('[data-csk]'), row = e.target.closest('[data-csr]'); if (!inp || !row) return;
-    const r = CSX.rows.find(x => x.id === row.dataset.csr); if (!r) return; const k = inp.dataset.csk, v = inp.value;
-    if (k === 'exp') { const m = v.replace(/\s/g, '').match(/^(\d{1,2})\D?(\d{2}|\d{4})$/); if (m && +m[1] >= 1 && +m[1] <= 12) { r.month = String(+m[1]).padStart(2, '0'); r.year = m[2].length === 2 ? '20' + m[2] : m[2]; } else { r.month = ''; r.year = ''; } }
-    else if (k === 'cvv') { r.cvv = v.replace(/\D/g, '').slice(0, 4); r.sure = Object.assign({}, r.sure, { cvv: true }); }
-    else r[k] = v;
+    const key = row.dataset.csr, k = inp.dataset.csk, v = inp.value;
+    const tgt = CSX.typed.find(t => t.id === key) || (CSX.edits[key] = CSX.edits[key] || {});
+    if (k === 'exp') { const m = v.replace(/\s/g, '').match(/^(\d{1,2})\D?(\d{2}|\d{4})$/); if (m && +m[1] >= 1 && +m[1] <= 12) { tgt.month = String(+m[1]).padStart(2, '0'); tgt.year = m[2].length === 2 ? '20' + m[2] : m[2]; } else { tgt.month = ''; tgt.year = ''; } }
+    else if (k === 'cvv') { tgt.cvv = v.replace(/\D/g, '').slice(0, 4); tgt.edCvv = true; tgt.sure = { cvv: true }; }
+    else tgt[k] = v;
     csStatus();
   });
-  list.addEventListener('click', e => { const d = e.target.closest('[data-csdel]'); if (!d) return; const r = CSX.rows.find(x => x.id === d.dataset.csdel); if (r && r.url) URL.revokeObjectURL(r.url); CSX.rows = CSX.rows.filter(x => x.id !== d.dataset.csdel); csRender(); });
-  box.addEventListener('close', () => { CSX.rows.forEach(r => r.url && URL.revokeObjectURL(r.url)); CSX.rows = []; });
+  list.addEventListener('click', e => {
+    const d = e.target.closest('[data-csdel]'); if (!d) return; const key = d.dataset.csdel;
+    if (CSX.typed.some(t => t.id === key)) CSX.typed = CSX.typed.filter(t => t.id !== key);
+    else { const ids = new Set(key.split('+')); CSX.pics.filter(p => ids.has(p.id)).forEach(p => URL.revokeObjectURL(p.url)); CSX.pics = CSX.pics.filter(p => !ids.has(p.id)); delete CSX.edits[key]; }
+    csRender();
+  });
+  box.addEventListener('close', () => { CSX.pics.forEach(p => URL.revokeObjectURL(p.url)); CSX.pics = []; CSX.typed = []; CSX.edits = {}; });
   $('#csGo').onclick = () => {
-    const have = csExisting(), seen = csSeen();
-    const ok = CSX.rows.filter(r => { const s = csRowState(r, have, seen); return s.c === 'ok' || s.c === 'warn'; });
+    const rows = csRows(), have = csExisting(), seen = csSeen(rows);
+    const ok = rows.filter(r => { const s = csRowState(r, have, seen); return s.c === 'ok' || s.c === 'warn'; });
     if (!ok.length) return;
     let gid = $('#csGroup').value; if (gid === '__new' || !cardGroupById(gid)) gid = (state.cardGroups[0] || {}).id;
     snapshot('add cards from photos');

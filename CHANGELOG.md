@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.18.0 — Front and back card photos (2026-11-06)
+
+- “2 pictures per card” for cards like an Amex: the name and CID come from the front, the number and expiry from the back. 10 pictures make 5 cards.
+- Crown Tools works out which picture is which side. If one is missing, only that card is flagged; the cards after it stay paired correctly.
+- “Same name on every card” fills in one name for the whole batch.
+- Reads photos more reliably: coloured cards, dark cards, glare and the black stripe on the back.
+
 ## v0.17.1 — Invite-only sign-up (2026-11-06)
 
 - While payments are off, sign-up says Crown Tools is invite-only and free, with no price shown.

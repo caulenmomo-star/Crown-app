@@ -1052,3 +1052,7 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 .csst{margin-top:6px}.cs-ok .csst{color:var(--ok)}.cs-warn .csst,.cs-need .csst{color:var(--warn)}.cs-bad .csst{color:var(--danger)}
 .csdrop{border:2px dashed var(--line2);border-radius:14px;padding:30px 16px;display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
 @media (max-width:760px){.csrow{grid-template-columns:72px minmax(0,1fr) auto}.csimg{width:72px;height:46px}.csrow .fgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.csrow .fgrid > div:first-child,.csrow .fgrid > div:last-child{grid-column:1 / -1}}
+.csopts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:12px}
+.csopts .check{display:flex;gap:8px;align-items:flex-start;font-size:13px}.csopts .check input{width:auto;margin-top:2px}
+#csName{max-width:320px;margin-left:26px}
+.csimg.two{display:grid;grid-template-columns:1fr 1fr;gap:3px;background:none}.csimg.two img{border-radius:6px}

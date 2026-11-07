@@ -228,7 +228,12 @@
     <div class="fgrid"><div class="s2"><label>Group</label><select id="csGroup"></select></div>
       <div class="s2"><label>Pictures</label><div class="hstack" style="flex-wrap:wrap;gap:6px"><button class="primary" id="csPick">Choose photos</button><button id="csTake">Take a photo</button><button class="ghost" id="csType">Type one</button></div>
         <input type="file" id="csFiles" accept="image/*" multiple hidden><input type="file" id="csCam" accept="image/*" capture="environment" hidden></div></div>
-    <div class="note small" style="margin-top:10px">One card per picture, front side. Photos and screenshots both work; an Amex’s 4-digit CID is on the front. Crown Tools reads them right here on this device: the pictures aren’t uploaded or saved. Check each card before adding. On an iPhone or iPad, “Type one” lets Safari’s keyboard scan a card with the camera too.</div>
+    <div class="csopts">
+      <label class="check"><input type="checkbox" id="csPairs"> <span><b>2 pictures per card</b> — front and back, like an Amex (name and CID on the front, number and expiry on the back). Take them card by card, in the same order each time (front then back, or back then front).</span></label>
+      <label class="check"><input type="checkbox" id="csSame"> <span><b>Same name on every card</b></span></label>
+      <input id="csName" placeholder="Name on the cards" autocomplete="cc-name" aria-label="Name on the cards">
+    </div>
+    <div class="note small" style="margin-top:10px">Crown Tools reads the pictures right here on this device: they aren’t uploaded or saved. Check each card before adding. On an iPhone or iPad, “Type one” lets Safari’s keyboard scan a card with the camera too.</div>
     <div id="csList" class="cslist"></div>
   </div>
   <div class="dfoot"><span id="csSum" class="small muted" style="margin-right:auto"></span><button data-close>Cancel</button><button class="primary" id="csGo" disabled>Add cards</button></div>
