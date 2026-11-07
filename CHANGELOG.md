@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.17.1 — Invite-only sign-up (2026-11-06)
+
+- While payments are off, sign-up says Crown Tools is invite-only and free, with no price shown.
+- New accounts see a “waiting for access” screen. Once the owner lets them in, “Check again” opens the app.
+
 ## v0.17.0 — Cards from photos (2026-11-06)
 
 - Add cards from photos or screenshots: Cards → From photos. Crown Tools reads the number, expiry, Amex CID and name, and you check each card before adding it.
