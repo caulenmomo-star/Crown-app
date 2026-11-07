@@ -1,6 +1,12 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.18.1', date: '2026-11-06', title: 'Card photos you can trust', items: [
+    '“2 pictures per card” now always pairs pictures 1+2, 3+4 and so on, with either side first in each pair.',
+    'A card number is only trusted when separate readings of the photo agree. Otherwise Crown Tools asks you to check it against the photo first.',
+    'Tap a picture to see it full size, and remove a stray picture so the rest pair up again.',
+    'An extra digits-only reading makes card numbers more accurate.',
+  ] },
   { v: '0.18.0', date: '2026-11-06', title: 'Front and back card photos', items: [
     '“2 pictures per card” for cards like an Amex: the name and CID come from the front, the number and expiry from the back. 10 pictures make 5 cards.',
     'Crown Tools works out which picture is which side. If one is missing, only that card is flagged; the cards after it stay paired correctly.',

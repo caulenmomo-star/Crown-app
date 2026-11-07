@@ -13,7 +13,7 @@ const CardScan = (() => {
     w.onerror = () => { for (const p of waits.values()) p.rej(new Error('The text reader stopped. Try again.')); waits.clear(); try { w.terminate(); } catch (e) {} w = null; };
     return w;
   }
-  const ocr = (bytes, psm) => new Promise((res, rej) => { const id = ++seq; waits.set(id, { res, rej }); worker().postMessage({ id, image: bytes, psm }, [bytes.buffer]); });
+  const ocr = (bytes, psm, digits) => new Promise((res, rej) => { const id = ++seq; waits.set(id, { res, rej }); worker().postMessage({ id, image: bytes, psm, digits: !!digits }, [bytes.buffer]); });
   const warm = () => new Promise(res => { const id = 'warm'; waits.set(id, { res, rej: res }); worker().postMessage({ id }); });
   // the photo, cleaned up for reading: straight grey, stretched contrast, a good size; and the same thing inverted
   // (light text on a dark card)
@@ -53,11 +53,15 @@ const CardScan = (() => {
     const l1 = await loc(dark), l2 = await loc(!dark);
     return [a, l1, l2, b];
   }
-  // done(text) says when enough was read; otherwise up to 4 passes (cleaned up, two local versions, inverted)
+  // done(text) says when enough was read; otherwise every pass: cleaned up, two local versions (one read for digits
+  // only), and inverted. Each pass is a separate reading, so the card number can be checked by how many agree.
   async function read(file, done) {
-    const vs = await variants(file), texts = [];
-    for (const v of vs) { texts.push(await ocr(v.slice(), 11)); if (done(texts.join('\n'))) break; }
-    return texts.join('\n');
+    const [a, l1, l2, b] = await variants(file), texts = [], digs = [];
+    for (const [v, digits] of [[a], [l1], [l1, true], [l2], [b], [a, true]]) {
+      (digits ? digs : texts).push(await ocr(v.slice(), 11, digits));
+      if (done(texts.join('\n'), digs.join('\n'))) break;
+    }
+    return { text: texts.join('\n'), digits: digs.join('\n') };
   }
   return { read, warm };
 })();
@@ -82,18 +86,16 @@ function parseCardText(text) {
       for (let s0 = 0; s0 < groups.length; s0++) for (const len of [3, 4]) { const gs = groups.slice(s0, s0 + len); const n = gs.join(''); if (gs.length === len && shaped(gs) && csLuhn(n)) found.push({ n, li, groups: gs }); }
       return;
     }
-    for (let s = 0; s < groups.length; s++) for (let e = s; e < groups.length; e++) {
-      const n = groups.slice(s, e + 1).join(''); if (n.length > 19) break;
-      if ((n.length === 15 && /^3[47]/.test(n)) || (n.length === 16 && /^[3-6]/.test(n))) if (csLuhn(n)) found.push({ n, li, groups: groups.slice(s, e + 1) });
-    }
-    const all = l.replace(/\D/g, '');
-    if (!found.some(f => f.li === li)) for (const len of [15, 16]) for (let i = 0; i + len <= all.length; i++) { const n = all.slice(i, i + len); if (((len === 15 && /^3[47]/.test(n)) || (len === 16 && /^[3-6]/.test(n))) && csLuhn(n)) found.push({ n, li, groups: [] }); }
+    for (let s0 = 0; s0 < groups.length; s0++) for (const len of [3, 4]) { const gs = groups.slice(s0, s0 + len); const n = gs.join(''); if (gs.length === len && shaped(gs) && /^[3-6]/.test(n) && csLuhn(n)) found.push({ n, li, groups: gs }); }
+    // a run of digits with no spaces (a screenshot): only when it's exactly a card number long
+    for (const g of groups) if (((g.length === 15 && /^3[47]/.test(g)) || (g.length === 16 && /^[3-6]/.test(g))) && csLuhn(g) && !found.some(f => f.li === li && f.n === g)) found.push({ n: g, li, groups: [g] });
   });
   // several reading passes: the number they agree on most wins (an Amex first)
   const votes = new Map(); found.forEach(f => votes.set(f.n, (votes.get(f.n) || 0) + 1));
   const rank = f => (/^3[47]/.test(f.n) && f.n.length === 15 ? 100 : 0) + votes.get(f.n);
   const best = found.slice().sort((a, b) => rank(b) - rank(a))[0];
-  if (best) { out.number = best.n; out.sure.number = true; }
+  // trusted when two separate readings agree on it (or it sits under a "card number" label); otherwise it gets checked
+  if (best) { out.number = best.n; out.votes = votes.get(best.n); out.sure.number = out.votes >= 2 || /(CARD\s*(NUMBER|NO)|ACCOUNT\s*NUMBER)/i.test(lines[best.li - 1] || ''); }
   // expiry: MM/YY after "thru / exp / expires / valid / good"; otherwise the latest date that isn't "member since"
   const now = new Date(), cy = now.getFullYear();
   const dates = [];
@@ -136,6 +138,17 @@ function parseCardText(text) {
   return out;
 }
 
+// one picture: everything from the normal readings; the digits-only readings only count toward the card number
+function csParsePic(text, digits) {
+  const r = parseCardText(text), d = digits ? parseCardText(digits) : { number: '', votes: 0 };
+  if (d.number) {
+    if (d.number === r.number) r.votes = (r.votes || 0) + d.votes;
+    else if (!r.number || d.votes > (r.votes || 0)) { r.number = d.number; r.votes = d.votes; r.sure.number = false; }
+  }
+  if (r.number) r.sure.number = r.votes >= 2 || !!r.sure.number;
+  return r;
+}
+
 // the front of an Amex: the 4-digit CID printed on its own, and the name (no card number)
 function csFront(text) {
   const lines = String(text || '').split(/\r?\n/).map(l => csDigits(l).trim()).filter(Boolean), cands = [];
@@ -163,53 +176,33 @@ function openCardScan(groupId) {
   csRender(); openDlg('dlgCardScan');
   CardScan.warm(); // start loading the reader while you pick photos
 }
-// what a picture shows: the back (has the card number), the front (a CID and/or name, no number), everything, or nothing yet
-function csKind(p) {
-  if (p.reading) return '?';
-  if (!p.read) return 'none';
-  if (p.read.number) return p.read.cvv && p.read.sure.cvv && /^3[47]/.test(p.read.number) && /^\d{4}$/.test(p.read.cvv) ? 'both' : 'back';
-  return p.front && (p.front.cid || p.front.name) ? 'front' : 'none';
-}
-// group the pictures into cards. One per card: each picture alone. Two per card: a front and a back next to each
-// other. Crown Tools works out the order you took them in (front first, back first, or mixed) and pairs by it, so a
-// missing or extra picture only leaves that one card alone instead of shifting every card after it.
+// group the pictures into cards: one per card, or two per card in the order they were added (1+2, 3+4, …).
+// Which of the two is the front is worked out from what's on them.
 function csGroups() {
   if (!csPairs()) return CSX.pics.map(p => [p]);
-  const ks = CSX.pics.map(csKind), wild = k => k === '?' || k === 'none';
-  const plan = first => {
-    const out = []; let pend = null, pk = '';
-    CSX.pics.forEach((p, i) => {
-      const k = ks[i];
-      if (k === 'both') { if (pend) out.push([pend]); pend = null; out.push([p]); return; }
-      if (!pend) { if (first && !wild(k) && k !== first) { out.push([p]); return; } pend = p; pk = k; return; }
-      const fits = wild(pk) || wild(k) || (first ? k !== first : k !== pk);
-      if (fits) { out.push([pend, p]); pend = null; return; }
-      out.push([pend]); pend = p; pk = k;
-    });
-    if (pend) out.push([pend]);
-    return out;
-  };
-  const lone = g => g.filter(x => x.length === 1 && ks[CSX.pics.indexOf(x[0])] !== 'both').length;
-  let best = null;
-  for (const first of ['front', 'back', null]) { const g = plan(first); if (!best || lone(g) < lone(best)) best = g; }
-  return best;
+  const out = []; for (let i = 0; i < CSX.pics.length; i += 2) out.push(CSX.pics.slice(i, i + 2));
+  return out;
 }
 // one card's fields from its pictures, plus anything you typed
 function csRows() {
   const same = csSameName();
   const rows = csGroups().map(ps => {
     const key = ps.map(p => p.id).join('+');
-    const back = ps.find(p => p.read && p.read.number) || null, front = ps.find(p => p !== back && p.front && (p.front.cid || p.front.name)) || null;
+    // the back: the picture with a card number (if both have one, the one read more consistently)
+    const withNum = ps.filter(p => p.read && p.read.number).sort((x, y) => (y.read.votes || 0) - (x.read.votes || 0));
+    const back = withNum[0] || null, front = ps.find(p => p !== back) || null;
     const rd = back ? back.read : (ps.find(p => p.read) || {}).read || {};
     const amex = /^3[47]/.test(rd.number || '');
     let cvv = '', cvvSure = false;
-    if (front && front.front.cid) { cvv = front.front.cid; cvvSure = front.front.cidSure; }
-    else if (rd.cvv && (!amex || /^\d{4}$/.test(rd.cvv))) { cvv = rd.cvv; cvvSure = !!(rd.sure && rd.sure.cvv); }
+    if (front && front.front && front.front.cid && (!front.read || !front.read.number)) { cvv = front.front.cid; cvvSure = front.front.cidSure; }
+    else if (rd.cvv && (!amex || /^\d{4}$/.test(rd.cvv)) && (ps.length === 1 || !csPairs())) { cvv = rd.cvv; cvvSure = !!(rd.sure && rd.sure.cvv); }
     const r = { id: key, pics: ps, reading: ps.some(p => p.reading), error: ps.every(p => p.error) ? ps[0].error : '',
-      number: rd.number ? cardFmt(rd.number) : '', month: rd.month || '', year: rd.year || '', cvv, name: (front && front.front.name) || rd.name || '', sure: { cvv: cvvSure },
-      alone: csPairs() && ps.length === 1 && csKind(ps[0]) !== 'both' && !ps[0].reading };
-    Object.assign(r, CSX.edits[key] || {});
-    if (r.edCvv) r.sure = { cvv: true };
+      number: rd.number ? cardFmt(rd.number) : '', month: rd.month || '', year: rd.year || '', cvv,
+      name: (front && front.front && front.front.name) || rd.name || '', sure: { cvv: cvvSure, number: !!(rd.sure && rd.sure.number) },
+      alone: csPairs() && ps.length === 1 && !ps[0].reading, twoNums: withNum.length > 1 && withNum[0].read.number !== withNum[1].read.number };
+    const ed = CSX.edits[key] || {};
+    Object.assign(r, ed);
+    r.sure = { cvv: ed.edCvv ? true : cvvSure, number: ed.numOk || ed.number != null ? true : r.sure.number };
     if (same) r.name = same;
     return r;
   });
@@ -222,21 +215,24 @@ function csRowState(r, have, seen) {
   const n = cardDigits(r.number);
   if (r.reading) return { c: '', t: 'Reading…' };
   if (r.error) return { c: 'bad', t: r.error };
-  if (!n) return { c: 'bad', t: r.alone ? 'No card number — add the back of this card, or type it' : 'No card number found — type it in' };
+  if (!n) return { c: 'bad', t: r.alone ? 'Only one picture — add the other side of this card, or type the number' : (r.pics || []).length === 2 ? 'Couldn’t read a card number on either picture — type it in' : 'No card number found — type it in' };
   if (!luhn(n)) return { c: 'bad', t: 'That isn’t a real card number — check it' };
   if (have.has(n)) return { c: 'dup', t: 'Already saved' };
   if (seen.get(n) !== r.id) return { c: 'dup', t: 'Already in this list' };
+  if (!r.sure || !r.sure.number) return { c: 'need', t: 'Check this number against the picture (tap it to zoom in)', ok: true };
   if (!r.month || !r.year) return { c: 'need', t: 'Add the expiry' };
   if (/^3[47]/.test(n) && !/^\d{4}$/.test(r.cvv)) return { c: 'need', t: r.alone ? 'Add the front of this card (or type its 4-digit CID)' : 'Add the 4-digit CID from the front of the card' };
   if (!/^3[47]/.test(n) && !/^\d{3,4}$/.test(r.cvv)) return { c: 'warn', t: 'No CVV — it’s on the back; add it if your bot needs it' };
   if (!r.name) return { c: 'warn', t: 'No name — type it, or use “Same name on every card”' };
+  if (r.twoNums) return { c: 'warn', t: 'Both pictures show a card number — make sure they’re the same card' };
   if (!r.sure || !r.sure.cvv) return { c: 'warn', t: 'Check the security code' };
   return { c: 'ok', t: 'Ready' };
 }
 const csStIcon = x => x.c === 'ok' ? '✓ ' : x.c === 'warn' || x.c === 'need' ? '⚠ ' : '';
+const csStHtml = (r, x) => `${csStIcon(x)}${esc(x.t)}${x.ok ? ` <button class="sm primary csok" data-csok="${esc(r.id)}">✓ Number is right</button>` : ''}${cardDigits(r.number) ? ` · <span class="faint">${esc(cardBrand(cardDigits(r.number)))}</span>` : ''}`;
 function csRowHtml(r, x) {
   const dis = r.reading ? 'disabled' : '', same = !!csSameName();
-  const pics = (r.pics || []).map(p => `<img src="${p.url}" alt="">`).join('');
+  const pics = (r.pics || []).map(p => `<img src="${p.url}" alt="Card picture — tap to zoom" data-cszoom="${p.id}">`).join('');
   return `<div class="csrow cs-${x.c}" data-csr="${esc(r.id)}">
       <div class="csimg${r.pics && r.pics.length === 2 ? ' two' : ''}">${pics || '<span>⌨︎</span>'}</div>
       <div class="csf"><div class="fgrid">
@@ -244,14 +240,14 @@ function csRowHtml(r, x) {
         <div><label>Expiry</label><input data-csk="exp" value="${esc(r.month ? r.month + '/' + String(r.year).slice(-2) : '')}" inputmode="numeric" autocomplete="cc-exp" placeholder="MM/YY" ${dis}></div>
         <div><label>${/^3[47]/.test(cardDigits(r.number)) ? 'CID (front)' : 'CVV'}</label><input class="mono" data-csk="cvv" value="${esc(r.cvv)}" inputmode="numeric" autocomplete="cc-csc" maxlength="4" ${dis}></div>
         <div class="s2"><label>Name on card</label><input data-csk="name" value="${esc(r.name)}" autocomplete="cc-name" ${dis || (same ? 'disabled title="Using the same name for every card"' : '')}></div>
-      </div><div class="small csst">${csStIcon(x)}${esc(x.t)}${cardDigits(r.number) ? ` · <span class="faint">${esc(cardBrand(cardDigits(r.number)))}</span>` : ''}</div></div>
+      </div><div class="small csst">${csStHtml(r, x)}</div></div>
       <button class="ghost sm" data-csdel="${esc(r.id)}" aria-label="Remove">✕</button></div>`;
 }
 function csRender() {
   const rows = csRows(), have = csExisting(), seen = csSeen(rows);
   const st = rows.map(r => csRowState(r, have, seen));
   $('#csList').innerHTML = rows.length ? rows.map((r, i) => csRowHtml(r, st[i])).join('')
-    : `<div class="csdrop" id="csDrop"><b>Drop card photos or screenshots here</b><span class="small muted">or use the buttons above. ${csPairs() ? 'Two pictures per card — front and back, one card after another, in the same order each time.' : 'One picture per card.'}</span></div>`;
+    : `<div class="csdrop" id="csDrop"><b>Drop card photos or screenshots here</b><span class="small muted">or use the buttons above. ${csPairs() ? 'Two pictures per card — front and back, one card after another.' : 'One picture per card.'}</span></div>`;
   csFoot(rows, st);
 }
 // refresh each row's colour and message and the totals, without redrawing the boxes you're typing in
@@ -261,7 +257,7 @@ function csStatus() {
   rows.forEach((r, i) => {
     const el = [...$('#csList').querySelectorAll('[data-csr]')].find(e => e.dataset.csr === r.id); if (!el) return;
     el.className = 'csrow cs-' + st[i].c; const n = cardDigits(r.number);
-    el.querySelector('.csst').innerHTML = `${csStIcon(st[i])}${esc(st[i].t)}${n ? ` · <span class="faint">${esc(cardBrand(n))}</span>` : ''}`;
+    el.querySelector('.csst').innerHTML = csStHtml(r, st[i]);
     const lab = el.querySelector('[data-csk="cvv"]'); if (lab) lab.previousElementSibling.textContent = /^3[47]/.test(n) ? 'CID (front)' : 'CVV';
   });
   csFoot(rows, st);
@@ -284,8 +280,8 @@ async function csAddFiles(files) {
       // enough read: the back (number + expiry), or the front (a 4-digit code on its own line + a name)
       // stop early only when the whole card is there (number, expiry and, for an Amex, its 4-digit CID); a front or a
       // back on its own gets every pass, so nothing on it is missed
-      const text = await CardScan.read(p.file, t => { const r = parseCardText(t); return !!(r.number && r.month && (!/^3[47]/.test(r.number) || (r.sure.cvv && /^\d{4}$/.test(r.cvv)))); });
-      p.read = parseCardText(text); p.front = csFront(text); p.text = text;
+      const got = await CardScan.read(p.file, (t, d) => { const r = csParsePic(t, d); return !!(r.number && r.votes >= 3 && r.month && (!/^3[47]/.test(r.number) || (r.sure.cvv && /^\d{4}$/.test(r.cvv)))); });
+      const text = got.text; p.read = csParsePic(got.text, got.digits); p.front = csFront(text); p.text = text + '\n--- digits ---\n' + got.digits;
       if (!p.read.number && !p.front.cid && !p.front.name) p.error = 'Couldn’t read this picture — try a sharper photo, or type the card';
     } catch (e) { p.error = e.message; }
     p.reading = false; delete p.file;
@@ -293,13 +289,27 @@ async function csAddFiles(files) {
     csRender();
   }
 }
+// a picture, big, to check the number against; and a way to take out a picture that doesn't belong
+function csZoom(id) {
+  const p = CSX.pics.find(x => x.id === id); if (!p) return;
+  const i = CSX.pics.indexOf(p), ov = document.createElement('div'); ov.className = 'cszoom';
+  ov.innerHTML = `<img src="${p.url}" alt=""><div class="cszbar"><span class="small">Picture ${i + 1} of ${CSX.pics.length}</span><span class="spacer"></span><button class="sm" data-zdel>Remove this picture</button><button class="sm primary" data-zx>Close</button></div>`;
+  const close = () => { ov.remove(); document.removeEventListener('keydown', esc1, true); };
+  const esc1 = e => { if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); close(); } };
+  ov.onclick = e => {
+    if (e.target.closest('[data-zdel]')) { URL.revokeObjectURL(p.url); CSX.pics = CSX.pics.filter(x => x !== p); close(); csRender(); toast(csPairs() ? 'Picture removed — the pictures after it pair up again' : 'Picture removed'); return; }
+    if (e.target.closest('[data-zx]') || e.target === ov) close();
+  };
+  document.addEventListener('keydown', esc1, true);
+  $('#dlgCardScan').appendChild(ov);
+}
 const cardFmt = n => /^3[47]\d{13}$/.test(n) ? n.replace(/^(\d{4})(\d{6})(\d{5})$/, '$1 $2 $3') : n.replace(/(\d{4})(?=\d)/g, '$1 ');
 function wireCardScan() {
   const pick = $('#csFiles'), cam = $('#csCam');
   $('#csPick').onclick = () => pick.click(); $('#csTake').onclick = () => cam.click();
   pick.onchange = e => { const f = [...e.target.files]; e.target.value = ''; csAddFiles(f); };
   cam.onchange = e => { const f = [...e.target.files]; e.target.value = ''; csAddFiles(f); };
-  $('#csType').onclick = () => { CSX.typed.push({ id: 't' + uid(), number: '', month: '', year: '', cvv: '', name: '', sure: { cvv: true } }); csRender(); const last = $('#csList').lastElementChild; if (last) { last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus(); } };
+  $('#csType').onclick = () => { CSX.typed.push({ id: 't' + uid(), number: '', month: '', year: '', cvv: '', name: '', sure: { cvv: true, number: true } }); csRender(); const last = $('#csList').lastElementChild; if (last) { last.scrollIntoView({ block: 'nearest' }); last.querySelector('input').focus(); } };
   $('#csGroup').onchange = async e => { if (e.target.value === '__new') { const n = await askText('New card group', '', { ok: 'Add group' }); const id = n && n.trim() ? ensureCardGroup(n) : CSX.group; save(); CSX.group = id; $('#csGroup').innerHTML = state.cardGroups.map(g => `<option value="${g.id}" ${g.id === id ? 'selected' : ''}>${esc(g.name)}</option>`).join('') + '<option value="__new">+ New group…</option>'; } else CSX.group = e.target.value; };
   $('#csPairs').onchange = e => { state.settings.cardScanPairs = e.target.checked; save(); CSX.edits = {}; csRender(); };
   $('#csSame').onchange = e => {
@@ -318,11 +328,14 @@ function wireCardScan() {
     const key = row.dataset.csr, k = inp.dataset.csk, v = inp.value;
     const tgt = CSX.typed.find(t => t.id === key) || (CSX.edits[key] = CSX.edits[key] || {});
     if (k === 'exp') { const m = v.replace(/\s/g, '').match(/^(\d{1,2})\D?(\d{2}|\d{4})$/); if (m && +m[1] >= 1 && +m[1] <= 12) { tgt.month = String(+m[1]).padStart(2, '0'); tgt.year = m[2].length === 2 ? '20' + m[2] : m[2]; } else { tgt.month = ''; tgt.year = ''; } }
-    else if (k === 'cvv') { tgt.cvv = v.replace(/\D/g, '').slice(0, 4); tgt.edCvv = true; tgt.sure = { cvv: true }; }
+    else if (k === 'cvv') { tgt.cvv = v.replace(/\D/g, '').slice(0, 4); tgt.edCvv = true; }
+    else if (k === 'number') { tgt.number = v; tgt.numOk = true; }
     else tgt[k] = v;
     csStatus();
   });
   list.addEventListener('click', e => {
+    const ok = e.target.closest('[data-csok]'); if (ok) { (CSX.edits[ok.dataset.csok] = CSX.edits[ok.dataset.csok] || {}).numOk = true; csStatus(); return; }
+    const z = e.target.closest('[data-cszoom]'); if (z) { csZoom(z.dataset.cszoom); return; }
     const d = e.target.closest('[data-csdel]'); if (!d) return; const key = d.dataset.csdel;
     if (CSX.typed.some(t => t.id === key)) CSX.typed = CSX.typed.filter(t => t.id !== key);
     else { const ids = new Set(key.split('+')); CSX.pics.filter(p => ids.has(p.id)).forEach(p => URL.revokeObjectURL(p.url)); CSX.pics = CSX.pics.filter(p => !ids.has(p.id)); delete CSX.edits[key]; }

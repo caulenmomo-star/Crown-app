@@ -1,6 +1,6 @@
 /* Crown Tools - reads the text in a card photo, right here on your device. Nothing is uploaded.
    Uses the Tesseract OCR engine (tesseract.js-core 7.0.0, Apache-2.0) with the English "fast" model (tessdata_fast,
-   Apache-2.0). Messages in: { id, image: Uint8Array (PNG/JPEG), psm }. Messages out: { id, text } or { id, error }. */
+   Apache-2.0). Messages in: { id, image: Uint8Array (PNG/JPEG), psm, digits }. Messages out: { id, text } or { id, error }. */
 'use strict';
 let ready = null;
 // a tiny module that uses a SIMD instruction: if the browser accepts it, use the faster SIMD build
@@ -24,12 +24,13 @@ function load() {
   return ready;
 }
 self.onmessage = async e => {
-  const { id, image, psm } = e.data || {};
+  const { id, image, psm, digits } = e.data || {};
   try {
     const { M, api } = await load();
     if (id === 'warm') { self.postMessage({ id, text: '' }); return; }
     api.SetVariable('tessedit_pageseg_mode', String(psm || 11));
     api.SetVariable('user_defined_dpi', '300');
+    api.SetVariable('tessedit_char_whitelist', digits ? '0123456789 ' : ''); // digits only: no letters to mistake for numbers
     M.FS.writeFile('/input', image);
     if (api.SetImageFile(1, 0) === 1) throw new Error('Couldn’t read that picture.');
     const text = api.GetUTF8Text();
