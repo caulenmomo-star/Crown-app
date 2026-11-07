@@ -1039,3 +1039,16 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 @media (max-width:760px){.skutbl .skuname{max-width:200px}}
 .pkoldlink{color:inherit;text-decoration:underline;padding:0 2px;font:inherit;background:none;border:0}
 .cdalso{color:var(--warn);font-weight:600;font-size:12px}
+
+/* add cards from photos */
+.cslist{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.csrow{display:grid;grid-template-columns:120px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}
+.csrow.cs-ok{border-color:color-mix(in srgb,var(--ok) 45%,var(--line))}.csrow.cs-warn,.csrow.cs-need{border-color:color-mix(in srgb,var(--warn) 50%,var(--line))}
+.csrow.cs-bad{border-color:var(--badLine)}.csrow.cs-dup{opacity:.6}
+.csimg{width:120px;height:76px;border-radius:8px;overflow:hidden;background:var(--line);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--faint)}
+.csimg img{width:100%;height:100%;object-fit:cover}
+.csrow .fgrid{grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,.8fr) minmax(0,1.6fr)}
+.csrow .fgrid .s2{grid-column:auto}
+.csst{margin-top:6px}.cs-ok .csst{color:var(--ok)}.cs-warn .csst,.cs-need .csst{color:var(--warn)}.cs-bad .csst{color:var(--danger)}
+.csdrop{border:2px dashed var(--line2);border-radius:14px;padding:30px 16px;display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
+@media (max-width:760px){.csrow{grid-template-columns:72px minmax(0,1fr) auto}.csimg{width:72px;height:46px}.csrow .fgrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.csrow .fgrid > div:first-child,.csrow .fgrid > div:last-child{grid-column:1 / -1}}

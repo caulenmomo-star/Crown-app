@@ -222,6 +222,18 @@
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="caGo" disabled>Add cards</button></div>
 </dialog>
 
+<dialog id="dlgCardScan">
+  <div class="dhead">Add cards from photos<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody">
+    <div class="fgrid"><div class="s2"><label>Group</label><select id="csGroup"></select></div>
+      <div class="s2"><label>Pictures</label><div class="hstack" style="flex-wrap:wrap;gap:6px"><button class="primary" id="csPick">Choose photos</button><button id="csTake">Take a photo</button><button class="ghost" id="csType">Type one</button></div>
+        <input type="file" id="csFiles" accept="image/*" multiple hidden><input type="file" id="csCam" accept="image/*" capture="environment" hidden></div></div>
+    <div class="note small" style="margin-top:10px">One card per picture, front side. Photos and screenshots both work; an Amex’s 4-digit CID is on the front. Crown Tools reads them right here on this device: the pictures aren’t uploaded or saved. Check each card before adding. On an iPhone or iPad, “Type one” lets Safari’s keyboard scan a card with the camera too.</div>
+    <div id="csList" class="cslist"></div>
+  </div>
+  <div class="dfoot"><span id="csSum" class="small muted" style="margin-right:auto"></span><button data-close>Cancel</button><button class="primary" id="csGo" disabled>Add cards</button></div>
+</dialog>
+
 <dialog id="dlgCardAssign" class="narrow">
   <div class="dhead">Put cards on profiles<button class="ghost sm x" data-close>✕</button></div>
   <div class="dbody" id="caaBody"></div>
@@ -391,6 +403,7 @@
 <script src="doctor.js"></script>
 <script src="accounts.js"></script>
 <script src="cards.js"></script>
+<script src="cardscan.js"></script>
 <script src="skus.js"></script>
 <script src="addresses.js"></script>
 <script src="builder.js"></script>

@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.16.1"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.17.0"  # prerelease - stays 0.x until Crown Tools is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -2118,7 +2118,8 @@ def track(req):
 # ---------------------------------------------------------------- HTTP
 
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
-         ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".json": "application/json", ".webmanifest": "application/manifest+json"}
+         ".png": "image/png", ".webp": "image/webp", ".jpg": "image/jpeg", ".svg": "image/svg+xml", ".ico": "image/x-icon", ".json": "application/json", ".webmanifest": "application/manifest+json",
+         ".wasm": "application/wasm", ".traineddata": "application/octet-stream", ".txt": "text/plain; charset=utf-8"}
 
 
 class _LocalHandler(BaseHTTPRequestHandler):

@@ -1,6 +1,11 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.17.0', date: '2026-11-06', title: 'Cards from photos', items: [
+    'Add cards from photos or screenshots: Cards → From photos. Crown Tools reads the number, expiry, Amex CID and name, and you check each card before adding it.',
+    'The pictures are read on your device and never uploaded or saved.',
+    'Bad numbers, cards already saved and cards picked twice are flagged. Missing expiries or Amex CIDs have to be filled in before adding.',
+  ] },
   { v: '0.16.1', date: '2026-11-06', title: 'Missing profile cards', items: [
     'A card group made from a profile group now lists every card on its profiles. Cards also saved in another group are marked “Also in” with that group’s name.',
     'It also says which profiles have a card number with a typo, and you can move the other group’s cards into it with one tap.',

@@ -2,6 +2,12 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.17.0 — Cards from photos (2026-11-06)
+
+- Add cards from photos or screenshots: Cards → From photos. Crown Tools reads the number, expiry, Amex CID and name, and you check each card before adding it.
+- The pictures are read on your device and never uploaded or saved.
+- Bad numbers, cards already saved and cards picked twice are flagged. Missing expiries or Amex CIDs have to be filled in before adding.
+
 ## v0.16.1 — Missing profile cards (2026-11-06)
 
 - A card group made from a profile group now lists every card on its profiles. Cards also saved in another group are marked “Also in” with that group’s name.
