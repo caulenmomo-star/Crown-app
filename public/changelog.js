@@ -1,6 +1,13 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.18.3', date: '2026-11-07', title: 'Profile builder: emails, line 2 and names', items: [
+    'Saved accounts now lists your account groups. Pick one, or use all of them.',
+    'New “Paste emails” option: paste a list (email:password lines work too) and each profile gets the next one.',
+    'Line 2 dropdown: Smart, Apt, Unit, Suite, Ste, #, Bldg, Room, Lot, Fl, a mix, number only or empty. You can also choose how many digits and add a letter.',
+    'Optional plain profiles: the address exactly as is with no jig, one or more per address.',
+    'Names count up from 1, like PKC Amex 1, PKC Amex 2, and carry on from the last one. You can also set where they start.',
+  ] },
   { v: '0.18.2', date: '2026-11-07', title: 'Select lots at once', items: [
     'Shift-click a checkbox or a row to select everything between it and the last one you clicked. This works on Profiles, Accounts, Cards, Orders and the lists in windows.',
     'Cmd/Ctrl-click a row to select it without opening it. Cmd/Ctrl+A selects everything shown, and Esc clears the selection.',

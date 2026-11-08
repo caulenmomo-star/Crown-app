@@ -2,6 +2,14 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.18.3 — Profile builder: emails, line 2 and names (2026-11-07)
+
+- Saved accounts now lists your account groups. Pick one, or use all of them.
+- New “Paste emails” option: paste a list (email:password lines work too) and each profile gets the next one.
+- Line 2 dropdown: Smart, Apt, Unit, Suite, Ste, #, Bldg, Room, Lot, Fl, a mix, number only or empty. You can also choose how many digits and add a letter.
+- Optional plain profiles: the address exactly as is with no jig, one or more per address.
+- Names count up from 1, like PKC Amex 1, PKC Amex 2, and carry on from the last one. You can also set where they start.
+
 ## v0.18.2 — Select lots at once (2026-11-07)
 
 - Shift-click a checkbox or a row to select everything between it and the last one you clicked. This works on Profiles, Accounts, Cards, Orders and the lists in windows.
