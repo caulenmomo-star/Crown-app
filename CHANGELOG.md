@@ -2,6 +2,13 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.2 — Profile builder: right count, mixed card groups (2026-11-08)
+
+- “How many” is now the total. Plain profiles (no jig) are part of it, not added on top, and the builder shows the split: plain vs with jigs.
+- Cards: tick as many card groups as you want, and open any group to pick exactly which cards to use. Shift-click picks a range, and “Only ones not on a profile” skips used cards.
+- With more than one group you choose: alternate between groups, or one group after another. It shows how many profiles your cards cover.
+- If an address runs out of unused line 2s (for example 1 digit), the builder says so. It never makes duplicate addresses quietly.
+
 ## v0.20.1 — Drops only, and made for phones (2026-11-08)
 
 - Pokémon products now shows only what Target drops online: Target’s own listings of ETBs, bundles, displays, blisters, collection and premium boxes and tins from the last two years. Single packs, decks, accessories and other sellers are gone. “Everything on Target” still shows the full list.

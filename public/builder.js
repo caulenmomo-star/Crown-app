@@ -5,7 +5,7 @@ const FIRST_NAMES = 'James Michael Robert John David William Richard Joseph Thom
 const LAST_NAMES = 'Smith Johnson Williams Brown Jones Garcia Miller Davis Rodriguez Martinez Hernandez Lopez Wilson Anderson Thomas Taylor Moore Jackson Martin Lee Thompson White Harris Clark Lewis Robinson Walker Young Allen King Wright Scott Torres Hill Green Adams Baker Nelson Carter Mitchell Roberts Turner Phillips Campbell Parker Evans Edwards Collins Stewart Morris Murphy Cook Rogers Morgan Peterson Cooper Reed Bailey Bell Howard Ward Cox Richardson Wood Watson Brooks Bennett Gray Hughes Price Sanders Myers Long Ross Foster Jensen Larsen Christensen Hansen'.split(' ');
 const pickOne = a => a[rint(0, a.length - 1)];
 const LETTERS3 = () => Array.from({ length: 3 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ'[rint(0, 23)]).join('');
-const PB = { cat: '', count: 10, prefix: '', start: '', addrs: [], addr1: '', city: '', st: '', zip: '', jig1: 'none', l2: 'smart', l2digits: '3', l2letter: false, l2pick: ['Apt', 'Unit', 'Suite', '#'], plain: false, plainN: '1', names: 'random', first: '', last: '', email: 'catchall', domain: '', gmail: '', accGroup: 'all', accAll: false, emailsPasted: '', phone: 'random', area: '', phoneFixed: '', cardGroup: '', cards: new Set(), perCard: 5, pasted: '', oneCheckout: false };
+const PB = { cat: '', count: 10, prefix: '', start: '', addrs: [], addr1: '', city: '', st: '', zip: '', jig1: 'none', l2: 'smart', l2digits: '3', l2letter: false, l2pick: ['Apt', 'Unit', 'Suite', '#'], plain: false, plainN: '1', names: 'random', first: '', last: '', email: 'catchall', domain: '', gmail: '', accGroup: 'all', accAll: false, emailsPasted: '', phone: 'random', area: '', phoneFixed: '', cardSel: new Set(), cgOpen: new Set(), cardOrder: 'alt', cards: new Set(), perCard: 5, pasted: '', oneCheckout: false };
 // line 2 styles you can pick (besides Smart and Leave empty); "mix" picks one of Apt / Unit / Suite / # for each profile
 const PB_L2 = [['smart', 'Smart — copy what gets through at that house'], ['Apt', 'Apt 123'], ['Unit', 'Unit 123'], ['Suite', 'Suite 123'], ['Ste', 'Ste 123'], ['#', '#123'], ['Bldg', 'Bldg 123'], ['Room', 'Room 123'], ['Lot', 'Lot 123'], ['Fl', 'Fl 123'], ['mix', 'Mix (Apt / Unit / Suite / #)'], ['custom', 'Custom mix — pick which ones'], ['num', 'Number only (123)'], ['none', 'Leave empty']];
 // pasted emails: one per line (or separated by commas/spaces); "email:password" lines keep just the email
@@ -15,6 +15,32 @@ function pastedEmails() {
   return out;
 }
 let pbRows = [];
+// cards you can build with: not expired, not marked dead
+const pbUsable = c => c && !cardExpired(c) && c.status !== 'dead';
+const pbCardsIn = gid => (state.cards || []).filter(c => c.groupId === gid && pbUsable(c));
+function pbCardUses() { const m = new Map(); for (const p of state.profiles) { const n = cardDigits(p.cardNumber); if (n) m.set(n, (m.get(n) || 0) + 1); } return m; }
+// the cards this build will use: the ones ticked in your card groups (alternating between groups, or one group after
+// another), then cards from your profiles and pasted ones — each card once
+function pbCards() {
+  const lists = (state.cardGroups || []).map(g => pbCardsIn(g.id).filter(c => PB.cardSel.has(c.id))).filter(l => l.length);
+  const fromGroups = [];
+  if (PB.cardOrder === 'alt') { for (let i = 0; lists.some(l => i < l.length); i++) for (const l of lists) if (i < l.length) fromGroups.push(l[i]); }
+  else lists.forEach(l => fromGroups.push(...l));
+  const seen = new Set(), out = [];
+  for (const c of [...fromGroups.map(c => ({ number: cardDigits(c.number), month: c.month, year: c.year, cvv: c.cvv, name: c.name, group: (cardGroupById(c.groupId) || {}).name || '' })), ...knownCards().filter(c => PB.cards.has(c.number)), ...pastedCards()]) {
+    if (!c.number || seen.has(c.number)) continue; seen.add(c.number); out.push(c);
+  }
+  return out;
+}
+// a line 2 nobody at this house has used: random first, then every possible one in turn so a busy house never runs out early
+function pbUnit(st, used, taken) {
+  const u = makeUnit(st, used, taken); if (u) return u;
+  const lo = st.digits <= 1 ? 1 : Math.pow(10, st.digits - 1), hi = Math.pow(10, st.digits) - 1, letters = st.letter ? 'ABCDEF'.split('') : [''];
+  const all = []; for (let v = lo; v <= hi; v++) for (const L of letters) all.push(String(v) + L);
+  for (let i = all.length - 1; i > 0; i--) { const j = rint(0, i); [all[i], all[j]] = [all[j], all[i]]; }
+  for (const v of all) { const txt = !st.type ? v : st.type === '#' ? '#' + v : st.type + ' ' + v, k = Parser.normUnit(txt); if (!used.has(k) && !taken.has(k)) { taken.add(k); return txt; } }
+  return null;
+}
 
 function knownCards() {
   const m = new Map();
@@ -84,16 +110,17 @@ function pbNameStart(prefix) {
 }
 // Build the planned profiles (not saved yet)
 function pbPlan() {
-  const addrs = pbAddrList(); const nJig = clamp(Math.round(+PB.count || 0), 0, 500);
-  const plainPer = PB.plain ? clamp(Math.round(+PB.plainN || 0), 0, 20) : 0;
-  const n = nJig + plainPer * addrs.length;
+  // "How many" is the total; plain profiles (no jig) are part of it, the rest get jigs
+  const addrs = pbAddrList(); const n = clamp(Math.round(+PB.count || 0), 0, 1000);
+  const plainPer = PB.plain ? clamp(Math.round(+PB.plainN || 0), 0, 50) : 0;
   if (!n) return { rows: [], err: 'How many profiles?' };
   if (!addrs.length) return { rows: [], err: 'Pick at least one address, or type one in.' };
-  let cards;
-  if (PB.cardGroup) cards = (state.cards || []).filter(c => c.groupId === PB.cardGroup && !cardExpired(c) && c.status !== 'dead').map(c => ({ number: c.number, month: c.month, year: c.year, cvv: c.cvv, name: c.name }));
-  else cards = [...knownCards().filter(c => PB.cards.has(c.number)), ...pastedCards()];
-  const per = Math.max(1, +PB.perCard || 1);
-  if (cards.length && cards.length * per < n) return { rows: [], err: `${plural(cards.length, 'card')} × ${per} per card only covers ${cards.length * per} profiles — add cards or allow more per card.` };
+  const nPlain = plainPer * addrs.length;
+  if (nPlain > n) return { rows: [], err: `${plural(plainPer, 'plain profile')} for each of ${plural(addrs.length, 'address')} is ${nPlain} — more than the ${n} you asked for. Make more profiles or fewer plain ones.` };
+  const nJig = n - nPlain;
+  const cards = pbCards();
+  const per = Math.max(1, Math.round(+PB.perCard || 1));
+  if (cards.length && cards.length * per < n) return { rows: [], err: `${plural(cards.length, 'card')} × ${per} per card covers ${cards.length * per} profiles, not ${n} — tick more cards or allow ${Math.ceil(n / cards.length)} per card.` };
   // each house keeps its own line-2 pool so a 2nd address doesn't collide with the 1st
   const huCache = new Map();
   const huFor = ad => { const hk = Parser.houseKey(ad.addr1, ad.zip); if (!huCache.has(hk)) huCache.set(hk, { hu: houseUnits(hk), taken: new Set() }); return huCache.get(hk); };
@@ -122,8 +149,10 @@ function pbPlan() {
     let a1 = ad.addr1;
     if (!plain && PB.jig1 === 'before') a1 = LETTERS3() + ' ' + ad.addr1; else if (!plain && PB.jig1 === 'after') a1 = ad.addr1 + ' ' + LETTERS3();
     let a2 = '';
-    if (!plain && PB.l2 === 'smart') a2 = makeUnit(pickStyle({ shipAddr2: '' }, hu.good, 'auto'), hu.used, taken) || '';
-    else if (!plain && PB.l2 !== 'none') a2 = makeUnit({ type: PB.l2 === 'num' ? '' : PB.l2 === 'mix' || PB.l2 === 'custom' ? MIX[rint(0, MIX.length - 1)] : PB.l2, digits, letter: !!PB.l2letter }, hu.used, taken) || '';
+    if (!plain && PB.l2 !== 'none') {
+      a2 = PB.l2 === 'smart' ? pbUnit(pickStyle({ shipAddr2: '' }, hu.good, 'auto'), hu.used, taken) : pbUnit({ type: PB.l2 === 'num' ? '' : PB.l2 === 'mix' || PB.l2 === 'custom' ? MIX[rint(0, MIX.length - 1)] : PB.l2, digits, letter: !!PB.l2letter }, hu.used, taken);
+      if (!a2) return { rows: [], err: `${ad.addr1} has run out of unused line 2s with ${plural(digits, 'digit')}${PB.l2letter ? ' and a letter' : ''} — pick more digits${PB.l2letter ? '' : ' or add a letter'}, or put fewer profiles on this address.` };
+    }
     let email = '', acc = null;
     if (PB.email === 'catchall') { const d = PB.domain.trim().replace(/^@/, ''); for (let t = 0; t < 50 && (!email || usedEmails.has(email)); t++) email = [`${first}.${last}${rint(10, 999)}`, `${first}${last[0] || ''}${rint(100, 9999)}`, `${first[0] || ''}${last}${rint(10, 999)}`][rint(0, 2)].toLowerCase().replace(/[^a-z0-9.]/g, '') + '@' + d; usedEmails.add(email); }
     else if (PB.email === 'gmail') email = gmailVariant(PB.gmail, usedEmails);
@@ -158,7 +187,7 @@ function renderBuilder() {
       <div class="small faint" style="margin-top:3px">Each profile gets one of the ones you tick, picked at random${PB.l2pick.length ? ` — like ${esc(PB.l2pick.slice(0, 3).map(x => x === 'num' ? '123' : x === '#' ? '#123' : x + ' 123').join(', '))}` : ''}.</div>` : ''}
     <div class="small faint" style="margin:-4px 0 8px">${PB.l2 === 'smart' ? 'Smart copies the line 2 style that has been getting through at each house.' : PB.l2 === 'none' ? 'No line 2 on these profiles.' : 'Every profile gets its own line 2 — never one already used at that house.'}</div>
     <label class="check small"><input type="checkbox" data-pbk="plain" ${PB.plain ? 'checked' : ''}> Also make plain profiles with no jig at all (the address exactly as is, no line 2)</label>
-    ${PB.plain ? `<div class="hstack pbopts"><span class="small muted">Plain per address</span><input data-pbi="plainN" inputmode="numeric" value="${esc(PB.plainN)}" style="width:70px"><span class="small muted">— on top of the ${esc(PB.count || 0)} above, so ${plural(pbRows.length || 0, 'profile')} in all</span></div>` : ''}
+    ${PB.plain ? (() => { const na = pbAddrList().length, np = (Math.round(+PB.plainN || 0)) * na, tot = Math.round(+PB.count || 0); return `<div class="hstack pbopts"><span class="small muted">Plain per address</span><input data-pbi="plainN" inputmode="numeric" value="${esc(PB.plainN)}" style="width:70px"><span class="small muted">— part of the ${tot}: <b>${np}</b> plain${na ? ` (${plural(na, 'address')})` : ''} + <b>${Math.max(0, tot - np)}</b> with jigs</span></div>`; })() : ''}
     <div class="section">Names</div>${seg('names', [['random', 'Random names'], ['first', 'Random first names'], ['same', 'One name for all']])}
     ${PB.names !== 'random' ? `<div class="fgrid" style="margin-top:8px">${PB.names === 'same' ? `<div class="s2"><label>First name</label><input data-pbi="first" value="${esc(PB.first)}"></div>` : ''}<div class="s2"><label>Last name${PB.names === 'first' ? ' (empty = random)' : ''}</label><input data-pbi="last" value="${esc(PB.last)}"></div></div>` : ''}
     <div class="section">Emails</div>${seg('email', [['catchall', 'Catch-all domain'], ['gmail', 'Gmail dot trick'], ['accounts', 'My saved accounts'], ['paste', 'Paste emails'], ['none', 'Leave empty']])}
@@ -167,13 +196,24 @@ function renderBuilder() {
     <div class="section">Phone</div>${seg('phone', [['random', 'Random numbers'], ['same', 'One number for all']])}
     <div style="margin-top:8px">${PB.phone === 'random' ? `<input data-pbi="area" value="${esc(PB.area)}" placeholder="Area code (default: from your profiles)" inputmode="numeric" maxlength="3" style="max-width:280px">` : `<input data-pbi="phoneFixed" value="${esc(PB.phoneFixed)}" inputmode="tel" style="max-width:280px">`}</div>
     <div class="section">Cards</div>
-    ${(state.cardGroups || []).length ? `<div class="hstack pbopts"><span class="small muted">Card group</span><select data-pbi="cardGroup" style="width:auto;min-width:160px"><option value="">Pick cards below</option>${state.cardGroups.map(g => `<option value="${g.id}" ${PB.cardGroup === g.id ? 'selected' : ''}>${esc(g.name)} (${(state.cards || []).filter(c => c.groupId === g.id && !cardExpired(c) && c.status !== 'dead').length})</option>`).join('')}</select><a class="small linkbtn" data-pbnav="cards">Manage cards</a></div>` : ''}
-    ${PB.cardGroup ? '' : `${kc.length ? `<div class="small muted" style="margin-bottom:6px">Cards already on your profiles:</div><div class="chips">${kc.map(c => `<button type="button" class="chip ${PB.cards.has(c.number) ? 'on' : ''}" data-pbc="${c.number}">${esc(cardBrand(c.number))} ${esc(c.number.slice(-4))} <span class="n">${c.uses}</span></button>`).join('')}</div>` : ''}
-    `}<div style="margin-top:8px" ${PB.cardGroup?'hidden':''}><label>…or paste cards (number | MM | YYYY | CVV, one per line)</label><textarea data-pbi="pasted" style="min-height:64px" spellcheck="false" placeholder="4111111111111111|12|2029|123">${esc(PB.pasted)}</textarea>${PB.pasted.trim() ? `<div class="small ${pc ? 'faint' : ''}" style="margin-top:3px;${pc ? '' : 'color:var(--danger)'}">${pc ? plural(pc, 'valid card') : 'No valid card numbers found'}</div>` : ''}</div>
+    ${(() => { const groups = state.cardGroups || [], uses = pbCardUses(), all = pbCards(), per = Math.max(1, Math.round(+PB.perCard || 1)), tot = Math.round(+PB.count || 0);
+      const gsel = groups.filter(g => pbCardsIn(g.id).some(c => PB.cardSel.has(c.id)));
+      return `${groups.length ? `<div class="small muted" style="margin-bottom:6px">Tick card groups — mix as many as you want. Open a group to pick only some of its cards.</div>
+      <div class="pbcgs">${groups.map(g => { const us = pbCardsIn(g.id), n = us.filter(c => PB.cardSel.has(c.id)).length, open = PB.cgOpen.has(g.id);
+        return `<div class="pbcg ${n ? 'on' : ''}"><div class="pbcghead"><label class="check" style="flex:1;min-width:0"><input type="checkbox" data-pbcg="${g.id}" ${n && n === us.length ? 'checked' : ''} ${n && n < us.length ? 'data-indet="1"' : ''} ${us.length ? '' : 'disabled'}> <span class="ellipsis">${esc(g.name)}</span></label><span class="small muted">${n ? n + ' of ' : ''}${plural(us.length, 'card')}</span>${us.length ? `<button type="button" class="ghost sm" data-pbcgopen="${g.id}" aria-expanded="${open}">${open ? 'Done ▴' : 'Pick cards ▾'}</button>` : ''}</div>
+        ${open ? `<div class="pbcglist"><div class="hstack" style="gap:6px;margin-bottom:4px"><button type="button" class="sm ghost" data-pbcgset="${g.id}" data-v="all">All</button><button type="button" class="sm ghost" data-pbcgset="${g.id}" data-v="none">None</button><button type="button" class="sm ghost" data-pbcgset="${g.id}" data-v="fresh">Only ones not on a profile</button></div>
+          ${us.map(c => { const u = uses.get(cardDigits(c.number)) || 0; return `<label class="check small pbcard" title="${esc(cardBrand(c.number))} ending ${esc(cardDigits(c.number).slice(-4))}${u ? ' · on ' + plural(u, 'profile') : ' · not on a profile yet'}"><input type="checkbox" data-pbcard="${c.id}" ${PB.cardSel.has(c.id) ? 'checked' : ''}><span class="mono nw">•••• ${esc(cardDigits(c.number).slice(-4))}</span><span class="faint nw">${esc(c.month)}/${esc(String(c.year).slice(-2))}</span><span class="ellipsis grow">${esc(c.name || cardBrand(c.number))}</span>${u ? `<span class="faint nw">on ${plural(u, 'profile')}</span>` : '<span class="nw pbfresh">unused</span>'}</label>`; }).join('')}</div>` : ''}</div>`; }).join('')}</div>
+      ${gsel.length > 1 ? `<div class="hstack pbopts"><span class="small muted">Order</span><div class="chips"><button type="button" class="chip ${PB.cardOrder === 'alt' ? 'on' : ''}" data-pb="cardOrder" data-v="alt">Alternate between groups</button><button type="button" class="chip ${PB.cardOrder === 'seq' ? 'on' : ''}" data-pb="cardOrder" data-v="seq">One group after another</button></div></div>` : ''}
+      <a class="small linkbtn" data-pbnav="cards">Manage cards</a>` : ''}
+      <details class="addmanual" ${!groups.length || PB.pasted.trim() || PB.cards.size ? 'open' : ''} style="margin-top:8px"><summary class="small">＋ Cards already on your profiles, or paste cards</summary>
+        ${kc.length ? `<div class="small muted" style="margin:6px 0">Cards already on your profiles:</div><div class="chips">${kc.map(c => `<button type="button" class="chip ${PB.cards.has(c.number) ? 'on' : ''}" data-pbc="${c.number}">${esc(cardBrand(c.number))} ${esc(c.number.slice(-4))} <span class="n">${c.uses}</span></button>`).join('')}</div>` : ''}
+        <div style="margin-top:8px"><label>Paste cards (number | MM | YYYY | CVV, one per line)</label><textarea data-pbi="pasted" style="min-height:64px" spellcheck="false" placeholder="4111111111111111|12|2029|123">${esc(PB.pasted)}</textarea>${PB.pasted.trim() ? `<div class="small ${pc ? 'faint' : ''}" style="margin-top:3px;${pc ? '' : 'color:var(--danger)'}">${pc ? plural(pc, 'valid card') : 'No valid card numbers found'}</div>` : ''}</div></details>
+      <div class="small ${all.length && all.length * per < tot ? '' : 'muted'}" style="margin-top:8px;${all.length && all.length * per < tot ? 'color:var(--warn)' : ''}">${all.length ? `<b>${plural(all.length, 'card')}</b> × ${per} per card = room for ${all.length * per} profiles${tot ? ` · you’re making ${tot}${all.length * per >= tot ? ` (${plural(Math.ceil(tot / per), 'card')} used)` : ''}` : ''}` : 'No cards picked — the profiles are made without a card.'}</div>`; })()}
     <div class="hstack pbopts"><span class="small muted">Profiles per card</span><input data-pbi="perCard" inputmode="numeric" value="${esc(PB.perCard)}" style="width:80px"></div>
     <label class="check small" style="margin-top:8px"><input type="checkbox" data-pbk="oneCheckout" ${PB.oneCheckout ? 'checked' : ''}> Only one checkout per profile</label>
     <div class="section">Preview</div>
     ${plan.err ? `<div class="note warn small">${esc(plan.err)}</div>` : `<div class="pbprev">${pbRows.slice(0, 8).map(r => `<div class="pbrow"><b>${esc(r.name)}</b><span>${esc(r.first)} ${esc(r.last)}</span><span>${esc(r.a1)}${r.a2 ? ', ' + esc(r.a2) : ''}${r.plain ? ' <span class="badge">no jig</span>' : ''}</span><span class="faint">${esc(r.email || '—')}</span><span class="faint">${r.card ? '•••• ' + esc(r.card.number.slice(-4)) : 'no card'}</span></div>`).join('')}${pbRows.length > 8 ? `<div class="small muted" style="padding:6px 0">…and ${pbRows.length - 8} more</div>` : ''}</div>`}`;
+  $$('#pbBody [data-indet]').forEach(x => { x.indeterminate = true; });
   $('#pbGo').disabled = !pbRows.length; $('#pbGo').textContent = pbRows.length ? `Create ${plural(pbRows.length, 'profile')}` : 'Create';
 }
 function openBuilder() {
@@ -184,6 +224,8 @@ function wireBuilder() {
   const body = $('#pbBody'); const rer = debounce(() => { const a = document.activeElement, k = a && a.dataset && a.dataset.pbi, pos = a && a.selectionStart; renderBuilder(); if (k) { const el = $(`#pbBody [data-pbi="${k}"]`); if (el) { el.focus(); try { el.setSelectionRange(pos, pos); } catch (_) { } } } }, 350);
   body.addEventListener('click', e => {
     const b = e.target.closest('[data-pb]'); if (b) { PB[b.dataset.pb] = b.dataset.v; renderBuilder(); return; }
+    const go1 = e.target.closest('[data-pbcgopen]'); if (go1) { const g = go1.dataset.pbcgopen; PB.cgOpen.has(g) ? PB.cgOpen.delete(g) : PB.cgOpen.add(g); renderBuilder(); return; }
+    const gs = e.target.closest('[data-pbcgset]'); if (gs) { const uses = pbCardUses(); pbCardsIn(gs.dataset.pbcgset).forEach(c => { const on = gs.dataset.v === 'all' || (gs.dataset.v === 'fresh' && !uses.get(cardDigits(c.number))); on ? PB.cardSel.add(c.id) : PB.cardSel.delete(c.id); }); renderBuilder(); return; }
     const c = e.target.closest('[data-pbc]'); if (c) { const n = c.dataset.pbc; PB.cards.has(n) ? PB.cards.delete(n) : PB.cards.add(n); renderBuilder(); return; }
     const at = e.target.closest('[data-addtoggle]'); if (at) { const o = addrOptions().find(x => x.key === at.dataset.addtoggle); if (o) pbAddrToggle(o); renderBuilder(); return; }
     const arm = e.target.closest('[data-addrm]'); if (arm) { PB.addrs = PB.addrs.filter(a => a.key !== arm.dataset.addrm); renderBuilder(); return; }
@@ -193,7 +235,9 @@ function wireBuilder() {
     const nv = e.target.closest('[data-pbnav]'); if (nv) { closeDlg('dlgBuild'); go(nv.dataset.pbnav); }
   });
   body.addEventListener('input', e => { const k = e.target.dataset.pbi; if (!k || e.target.tagName === 'SELECT') return; PB[k] = e.target.value; rer(); });
-  body.addEventListener('change', e => { const k = e.target.dataset.pbi; if (k && e.target.tagName === 'SELECT') { PB[k] = e.target.value; renderBuilder(); } const kk = e.target.dataset.pbk; if (kk) { PB[kk] = e.target.checked; if (kk !== 'oneCheckout') renderBuilder(); } });
+  body.addEventListener('change', e => { const k = e.target.dataset.pbi; if (k && e.target.tagName === 'SELECT') { PB[k] = e.target.value; renderBuilder(); } const cg = e.target.dataset.pbcg; if (cg) { const us = pbCardsIn(cg), on = e.target.checked; us.forEach(c => on ? PB.cardSel.add(c.id) : PB.cardSel.delete(c.id)); renderBuilder(); return; }
+    const cd = e.target.dataset.pbcard; if (cd) { e.target.checked ? PB.cardSel.add(cd) : PB.cardSel.delete(cd); clearTimeout(PB._rt); PB._rt = setTimeout(renderBuilder, 0); return; }  // shift-click ticks a whole range, then one redraw
+    const kk = e.target.dataset.pbk; if (kk) { PB[kk] = e.target.checked; if (kk !== 'oneCheckout') renderBuilder(); } });
   $('#pbReroll').onclick = () => renderBuilder();
   $('#pbGo').onclick = async () => {
     const rows = pbRows.slice(); if (!rows.length) return;

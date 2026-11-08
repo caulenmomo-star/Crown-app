@@ -14,7 +14,7 @@ const SELR = [
   { attr: 'data-oid', row: '.olist .ocard[data-oid]', cards: true, set: () => oSelected, draw: () => PAGES.orders.render(), page: 'orders', on: () => oSelMode || oSelected.size > 0 },
 ];
 // checkbox lists in windows: their own change handlers do the work
-const SELR_DOM = ['data-ifo', 'data-fon', 'data-pbk'];
+const SELR_DOM = ['data-ifo', 'data-fon', 'data-pbk', 'data-pbcard'];
 const SR_ANCHOR = {};
 const srShown = el => !!(el.offsetParent || el.getClientRects().length);
 function srIds(g) {

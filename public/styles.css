@@ -1148,3 +1148,12 @@ a.btn:hover{background:var(--panel3)}
 @media (max-width:760px){.daterange{flex-wrap:nowrap;max-width:100%;min-width:0}.daterange input[type=date]{flex:1 1 0;min-width:0;width:auto!important}}
 @media (max-width:760px){.pacts>.daterange{flex:1 1 100%}}
 @media (max-width:760px){.daterange input[type=date]{width:0!important;flex:1 1 0;min-width:0;max-width:none}.daterange{width:100%}}
+/* profile builder: card groups */
+.pbcgs{display:flex;flex-direction:column;gap:6px}
+.pbcg{border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
+.pbcg.on{border-color:color-mix(in srgb,var(--accent) 55%,var(--line))}
+.pbcghead{display:flex;align-items:center;gap:10px;padding:6px 10px}
+.pbcglist{border-top:1px solid var(--line);padding:8px 10px;max-height:260px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.pbcard{display:flex;gap:6px;align-items:center;min-width:0}
+.pbcard{flex-wrap:nowrap;gap:8px}.pbcard .nw{white-space:nowrap;flex:0 0 auto}.pbcard .grow{flex:1 1 auto;min-width:0}
+.pbcard .pbfresh{font-size:11px;color:var(--ok)}
