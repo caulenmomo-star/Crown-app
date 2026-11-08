@@ -1,4 +1,4 @@
-/* Crown Tools - SKU lists. Saved lists of product SKUs (Target TCINs, Walmart item numbers, Best Buy SKUs, product links
+/* Kingpin - SKU lists. Saved lists of product SKUs (Target TCINs, Walmart item numbers, Best Buy SKUs, product links
    or barcodes) to paste into checkout bots. Each SKU is looked up on the store's own product page for its name and
    picture; its price comes from that page when it shows one, from what you paid in your orders, or from you. The
    TCGplayer value shows too when it's a trading-card product. */
@@ -100,7 +100,7 @@ PAGES.skus = {
         <div class="card"><div class="hstack" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0;flex:1;min-width:160px" class="ellipsis">${esc(l.name)}</h3>
           <select id="sklStore" style="width:auto" aria-label="Store">${SKU_STORES.map(s => `<option ${s === l.store ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
           <button class="sm ghost" id="sklRen">Rename</button><button class="sm ghost" id="sklDup">Duplicate</button><button class="sm ghost danger" id="sklDel">Delete</button></div>
-          <textarea id="sklAdd" rows="3" placeholder="Paste SKUs or product links — one per line, or separated by commas. ${l.store === 'Target' ? 'Target: the TCIN (the number after A- in the link) or the whole link.' : 'A product link works best — Crown Tools reads the product from it.'}" style="margin-top:10px"></textarea>
+          <textarea id="sklAdd" rows="3" placeholder="Paste SKUs or product links — one per line, or separated by commas. ${l.store === 'Target' ? 'Target: the TCIN (the number after A- in the link) or the whole link.' : 'A product link works best — Kingpin reads the product from it.'}" style="margin-top:10px"></textarea>
           <div class="hstack" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="primary" id="sklAddBtn">Add SKUs</button><span class="small faint">Each one is looked up for its name, picture and price.</span></div></div>
         ${l.items.length ? `<div class="card"><div class="hstack" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>For your bot</b><span class="small faint">${plural(l.items.length, 'SKU')}${total ? ' · about ' + fmtMoney(total) + ' for everything' : ''}</span><span class="spacer"></span>
             <button class="sm" id="sklCopyLines">Copy, one per line</button><button class="sm" id="sklCopyComma">Copy, comma separated</button><button class="sm ghost" id="sklCsv">Download CSV</button></div>
@@ -116,7 +116,7 @@ PAGES.skus = {
               <td class="num"><input class="skqty" data-skqty="${i.id}" type="number" min="1" max="99" value="${Number(i.qty) || 1}" inputmode="numeric" aria-label="Quantity"></td>
               <td class="num" style="white-space:nowrap"><button class="sm ghost" data-skedit="${i.id}">Edit</button><button class="sm ghost" data-skdel="${i.id}" aria-label="Remove">✕</button></td></tr>`; }).join('')}
           </tbody></table></div>${!items.length ? '<div class="empty">No SKUs match.</div>' : ''}` : `<div class="empty">No SKUs in this list yet. Paste some above.</div>`}
-      </div></div>` : `<div class="empty">Save the SKUs you run in your bots, grouped into lists like “Pokémon restock” or “Target drops”. Paste a pile of SKUs or product links and Crown Tools shows what each product is and what it costs. <div style="margin-top:12px"><button class="primary" id="sklNew2">Make your first list</button></div></div>`}`;
+      </div></div>` : `<div class="empty">Save the SKUs you run in your bots, grouped into lists like “Pokémon restock” or “Target drops”. Paste a pile of SKUs or product links and Kingpin shows what each product is and what it costs. <div style="margin-top:12px"><button class="primary" id="sklNew2">Make your first list</button></div></div>`}`;
     const mk = async () => { const n = await askText('New SKU list', '', { placeholder: 'Pokémon restock, Target drops…', ok: 'Make list' }); if (!n || !n.trim()) return; const x = newSkuList(n, l ? l.store : 'Target'); state.skuLists.push(x); SK.list = x.id; save(); PAGES.skus.render(); setTimeout(() => $('#sklAdd') && $('#sklAdd').focus(), 50); };
     $('#sklNew').onclick = mk; if ($('#sklNew2')) $('#sklNew2').onclick = mk; if ($('#sklNew3')) $('#sklNew3').onclick = mk;
     pg.querySelectorAll('[data-skl]').forEach(b => b.onclick = () => { SK.list = b.dataset.skl; SK.q = ''; PAGES.skus.render(); });

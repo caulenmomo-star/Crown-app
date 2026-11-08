@@ -1,4 +1,4 @@
-/* Crown Tools - pre-orders. Stores email when a pre-order's card is declined (so you can update it) and again when the
+/* Kingpin - pre-orders. Stores email when a pre-order's card is declined (so you can update it) and again when the
    updated card is charged. This page lists every pre-order with where its payment stands, so you can see at a glance
    which declined ones you've already updated and which you still need to fix. */
 'use strict';
@@ -23,7 +23,7 @@ function payState(o) {
   if (D && (P > D || shippedNow)) return { k: 'paid', declines, at: P > D ? P : o.statusAt || '', by: P > D ? 'email' : 'shipped', fixedAt: F > D ? F : '' };
   if (D && F > D) return { k: 'updated', declines, at: F, declinedAt: D };
   if (D) return { k: 'declined', declines, at: D, last4: d.last4 || o.last4 || '', due: d.deadline || '', late: !!d.deadline && d.deadline < todayKey() };
-  // the store says the payment method was updated, even if its decline email never reached Crown Tools
+  // the store says the payment method was updated, even if its decline email never reached Kingpin
   if (P) return { k: 'paid', declines, at: P, by: 'email', fixedAt: F };
   return { k: 'ok', declines, at: '' };
 }
@@ -91,7 +91,7 @@ PAGES.preorders = {
       <div class="toolbar"><input class="search" data-search id="preQ" placeholder="Search order #, item, profile, email, last 4…" value="${esc(PRE.q)}">
         <div class="pills" id="preF">${PRE_FILTERS.map(([k, l]) => `<button class="chip ${PRE.f === k ? 'on' : ''}" data-pref="${k}">${l}<span class="n">${cnt(k)}</span></button>`).join('')}</div></div>
       ${list.length ? `<div class="olist">${list.map(x => preCardHtml(x.o)).join('')}</div>`
-        : `<div class="empty">${all.length ? (PRE.f === 'todo' ? 'Nothing needs a new payment method right now. 👑' : 'No pre-orders match.') : 'No pre-orders yet. Crown Tools spots pre-orders from the store’s emails — the order confirmation, the “we’ll charge your card soon” reminder, and the card-declined and payment-successful emails — and lists them here so you can see which declined ones you’ve already updated.'}</div>`}
+        : `<div class="empty">${all.length ? (PRE.f === 'todo' ? 'Nothing needs a new payment method right now. 👑' : 'No pre-orders match.') : 'No pre-orders yet. Kingpin spots pre-orders from the store’s emails — the order confirmation, the “we’ll charge your card soon” reminder, and the card-declined and payment-successful emails — and lists them here so you can see which declined ones you’ve already updated.'}</div>`}
       <div class="note small">How it works: a pre-order is any order the store’s emails call a pre-order, or one placed 10+ days ago that hasn’t shipped. Pre-orders cancelled for item demand or a quantity limit aren’t shown here; ones the store cancelled because the card wasn’t changed in time are under <b>Cancelled — card not updated</b>. When the store emails that you need to update the payment method, it goes under <b>Needs updating</b>. Change the card on the store’s site, then tap <b>I updated it</b>. If the store sends a “payment updated / successful” email, or the order ships, that confirms it. Pre-orders that never got an update email went through.</div>`;
     $('#preQ').oninput = debounce(e => { PRE.q = e.target.value; PAGES.preorders.render(); }, 160);
     pg.querySelectorAll('[data-pref]').forEach(b => b.onclick = () => { PRE.f = b.dataset.pref; PAGES.preorders.render(); });

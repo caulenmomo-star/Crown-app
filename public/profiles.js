@@ -1,4 +1,4 @@
-/* Crown Tools - Profiles: categories, table, edit, mass import, bulk edit, address line 2, quick tools, export. */
+/* Kingpin - Profiles: categories, table, edit, mass import, bulk edit, address line 2, quick tools, export. */
 'use strict';
 const FIELDS = [
   { k: 'name', l: 'Profile name', g: 'General', w: 2 },
@@ -560,7 +560,7 @@ const botIcon = f => `<span class="boticon" style="background:${f.color}">${esc(
 const EXP_FORMATS = () => [
   ...(typeof BotFormats !== 'undefined' ? BotFormats.FORMATS.map(f => ({ id: f.id, name: f.name, sub: f.ext, icon: botIcon(f) })) : []),
   { id: 'csv', name: 'Spreadsheet', sub: '.csv', icon: '<span class="boticon" style="background:#323a4c">≡</span>' },
-  { id: 'json', name: 'Crown Tools', sub: '.json', icon: '<span class="boticon" style="background:#323a4c">{ }</span>' },
+  { id: 'json', name: 'Kingpin', sub: '.json', icon: '<span class="boticon" style="background:#323a4c">{ }</span>' },
 ];
 function renderExport() {
   $('#expScope').innerHTML = [['sel', `Selected (${selected.size})`], ['view', `Current view (${visibleProfiles().length})`], ['all', `All (${state.profiles.length})`]].map(([v, l]) => `<button class="chip ${EXP.scope === v ? 'on' : ''}" data-v="${v}" ${v === 'sel' && !selected.size ? 'disabled' : ''}>${l}</button>`).join('');
@@ -576,7 +576,7 @@ $('#expGo').onclick = () => {
   const bot = typeof BotFormats !== 'undefined' && BotFormats.byId[EXP.fmt];
   if (bot) {
     const cats = new Set(list.map(p => p.categoryId));
-    const base = (cats.size === 1 ? catName([...cats][0]) : 'Crown Tools profiles').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'profiles';
+    const base = (cats.size === 1 ? catName([...cats][0]) : 'Kingpin profiles').replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'profiles';
     download(base + bot.ext, bot.write(list), bot.csv ? 'text/csv' : 'application/json');
     closeDlg('dlgExport'); toast(`Exported ${plural(list.length, 'profile')} for ${bot.name}`); return;
   }

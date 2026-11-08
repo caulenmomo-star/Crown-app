@@ -1,4 +1,4 @@
-/* Crown Tools - Dashboard, Calendar, Spending (+ share card), Inboxes, Settings. */
+/* Kingpin - Dashboard, Calendar, Spending (+ share card), Inboxes, Settings. */
 'use strict';
 
 // second line for dashboard rows: store, where it's going, what it cost
@@ -79,13 +79,13 @@ PAGES.dashboard = {
       badProfiles && [`${plural(badProfiles, 'profile')} with missing or wrong details (expired cards, typos)`, 'profiles', () => { issuesOnly = true; pFilter = 'all'; }],
       ...badInbox.map(a => [`Inbox ${a.label || a.user}: ${a.lastResult.error}`, 'inboxes', null]),
       (() => { const accs = state.imapAccounts.filter(a => a.enabled !== false); if (!accs.length) return false; const last = Math.max(0, ...accs.map(a => a.lastSync || 0)); return Date.now() - last > 3 * 3600e3 && [`Email last checked ${last ? ago(last) : 'never'} — tap to check now`, 'dashboard', () => syncAll(true)]; })(),
-      state.unparsed.length && [`${plural(state.unparsed.length, 'order email')} Crown Tools couldn’t read`, 'inboxes', null],
+      state.unparsed.length && [`${plural(state.unparsed.length, 'order email')} Kingpin couldn’t read`, 'inboxes', null],
       (() => { const n = suggestedDuplicates().length; return n && [`${plural(n, 'possible duplicate order')} to review`, 'orders', () => setTimeout(() => { cleanTab = 'dupes'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
       (() => { const n = state.orders.filter(isSuspicious).length; return n && [`${plural(n, 'order')} that don’t look like real store orders`, 'orders', () => setTimeout(() => { cleanTab = 'junk'; renderCleanup(); openDlg('dlgClean'); }, 50)]; })(),
     ].filter(Boolean);
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
-      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Crown Tools reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
+      ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Kingpin reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
 <button class="chip ${DASH.from || DASH.to || DASH.custom ? 'on' : ''}" id="dCustom">Custom</button>
         <span class="hstack rangeins" style="gap:6px" ${DASH.from || DASH.to || DASH.custom ? '' : 'hidden'}><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
@@ -435,7 +435,7 @@ function drawShareCard(cv, d, img) {
       y += rowH;
     });
   }
-  ctx.fillStyle = 'rgba(255,255,255,.44)'; ctx.font = `500 22px ${F}`; ctx.fillText('Made with Crown Tools · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), L, H - 60);
+  ctx.fillStyle = 'rgba(255,255,255,.44)'; ctx.font = `500 22px ${F}`; ctx.fillText('Made with Kingpin · ' + new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), L, H - 60);
 }
 
 /* ================= inboxes ================= */
@@ -471,7 +471,7 @@ function renderInboxDlg() {
     <div class="section">On the first sync, look back</div><div class="chips" id="ibLook">${LOOKBACKS.map(d => `<button class="chip ${a.lookback === d ? 'on' : ''}" data-d="${d}">${d} days</button>`).join('')}</div>
     <details style="margin-top:14px" ${a.provider === 'other' ? 'open' : ''}><summary class="small muted" style="cursor:pointer">Server settings</summary>
       <div class="fgrid" style="margin-top:10px"><div class="s2"><label>IMAP server</label><input id="ibHost" value="${esc(a.host)}" placeholder="imap.example.com"></div><div><label>Port</label><input id="ibPort" inputmode="numeric" value="${esc(a.port)}"></div><div><label>&nbsp;</label><label class="check"><input type="checkbox" id="ibSsl" ${a.ssl !== false ? 'checked' : ''}> Use SSL</label></div></div></details>
-    <div class="small faint" style="margin-top:12px">Crown Tools only reads mail (it never marks anything read, moves or deletes it). Your password is stored encrypted with the rest of your data and is only ever sent to your mail provider.</div>`;
+    <div class="small faint" style="margin-top:12px">Kingpin only reads mail (it never marks anything read, moves or deletes it). Your password is stored encrypted with the rest of your data and is only ever sent to your mail provider.</div>`;
   $('#ibProv').onclick = e => { const b = e.target.closest('[data-p]'); if (!b) return; collectInbox(); const p = PROVIDERS[b.dataset.p]; Object.assign(inboxEdit, { provider: b.dataset.p, host: p.host || inboxEdit.host, port: p.port, ssl: true, folder: p.folder }); inboxFolders = null; renderInboxDlg(); };
   $('#ibLook').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; collectInbox(); inboxEdit.lookback = +b.dataset.d; renderInboxDlg(); };
 }
@@ -483,7 +483,7 @@ function collectInbox() {
 const accPayload = a => ({ host: a.host, port: a.port, ssl: a.ssl !== false, user: a.user, pass: a.pass, folder: a.folder || 'INBOX', gmail: a.provider === 'gmail' });
 $('#inboxTest').onclick = async () => {
   const a = collectInbox(); const st = $('#inboxStatus');
-  if (!SERVER) { st.innerHTML = '<span style="color:var(--danger)">Open Crown Tools with Start Crown Tools to connect email.</span>'; return; }
+  if (!SERVER) { st.innerHTML = '<span style="color:var(--danger)">Open Kingpin with Start Kingpin to connect email.</span>'; return; }
   if (!a.user || !a.pass || !a.host) { st.innerHTML = '<span style="color:var(--danger)">Fill in the email, app password and server first.</span>'; return; }
   st.innerHTML = '<span class="muted">Connecting…</span>'; $('#inboxTest').disabled = true;
   try {
@@ -509,10 +509,10 @@ $('#inboxSave').onclick = () => {
 PAGES.inboxes = {
   render() {
     const pg = $('#pg-inboxes'); const S = state.settings;
-    pg.innerHTML = `<div class="pagehead"><h1>Inboxes</h1><span class="sub">Crown Tools reads order emails from these and keeps your orders up to date</span><div class="spacer"></div>
+    pg.innerHTML = `<div class="pagehead"><h1>Inboxes</h1><span class="sub">Kingpin reads order emails from these and keeps your orders up to date</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="ibReread" ${syncing || rereading || !SERVER ? 'disabled' : ''} title="Re-read every order email and refill totals, items, pictures, addresses and houses">${rereading ? 'Re-reading…' : 'Re-read all order emails'}</button><button id="ibSyncAll" ${syncing || !SERVER ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync all now'}</button>` : ''}<button class="primary" id="ibAdd">+ Add inbox</button></div>
-      ${!SERVER ? '<div class="note bad" style="margin:0 0 14px">Email sync needs Crown Tools’ helper. Close this tab and open Crown Tools with <b>Start Crown Tools</b>.</div>' : ''}
-      <div class="card" style="margin-bottom:14px"><h3>Automatic sync</h3><div class="chips" id="ibAuto">${[[0, 'Only when I open it'], [1, 'Every minute'], [2, 'Every 2 min'], [5, 'Every 5 min'], [15, 'Every 15 min'], [30, 'Every 30 min']].map(([v, l]) => `<button class="chip ${S.autoSyncMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div><div class="small faint" style="margin-top:8px">Crown Tools always checks your email when you open it or come back to it, then on this schedule while it’s open.${syncNextAt && S.autoSyncMin ? ' Next sync ' + new Date(syncNextAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '.' : ''}</div></div>
+      ${!SERVER ? '<div class="note bad" style="margin:0 0 14px">Email sync needs Kingpin’ helper. Close this tab and open Kingpin with <b>Start Kingpin</b>.</div>' : ''}
+      <div class="card" style="margin-bottom:14px"><h3>Automatic sync</h3><div class="chips" id="ibAuto">${[[0, 'Only when I open it'], [1, 'Every minute'], [2, 'Every 2 min'], [5, 'Every 5 min'], [15, 'Every 15 min'], [30, 'Every 30 min']].map(([v, l]) => `<button class="chip ${S.autoSyncMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div><div class="small faint" style="margin-top:8px">Kingpin always checks your email when you open it or come back to it, then on this schedule while it’s open.${syncNextAt && S.autoSyncMin ? ' Next sync ' + new Date(syncNextAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + '.' : ''}</div></div>
       ${state.imapAccounts.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));margin-bottom:14px">${state.imapAccounts.map(a => { const r = a.lastResult; const busy = syncingIds.has(a.id); const P = PROVIDERS[a.provider] || PROVIDERS.other; return `<div class="card">
         <h3><span class="dot ${busy ? 'busy' : a.enabled === false ? '' : r && r.error ? 'bad' : a.lastSync ? 'ok' : 'warn'}"></span><span class="ellipsis">${esc(a.label || a.user)}</span><span class="spacer"></span><span class="badge">${esc(P.name)}</span></h3>
         <div class="small muted">${esc(a.user)} · ${esc(a.folder || 'INBOX')}</div>
@@ -521,8 +521,8 @@ PAGES.inboxes = {
         : `<div class="card" style="margin-bottom:14px"><div class="empty">No inboxes yet. Add the inbox your order emails go to — Gmail, iCloud (including Hide My Email), Yahoo, catch-all domains and more.</div></div>`}
       ${discordCard()}
       <div class="cols2">
-        <div class="card"><h3>Emails Crown Tools couldn’t read <span class="badge">${state.unparsed.length}</span><span class="spacer"></span>${state.unparsed.length ? '<button class="sm ghost" id="ibClearUn">Clear</button>' : ''}</h3>
-          ${state.unparsed.length ? `<div class="small muted" style="margin-bottom:8px">These looked like order emails but had no order number Crown Tools could find. If a store’s emails keep landing here, send a sample to Claude so the reader can be tuned.</div><div class="list">${state.unparsed.slice(0, 40).map(u => `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(u.subject)}</div><div class="small faint ellipsis">${esc(u.from)} · ${fmtDT(u.date)}</div></div><button class="sm" data-unhide="${esc(u.messageId)}">Hide</button><button class="sm" data-unign="${esc(Parser.senderKey(u.from))}" ${Parser.senderKey(u.from) ? '' : 'disabled'}>Ignore sender</button></div>`).join('')}</div>` : '<div class="empty sm">Nothing here. 👑</div>'}</div>
+        <div class="card"><h3>Emails Kingpin couldn’t read <span class="badge">${state.unparsed.length}</span><span class="spacer"></span>${state.unparsed.length ? '<button class="sm ghost" id="ibClearUn">Clear</button>' : ''}</h3>
+          ${state.unparsed.length ? `<div class="small muted" style="margin-bottom:8px">These looked like order emails but had no order number Kingpin could find. If a store’s emails keep landing here, send a sample to Claude so the reader can be tuned.</div><div class="list">${state.unparsed.slice(0, 40).map(u => `<div class="li"><div style="flex:1;min-width:0"><div class="ellipsis">${esc(u.subject)}</div><div class="small faint ellipsis">${esc(u.from)} · ${fmtDT(u.date)}</div></div><button class="sm" data-unhide="${esc(u.messageId)}">Hide</button><button class="sm" data-unign="${esc(Parser.senderKey(u.from))}" ${Parser.senderKey(u.from) ? '' : 'disabled'}>Ignore sender</button></div>`).join('')}</div>` : '<div class="empty sm">Nothing here. 👑</div>'}</div>
         <div class="card"><h3>Sync log</h3>${state.syncLog.length ? `<div class="list">${state.syncLog.slice(0, 25).map(l => `<div class="li"><span class="dot ${l.error ? 'bad' : 'ok'}"></span><div style="flex:1;min-width:0" class="small"><div class="ellipsis">${esc(l.label)}: ${l.error ? esc(l.error) : `${plural(l.found, 'email')} read · ${l.created} new · ${l.updated} updated`}</div><div class="faint">${fmtDT(l.at)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No syncs yet.</div>'}</div>
       </div>`;
     $('#ibAdd').onclick = () => openInbox(null);
@@ -540,7 +540,7 @@ PAGES.inboxes = {
         if (el.dataset.ia === 'sync') syncAll(true, [id]);
         else if (el.dataset.ia === 'edit') openInbox(id);
         else if (el.dataset.ia === 'toggle') { a.enabled = a.enabled === false; save(); refresh(); }
-        else if (el.dataset.ia === 'del') { if (!await ask(`Remove ${a.label || a.user}? Orders already found stay in Crown Tools.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
+        else if (el.dataset.ia === 'del') { if (!await ask(`Remove ${a.label || a.user}? Orders already found stay in Kingpin.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }
       };
     });
   },
@@ -556,7 +556,7 @@ PAGES.settings = {
       ${typeof installCardHtml === 'function' ? installCardHtml() : ''}
       ${CLOUD && typeof Account !== 'undefined' ? Account.card() : ''}
       <div class="card" id="themeCard" style="margin-bottom:14px"><h3>Look</h3><div class="themes">${THEMES_UI.map(([k, l, d]) => `<button class="themeopt ${(S.theme || DEFAULT_THEME) === k ? 'on' : ''}" data-theme-pick="${k}"><span class="tswatch t-${k}"><i></i><i></i><i></i></span><span class="tname">${esc(l)}</span><span class="small faint">${esc(d)}</span></button>`).join('')}</div>
-        <label class="check" style="margin-top:12px"><input type="checkbox" id="setBg3d" ${document.documentElement.classList.contains('bg3d') ? 'checked' : ''}> 3D background picture <span class="small faint">(this device)</span></label></div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="setBg3d" ${document.documentElement.classList.contains('bg3d') ? 'checked' : ''}> Soft glow behind the page <span class="small faint">(this device)</span></label></div>
       <div class="cols2">
         <div class="card"><h3>Security</h3>
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
@@ -564,7 +564,7 @@ PAGES.settings = {
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
         ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
-          <div class="small muted" style="margin-bottom:10px">Crown Tools looks up every package: every scan, the arrival date, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page; orders and the calendar update on their own. Keys stay encrypted inside your Crown Tools data.</div>
+          <div class="small muted" style="margin-bottom:10px">Kingpin looks up every package: every scan, the arrival date, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page; orders and the calendar update on their own. Keys stay encrypted inside your Kingpin data.</div>
           <div class="section" style="margin-top:6px">17TRACK (recommended) ${S.s17Key ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</div>
           <div class="small faint" style="margin-bottom:6px">Tracks any UPS, FedEx, USPS, OnTrac, LaserShip or DHL package by its number, including packages shipped to you, with no carrier account. The first 200 packages are free, then it’s about 2¢ a package. Each package counts once, however often it’s checked. Sign up at api.17track.net → Settings → Security Key → copy it. <a href="https://api.17track.net/en" target="_blank" rel="noopener">Open 17TRACK ↗</a>${S.s17Key && S.s17Left != null ? ` · <b>${esc(String(S.s17Left))}</b> package${S.s17Left === 1 ? '' : 's'} left on your plan` : ''}</div>
           <div class="hstack" style="flex-wrap:wrap"><input id="s17Key" type="password" autocomplete="off" placeholder="17TRACK Security Key" value="${esc(S.s17Key || '')}" style="flex:1;min-width:200px"><button id="s17Save">Save &amp; test</button>${S.s17Key ? '<button class="ghost" id="s17Del">Remove</button>' : ''}</div>
@@ -583,12 +583,12 @@ PAGES.settings = {
         <div class="card"><h3>Stores to track</h3>
           <div class="small muted" style="margin-bottom:8px">Order emails from stores that aren’t selected are skipped. Leave all on to track everything.</div>
           <div class="chips" id="stStores"><button class="chip ${trackAll ? 'on' : ''}" data-s="__all">All stores</button>${Parser.STORES.filter(s => s.key !== 'other').sort((a, b) => a.label.localeCompare(b.label)).concat([{ key: '__shopify', label: 'Any Shopify store' }]).map(s => `<button class="chip ${!trackAll && S.trackedStores.includes(s.key) ? 'on' : ''}" data-s="${s.key}">${esc(s.label)}</button>`).join('')}</div>
-          <div class="section">Stores Crown Tools doesn’t recognize</div>
+          <div class="section">Stores Kingpin doesn’t recognize</div>
           <div class="small muted" style="margin-bottom:8px">Off by default, so food delivery, app receipts and other non-store emails don’t become orders.</div>
           <div class="chips"><button class="chip ${S.trackUnknown ? '' : 'on'}" id="stUnkOff">Ignore them</button><button class="chip ${S.trackUnknown ? 'on' : ''}" id="stUnkOn">Track them too</button></div>
           ${(S.ignoredSenders || []).length ? `<div class="section">Ignored senders</div><div class="chips">${S.ignoredSenders.map(k => `<button class="chip" data-unign="${esc(k)}" title="Stop ignoring">${esc(k)} ✕</button>`).join('')}</div>` : ''}</div>
         <div class="card" id="alertCard"><h3>Discord alerts</h3>
-          <div class="small muted" style="margin-bottom:10px">Post to a Discord channel when a package is out for delivery, delivered or cancelled. Give a house its own webhook to send that house’s alerts to its own channel. Alerts go out whenever Crown Tools checks your email on any of your devices.</div>
+          <div class="small muted" style="margin-bottom:10px">Post to a Discord channel when a package is out for delivery, delivered or cancelled. Give a house its own webhook to send that house’s alerts to its own channel. Alerts go out whenever Kingpin checks your email on any of your devices.</div>
           ${(() => { const A = S.alerts || {}; return `
           <div class="hstack" style="flex-wrap:wrap"><input id="alUrl" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/…" value="${esc(A.url || '')}" style="flex:1;min-width:220px"><button id="alSave">Save &amp; test</button>${A.url ? '<button class="ghost" id="alDel">Remove</button>' : ''}</div>
           <div class="small faint" style="margin-top:6px">In Discord: Server Settings → Integrations → Webhooks → New Webhook → pick the channel → Copy Webhook URL.</div>
@@ -604,7 +604,7 @@ PAGES.settings = {
           <div class="section">Selling fees (estimates — match them to your accounts)</div>
           <div class="feegrid">${PLATFORMS.filter(p => p.pct || p.flat || (S.platformFees || {})[p.k]).map(p => { const f = feeFor(p.k); return `<div class="feerow"><span>${esc(p.l)}</span><input data-fee="${p.k}" data-ff="pct" inputmode="decimal" value="${esc(f.pct)}"><span class="faint">% +</span><input data-fee="${p.k}" data-ff="flat" inputmode="decimal" value="${esc(f.flat)}"><span class="faint">$</span></div>`; }).join('')}</div></div>
         <div class="card"><h3>Backups</h3>
-          <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Crown Tools Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Crown Tools saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Crown Tools with Start Crown Tools to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
+          <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Kingpin Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Kingpin saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Kingpin with Start Kingpin to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
           <div class="hstack"><button id="stBackup">Download backup</button><button id="stRestore">Restore from file…</button></div>
           <div id="stBackups" style="margin-top:12px"></div></div>
         <div class="card"><h3>Data tools</h3>
@@ -615,7 +615,7 @@ PAGES.settings = {
             <div class="li"><div style="flex:1"><div style="color:var(--danger)">Delete all orders</div><div class="small muted">Profiles and inboxes stay. Next sync re-reads emails from the inbox look-back window.</div></div><button class="sm danger" id="stWipe">Delete</button></div>
           </div></div>
       </div>
-      <div class="small faint" style="margin-top:16px">Crown Tools v${VERSION}${CLOUD ? ' · Crown Tools Online' : ''}</div>`;
+      <div class="small faint" style="margin-top:16px">Kingpin v${VERSION}${CLOUD ? ' · Kingpin Online' : ''}</div>`;
     if (typeof wireInstallCard === 'function') wireInstallCard();
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
@@ -680,7 +680,7 @@ PAGES.settings = {
         const box = $('#stBackups'); if (!box) return;
         box.innerHTML = b.length ? `<div class="small muted" style="margin-bottom:4px">Automatic backups</div><div class="list">${b.slice(0, 8).map(x => `<div class="li"><div style="flex:1" class="small">${fmtDT(x.mtime * 1000)} <span class="faint">· ${Math.max(1, Math.round(x.size / 1024))} KB</span></div><button class="sm" data-bk="${esc(x.name)}">Restore</button></div>`).join('')}</div>${b.length > 8 ? `<div class="small faint">+${b.length - 8} older${CLOUD ? '' : ' in the data/backups folder'}</div>` : ''}` : '<div class="small faint">No automatic backups yet — the first one is made 15 minutes after you start working.</div>';
         box.querySelectorAll('[data-bk]').forEach(el => el.onclick = async () => { try { const r = await api('/api/backups/' + encodeURIComponent(el.dataset.bk)); await restoreFromBlob(r.vault); } catch (e) { toast(e.message); } });
-        const foot = pg.lastElementChild; if (foot && serverInfo && serverInfo.dataDir) foot.innerHTML = `Crown Tools v${VERSION} · data folder: ${esc(serverInfo.dataDir)}`;
+        const foot = pg.lastElementChild; if (foot && serverInfo && serverInfo.dataDir) foot.innerHTML = `Kingpin v${VERSION} · data folder: ${esc(serverInfo.dataDir)}`;
       } catch (_) { }
     }
   },

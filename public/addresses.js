@@ -1,4 +1,4 @@
-/* Crown Tools - saved addresses per profile group. Only the main address is kept (street, city, state, ZIP):
+/* Kingpin - saved addresses per profile group. Only the main address is kept (street, city, state, ZIP):
    line 2 and jig letters are stripped, so every new profile starts from the clean address. */
 'use strict';
 const cleanAddr = a => {

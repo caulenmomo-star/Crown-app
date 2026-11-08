@@ -1,4 +1,4 @@
-/* Crown Tools - what the things you order are worth. Each product you've ordered is matched once to its TCGplayer
+/* Kingpin - what the things you order are worth. Each product you've ordered is matched once to its TCGplayer
    product (by name and product type - an ETB never matches a booster bundle) and priced at the TCGplayer median, so
    the Checkout card can show an estimated profit. Matches are remembered and can be fixed in "Review prices". */
 'use strict';
@@ -188,7 +188,7 @@ function profitOf(orders) {
   return sec;
 }
 
-/* ---------- pictures for the canvas (fetched through Crown Tools so the card can still be saved) ---------- */
+/* ---------- pictures for the canvas (fetched through Kingpin so the card can still be saved) ---------- */
 const IMG = new Map();
 function loadImg(url) {
   if (!url) return Promise.resolve(null);
@@ -261,9 +261,9 @@ function stockxCardHtml() {
   return `<div class="card" id="sxCard"><h3>StockX prices ${on ? '<span class="badge"><i style="background:var(--ok)"></i>connected</span>' : ''}</h3>
     <div class="small muted" style="margin-bottom:10px">Trading cards are priced from TCGplayer. Connect StockX to also price LEGO, consoles, sneakers and other collectibles in Inventory and the estimated profit. Valued between StockX’s highest bid and lowest ask.</div>
     ${on ? `<div class="small">${plural(n, 'product')} priced from StockX · connected ${esc(ago(S.stockx.connectedAt || 0))}</div><div class="hstack" style="margin-top:10px"><button id="sxRefresh">Update StockX prices</button><button class="ghost" id="sxOff">Disconnect</button></div>`
-      : !SERVER ? '<div class="note small">Open Crown Tools with Start Crown Tools (or online) to connect StockX.</div>'
-      : SXS.configured === false ? '<div class="note small">StockX isn’t set up on this Crown Tools yet. The owner adds a StockX developer app (STOCKX_CLIENT_ID, STOCKX_CLIENT_SECRET and STOCKX_API_KEY) — see the setup notes.</div>'
-      : '<button class="primary" id="sxOn">Connect StockX</button><div class="small faint" style="margin-top:6px">You sign in on StockX’s own site; Crown Tools never sees your StockX password.</div>'}</div>`;
+      : !SERVER ? '<div class="note small">Open Kingpin with Start Kingpin (or online) to connect StockX.</div>'
+      : SXS.configured === false ? '<div class="note small">StockX isn’t set up on this Kingpin yet. The owner adds a StockX developer app (STOCKX_CLIENT_ID, STOCKX_CLIENT_SECRET and STOCKX_API_KEY) — see the setup notes.</div>'
+      : '<button class="primary" id="sxOn">Connect StockX</button><div class="small faint" style="margin-top:6px">You sign in on StockX’s own site; Kingpin never sees your StockX password.</div>'}</div>`;
 }
 function wireStockxCard() {
   if ($('#sxOn')) $('#sxOn').onclick = stockxConnect;

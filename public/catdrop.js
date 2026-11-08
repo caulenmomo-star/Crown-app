@@ -1,4 +1,4 @@
-/* Crown Tools - on phones, category / group lists (Profiles, Accounts, Cards) fold into one dropdown button that
+/* Kingpin - on phones, category / group lists (Profiles, Accounts, Cards) fold into one dropdown button that
    shows the one you're looking at, instead of a wall of chips. Tap it to pick another, rename or add one. */
 'use strict';
 function catLabel(cl) {

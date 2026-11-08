@@ -1,4 +1,4 @@
-/* The public "Get Crown Tools" page: shows the steps for the device you're on, with a one-tap Install where the
+/* The public "Get Kingpin" page: shows the steps for the device you're on, with a one-tap Install where the
    browser supports it. */
 'use strict';
 (function () {
@@ -13,9 +13,9 @@
   if (dev !== 'other') {
     $('#here').hidden = false; $('#hereTitle').textContent = `Install on your ${names[dev]}`;
     let steps;
-    if (dev === 'iphone' || dev === 'ipad') steps = [br === 'safari' || br === 'chrome' ? 'Tap the <b>Share</b> button ' + (dev === 'iphone' ? 'at the bottom' : 'at the top') + ' of the screen.' : 'Open this page in <b>Safari</b>, then tap the <b>Share</b> button.', 'Tap <b>Add to Home Screen</b>, then <b>Add</b>.', 'Open Crown Tools from your home screen.'];
+    if (dev === 'iphone' || dev === 'ipad') steps = [br === 'safari' || br === 'chrome' ? 'Tap the <b>Share</b> button ' + (dev === 'iphone' ? 'at the bottom' : 'at the top') + ' of the screen.' : 'Open this page in <b>Safari</b>, then tap the <b>Share</b> button.', 'Tap <b>Add to Home Screen</b>, then <b>Add</b>.', 'Open Kingpin from your home screen.'];
     else if (dev === 'mac' && br === 'safari') steps = ['Choose <b>File → Add to Dock…</b> in the menu bar.', 'Click <b>Add</b>.'];
-    else if (br === 'chrome' || br === 'edge') steps = ['Click <b>Install Crown Tools</b> below (or the install icon at the right end of the address bar).', 'Crown Tools opens in its own window.'];
+    else if (br === 'chrome' || br === 'edge') steps = ['Click <b>Install Kingpin</b> below (or the install icon at the right end of the address bar).', 'Kingpin opens in its own window.'];
     else steps = [`Open this page in <b>${dev === 'android' ? 'Chrome' : 'Chrome or Edge'}</b> to install.`];
     $('#hereSteps').innerHTML = steps.map(s => `<li>${s}</li>`).join('');
   }

@@ -1,4 +1,4 @@
-/* Crown Tools - installing Crown Tools as an app: one tap where the browser supports it (Chrome / Edge on PC, Mac
+/* Kingpin - installing Kingpin as an app: one tap where the browser supports it (Chrome / Edge on PC, Mac
    and Android), step-by-step help where it doesn't (iPhone / iPad Safari, Mac Safari). */
 'use strict';
 const INSTALL = { prompt: null };
@@ -24,23 +24,23 @@ const SHARE_ICON = '<svg class="inl" viewBox="0 0 24 24" aria-label="Share"><pat
 // what to do on this device, as a short list of steps
 function installSteps(dev, br) {
   dev = dev || deviceKind(); br = br || browserKind();
-  if (dev === 'iphone' || dev === 'ipad') return [`Open <b>${esc(location.host)}</b> in Safari${br === 'chrome' ? ' (or Chrome)' : ''}.`, `Tap the Share button ${SHARE_ICON}${dev === 'iphone' ? ' at the bottom' : ' at the top'}.`, 'Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.', 'Open Crown Tools from your home screen — it runs full screen like any other app.'];
-  if (dev === 'mac' && br === 'safari') return ['In Safari’s menu bar choose <b>File → Add to Dock…</b>', 'Click <b>Add</b>. Crown Tools opens in its own window from the Dock and Launchpad.'];
-  if (br === 'chrome' || br === 'edge') return [`Click <b>Install</b> below, or the install icon at the right end of ${br === 'edge' ? 'Edge' : 'Chrome'}’s address bar.`, `Crown Tools opens in its own window and shows up in your ${dev === 'mac' ? 'Dock and Launchpad' : dev === 'windows' ? 'Start menu and taskbar' : 'apps'}.`];
+  if (dev === 'iphone' || dev === 'ipad') return [`Open <b>${esc(location.host)}</b> in Safari${br === 'chrome' ? ' (or Chrome)' : ''}.`, `Tap the Share button ${SHARE_ICON}${dev === 'iphone' ? ' at the bottom' : ' at the top'}.`, 'Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.', 'Open Kingpin from your home screen — it runs full screen like any other app.'];
+  if (dev === 'mac' && br === 'safari') return ['In Safari’s menu bar choose <b>File → Add to Dock…</b>', 'Click <b>Add</b>. Kingpin opens in its own window from the Dock and Launchpad.'];
+  if (br === 'chrome' || br === 'edge') return [`Click <b>Install</b> below, or the install icon at the right end of ${br === 'edge' ? 'Edge' : 'Chrome'}’s address bar.`, `Kingpin opens in its own window and shows up in your ${dev === 'mac' ? 'Dock and Launchpad' : dev === 'windows' ? 'Start menu and taskbar' : 'apps'}.`];
   if (dev === 'android') return ['Tap the ⋮ menu in Chrome.', 'Tap <b>Install app</b> (or <b>Add to Home screen</b>).'];
-  return ['Open Crown Tools in Chrome or Edge on a computer, or Safari on an iPhone or iPad, to install it as an app.'];
+  return ['Open Kingpin in Chrome or Edge on a computer, or Safari on an iPhone or iPad, to install it as an app.'];
 }
 async function doInstall() {
   const p = INSTALL.prompt; if (!p) return false;
   INSTALL.prompt = null; p.prompt();
-  try { const r = await p.userChoice; if (r && r.outcome === 'accepted') toast('Installing Crown Tools…'); } catch (_) { }
+  try { const r = await p.userChoice; if (r && r.outcome === 'accepted') toast('Installing Kingpin…'); } catch (_) { }
   refreshInstallBits(); return true;
 }
 function installCardHtml() {
   const dev = deviceKind(), br = browserKind(), steps = installSteps(dev, br);
-  if (isInstalled()) return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Crown Tools app</h3><div class="small muted">You’re using the installed app on this device. To add it to another one, open <b>${esc(location.host)}</b> there and follow the steps in Settings, or visit <a href="install.html" target="_blank" rel="noopener">${esc(location.host)}/install.html</a>.</div></div>`;
-  return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Get the app<span class="spacer"></span>${INSTALL.prompt ? '<button class="primary sm" id="getAppGo">Install Crown Tools</button>' : ''}</h3>
-    <div class="small muted" style="margin-bottom:8px">Install Crown Tools on this ${dev === 'iphone' ? 'iPhone' : dev === 'ipad' ? 'iPad' : dev === 'android' ? 'phone' : 'computer'} so it opens in its own window with its own icon. Same account and data on every device — and it updates itself.</div>
+  if (isInstalled()) return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Kingpin app</h3><div class="small muted">You’re using the installed app on this device. To add it to another one, open <b>${esc(location.host)}</b> there and follow the steps in Settings, or visit <a href="install.html" target="_blank" rel="noopener">${esc(location.host)}/install.html</a>.</div></div>`;
+  return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Get the app<span class="spacer"></span>${INSTALL.prompt ? '<button class="primary sm" id="getAppGo">Install Kingpin</button>' : ''}</h3>
+    <div class="small muted" style="margin-bottom:8px">Install Kingpin on this ${dev === 'iphone' ? 'iPhone' : dev === 'ipad' ? 'iPad' : dev === 'android' ? 'phone' : 'computer'} so it opens in its own window with its own icon. Same account and data on every device — and it updates itself.</div>
     <ol class="steps">${steps.map(s => `<li>${s}</li>`).join('')}</ol>
     <div class="small faint" style="margin-top:8px">Other devices: <a href="install.html" target="_blank" rel="noopener">install steps for iPhone, Mac and PC</a></div></div>`;
 }
@@ -56,12 +56,12 @@ function maybeShowIosTip() {
   const dev = deviceKind(); if ((dev !== 'iphone' && dev !== 'ipad') || isInstalled()) return;
   try { if (localStorage.getItem('crown.iosTip')) return; } catch (_) { return; }
   const el = $('#installTip'); if (!el) return;
-  el.innerHTML = `<div class="itip-body"><b>Install Crown Tools on your ${dev === 'iphone' ? 'iPhone' : 'iPad'}</b><span>Tap ${SHARE_ICON} then <b>Add to Home Screen</b>.</span></div><button class="ghost sm" id="installTipX" aria-label="Dismiss">✕</button>`;
+  el.innerHTML = `<div class="itip-body"><b>Install Kingpin on your ${dev === 'iphone' ? 'iPhone' : 'iPad'}</b><span>Tap ${SHARE_ICON} then <b>Add to Home Screen</b>.</span></div><button class="ghost sm" id="installTipX" aria-label="Dismiss">✕</button>`;
   el.hidden = false;
   $('#installTipX').onclick = () => { el.hidden = true; try { localStorage.setItem('crown.iosTip', '1'); } catch (_) { } };
 }
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); INSTALL.prompt = e; refreshInstallBits(); });
-window.addEventListener('appinstalled', () => { INSTALL.prompt = null; refreshInstallBits(); toast('Crown Tools is installed 👑'); });
+window.addEventListener('appinstalled', () => { INSTALL.prompt = null; refreshInstallBits(); toast('Kingpin is installed 👑'); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || /^(localhost|127\.0\.0\.1)$/.test(location.hostname))) {
   window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { }); });
 }

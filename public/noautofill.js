@@ -1,4 +1,4 @@
-/* Crown Tools - keeps the browser and password managers from typing your login email into search and filter boxes.
+/* Kingpin - keeps the browser and password managers from typing your login email into search and filter boxes.
    Saved logins only go into the sign-in fields; every other box is marked "don't fill", and if something still gets
    filled without you typing, it's cleared straight away. */
 'use strict';
@@ -36,6 +36,6 @@ function wireNoAutofill() {
   const app = document.getElementById('app');
   if (app) new MutationObserver(() => { if (!app.hidden) [100, 600, 1500].forEach(t => setTimeout(sweep, t)); }).observe(app, { attributes: true, attributeFilter: ['hidden'] });
   // the lock screen has a hidden sign-in name, so saved logins go there instead of the first box they find
-  const u = document.getElementById('lockUser'); if (u) { try { u.value = localStorage.getItem('crown.email') || 'Crown Tools'; } catch (_) { u.value = 'Crown Tools'; } }
+  const u = document.getElementById('lockUser'); if (u) { try { u.value = localStorage.getItem('crown.email') || 'Kingpin'; } catch (_) { u.value = 'Kingpin'; } }
   window.nafSweep = sweep;
 }

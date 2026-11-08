@@ -1,5 +1,5 @@
-/* Crown Tools - store accounts: every Target / Walmart / Pokémon Center… login with its password, status and profile.
-   Saved inside your encrypted Crown Tools data like everything else. */
+/* Kingpin - store accounts: every Target / Walmart / Pokémon Center… login with its password, status and profile.
+   Saved inside your encrypted Kingpin data like everything else. */
 'use strict';
 const ACC_STATUS = [
   { k: 'active', l: 'Working', c: 'var(--ok)' },
@@ -113,7 +113,7 @@ PAGES.accounts = {
     if ($('#acClrSel')) $('#acClrSel').onclick = () => { accSel.clear(); PAGES.accounts.render(); };
     if ($('#acSetStatus')) $('#acSetStatus').onchange = e => { const v = e.target.value; if (!v) return; snapshot('account status'); state.accounts.forEach(a => { if (accSel.has(a.id)) { a.status = v; a.updatedAt = Date.now(); } }); save(); toast(`Marked ${plural(accSel.size, 'account')} ${ACCS[v].l.toLowerCase()}`, { undo: true }); PAGES.accounts.render(); };
     if ($('#acCopySel')) $('#acCopySel').onclick = () => copyText(state.accounts.filter(a => accSel.has(a.id)).map(a => `${a.email}:${a.password}`).join('\n'), plural(accSel.size, 'login'));
-    if ($('#acDelSel')) $('#acDelSel').onclick = async () => { const n = accSel.size; if (!await ask(`Delete ${plural(n, 'account')}?\n\nTheir saved passwords are removed from Crown Tools.`)) return; snapshot('delete accounts'); state.accounts = state.accounts.filter(a => !accSel.has(a.id)); accSel.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'account')}`, { undo: true }); };
+    if ($('#acDelSel')) $('#acDelSel').onclick = async () => { const n = accSel.size; if (!await ask(`Delete ${plural(n, 'account')}?\n\nTheir saved passwords are removed from Kingpin.`)) return; snapshot('delete accounts'); state.accounts = state.accounts.filter(a => !accSel.has(a.id)); accSel.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'account')}`, { undo: true }); };
     pg.querySelector('tbody') && pg.querySelector('tbody').addEventListener('click', e => {
       const cb = e.target.dataset.acb; if (cb) { e.target.checked ? accSel.add(cb) : accSel.delete(cb); PAGES.accounts.render(); return; }
       const rv = e.target.closest('[data-reveal]'); if (rv) { const id = rv.dataset.reveal; AF.reveal.has(id) ? AF.reveal.delete(id) : AF.reveal.add(id); PAGES.accounts.render(); return; }
@@ -177,7 +177,7 @@ function wireAccDlg() {
     state.accounts = state.accounts.filter(x => x.id !== curAcc.id).concat([curAcc]);
     save(); closeDlg('dlgAcct'); refresh(); toast(accIsNew ? 'Account saved' : 'Saved', { undo: true });
   };
-  $('#acctDelete').onclick = async () => { if (!await ask('Delete this account?\n\nIts saved password is removed from Crown Tools.')) return; snapshot('delete account'); state.accounts = state.accounts.filter(x => x.id !== curAcc.id); save(); closeDlg('dlgAcct'); refresh(); toast('Account deleted', { undo: true }); };
+  $('#acctDelete').onclick = async () => { if (!await ask('Delete this account?\n\nIts saved password is removed from Kingpin.')) return; snapshot('delete account'); state.accounts = state.accounts.filter(x => x.id !== curAcc.id); save(); closeDlg('dlgAcct'); refresh(); toast('Account deleted', { undo: true }); };
 }
 
 /* ---------- import: email:password lists or spreadsheets ---------- */

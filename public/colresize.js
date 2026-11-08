@@ -1,4 +1,4 @@
-/* Crown Tools - resizable table columns (Profiles, Orders, Accounts, Cards) on computers. Drag the edge of a column
+/* Kingpin - resizable table columns (Profiles, Orders, Accounts, Cards) on computers. Drag the edge of a column
    header to make it wider or narrower; the table scrolls sideways when it's wider than the screen, so nothing on the
    right gets cut off. Widths are remembered on this device; double-click an edge to put the table back to normal. */
 'use strict';

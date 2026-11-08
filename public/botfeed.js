@@ -1,4 +1,4 @@
-/* Crown Tools - bot checkouts from Discord. A Discord bot in your server reads the channel(s) your checkout bots
+/* Kingpin - bot checkouts from Discord. A Discord bot in your server reads the channel(s) your checkout bots
    (Valor, Shikari, Hayha, Stellar…) post to. Each successful checkout is linked to its order (by order number), its
    profile (by profile name), the profile's house and the store account (by email). A checkout whose profile isn't
    one of yours (a client's) waits until a matching order email turns up, so it never counts as your order on its own. */
@@ -125,7 +125,7 @@ async function syncDiscord(manual) {
   invalidateStats(); save(); refresh();
   if (manual) toast(added ? `Read ${plural(added, 'checkout')} from Discord${linked ? ` · ${linked} linked to orders` : ''}` : 'No new checkouts on Discord');
 }
-// same rhythm as email ("Automatic sync"), checked every minute while Crown Tools is open
+// same rhythm as email ("Automatic sync"), checked every minute while Kingpin is open
 setInterval(() => {
   if (!cryptoKey || document.visibilityState === 'hidden') return;
   const m = state.settings.autoSyncMin; if (!m) return;
@@ -138,12 +138,12 @@ function discordCard() {
   const linkedN = cs.filter(c => c.orderId).length, waiting = cs.filter(c => !c.orderId);
   const recent = cs.slice(-12).reverse();
   return `<div class="card" id="dscCard" style="margin-bottom:14px"><h3>🤖 Bot checkouts from Discord<span class="spacer"></span>${has && feeds.length ? `<button class="sm" id="dscSync" ${DSC.busy || !SERVER ? 'disabled' : ''}>${DSC.busy ? 'Reading…' : 'Check Discord now'}</button>` : ''}</h3>
-    <div class="small muted" style="margin-bottom:10px">Reads the success posts Valor, Shikari, Hayha and Stellar send to your Discord, and links each one to its order, profile, house and store account. A checkout on a profile that isn’t in Crown Tools (a client’s) waits until its order email shows up.</div>
+    <div class="small muted" style="margin-bottom:10px">Reads the success posts Valor, Shikari, Hayha and Stellar send to your Discord, and links each one to its order, profile, house and store account. A checkout on a profile that isn’t in Kingpin (a client’s) waits until its order email shows up.</div>
     <details class="dschow" ${has ? '' : 'open'}><summary>How to connect it</summary><ol class="small">
       <li>Use the Discord bot that’s already in your server (the one your ACO site uses), or make one: <b>discord.com/developers</b> → New Application → <b>Bot</b> → turn on <b>Message Content Intent</b> → <b>Reset Token</b> and copy it.</li>
       <li>If it’s a new bot: <b>OAuth2 → URL Generator</b> → tick <b>bot</b>, then <b>View Channels</b> and <b>Read Message History</b> → open the link and add it to your server.</li>
       <li>In Discord, turn on <b>Settings → Advanced → Developer Mode</b>, right-click your checkout channel → <b>Copy Channel ID</b>.</li>
-      <li>Paste both below. The token is kept in your encrypted Crown Tools data — never anywhere else.</li></ol></details>
+      <li>Paste both below. The token is kept in your encrypted Kingpin data — never anywhere else.</li></ol></details>
     <div class="fgrid" style="margin-top:10px"><div class="s2"><label>Bot token</label><div class="hstack" style="gap:6px"><input id="dscTok" type="password" autocomplete="off" placeholder="${has ? 'Saved — paste a new one to replace it' : 'Paste your bot token'}" style="flex:1;min-width:0"><button class="sm" id="dscTokSave">${has ? 'Replace' : 'Save'}</button>${has ? '<button class="sm ghost" id="dscTokDel">Remove</button>' : ''}</div></div>
       <div class="s2"><label>Add a channel</label><div class="hstack" style="gap:6px"><input id="dscCh" inputmode="numeric" placeholder="Channel ID, like 1529575631556444282" style="flex:1;min-width:0" ${has ? '' : 'disabled'}><button class="sm primary" id="dscChAdd" ${has && SERVER ? '' : 'disabled'}>Add</button></div><div class="small faint" id="dscNote" style="margin-top:4px">${esc(DSC.note)}</div></div></div>
     ${feeds.length ? `<div class="list" style="margin-top:10px">${feeds.map(f => `<div class="li"><span class="dot ${f.enabled === false ? '' : f.error ? 'bad' : f.lastSync ? 'ok' : 'warn'}"></span><div class="mmain"><div class="t2">#${esc(f.name || f.id)}</div><div class="small ${f.error ? '' : 'muted'}" ${f.error ? 'style="color:var(--danger)"' : ''}>${f.error ? esc(f.error) : f.enabled === false ? 'Paused' : f.lastSync ? `Checked ${esc(ago(f.lastSync))} · ${plural(f.count || 0, 'checkout')} read` : 'Not read yet'}</div></div><button class="sm ghost" data-dsc="toggle" data-id="${f.id}">${f.enabled === false ? 'Resume' : 'Pause'}</button><button class="sm ghost" data-dsc="del" data-id="${f.id}" aria-label="Remove">✕</button></div>`).join('')}</div>` : ''}
@@ -161,7 +161,7 @@ function wireDiscordCard() {
     try { const r = await api('/api/discord/check', { token: t }); state.settings.discordToken = t.replace(/^bot\s+/i, ''); save(); note(`Connected as ${r.bot}. Now add the channel your bots post checkouts to.`); PAGES.inboxes.render(); }
     catch (e) { note(e.message); $('#dscTokSave').disabled = false; }
   };
-  if ($('#dscTokDel')) $('#dscTokDel').onclick = async () => { if (!await ask('Remove the Discord bot token? Checkouts already read stay in Crown Tools.')) return; state.settings.discordToken = ''; save(); note(''); PAGES.inboxes.render(); };
+  if ($('#dscTokDel')) $('#dscTokDel').onclick = async () => { if (!await ask('Remove the Discord bot token? Checkouts already read stay in Kingpin.')) return; state.settings.discordToken = ''; save(); note(''); PAGES.inboxes.render(); };
   $('#dscChAdd').onclick = async () => {
     const id = $('#dscCh').value.replace(/\D/g, ''); if (!id) { toast('Paste a channel ID'); return; }
     if ((state.discordFeeds || []).some(f => f.id === id)) { toast('That channel is already added'); return; }
@@ -176,7 +176,7 @@ function wireDiscordCard() {
   card.querySelectorAll('[data-dsc]').forEach(b => b.onclick = async () => {
     const f = state.discordFeeds.find(x => x.id === b.dataset.id); if (!f) return;
     if (b.dataset.dsc === 'toggle') { f.enabled = f.enabled === false; f.updatedAt = Date.now(); save(); PAGES.inboxes.render(); }
-    else if (await ask(`Stop reading #${f.name || f.id}? Checkouts already read stay in Crown Tools.`)) { state.discordFeeds = state.discordFeeds.filter(x => x.id !== f.id); save(); PAGES.inboxes.render(); }
+    else if (await ask(`Stop reading #${f.name || f.id}? Checkouts already read stay in Kingpin.`)) { state.discordFeeds = state.discordFeeds.filter(x => x.id !== f.id); save(); PAGES.inboxes.render(); }
   });
   $('#dscBack').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; state.settings.discordLookback = +b.dataset.v; save(); PAGES.inboxes.render(); };
 }

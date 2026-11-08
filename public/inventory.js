@@ -1,4 +1,4 @@
-/* Crown Tools - inventory (scan any barcode to look it up, restock it or add it) and live TCGplayer market prices. */
+/* Kingpin - inventory (scan any barcode to look it up, restock it or add it) and live TCGplayer market prices. */
 'use strict';
 const INV = { q: '', sort: 'value', show: 'stock', loc: '', view: (() => { try { return localStorage.getItem('crown.invView') || 'grid'; } catch (_) { return 'grid'; } })() };
 const invById = id => (state.inventory || []).find(x => x.id === id);

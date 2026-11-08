@@ -1,4 +1,4 @@
-/* Crown Tools - packages. Every package on your orders in one place, with what the carrier says right now: a progress
+/* Kingpin - packages. Every package on your orders in one place, with what the carrier says right now: a progress
    bar, the arrival date and delivery window, the latest scan, every scan so far, where it was left, and anything that
    needs a look (a delivery problem, an arrival date that slipped, a package past its date, or one with no new scans
    for days). The details come straight from UPS, FedEx and USPS with your free developer keys (Settings → Carrier
@@ -42,7 +42,7 @@ function pkgInfo(o, t, i) {
   const stuck = !delivered && st !== 'out_for_delivery' && st !== 'exception' && quiet != null && quiet >= PK_STUCK_DAYS;
   const kind = typeof trkKind === 'function' ? trkKind(t) : 'other', ep = !!state.settings.easypostKey;
   const canLook = kind !== 'other' || ep || !!s17Key();
-  // can Crown Tools look it up right now? (its carrier's keys, EasyPost, or the Mac app reading ups.com)
+  // can Kingpin look it up right now? (its carrier's keys, EasyPost, or the Mac app reading ups.com)
   const lookable = !!carrierKeys()[kind] || !!s17Key() || ep || (kind === 'ups' && SERVER && !CLOUD);
   // old: nothing new (no scan, no email) for 2 weeks and no arrival date coming up
   const newest = [last && last.date, o.statusAt, o.orderDate].map(v => v ? toDate(v) : null).filter(Boolean).reduce((a, b) => (b > a ? b : a), null);
@@ -165,7 +165,7 @@ PAGES.packages = {
       ${PK.f === 'old' && shown.length ? `<div class="docbar" style="margin-bottom:12px"><div class="docmsg"><b>${plural(list.length, 'package')} with no news for over 2 weeks</b><span class="small">No scans, no emails and no upcoming date — these almost surely arrived. They don’t count as on the way.</span></div><div class="docacts"><button class="sm primary" id="pkOldAll">Mark all ${list.length} delivered</button></div></div>` : ''}
       ${shown.length ? `<div class="olist pklist">${shown.map(pkCardHtml).join('')}</div>${list.length > shown.length ? `<div style="text-align:center;margin-top:12px"><button id="pkMore">Show ${Math.min(120, list.length - shown.length)} more</button></div>` : ''}`
         : `<div class="empty">${all.length ? (PK.f === 'problems' ? 'Every package is moving on time. 👑' : PK.f === 'out' ? 'Nothing is out for delivery right now.' : PK.f === 'today' ? 'Nothing is due today.' : PK.f === 'transit' ? 'Nothing on the way right now.' : PK.f === 'old' ? 'No old packages — everything has news. 👑' : 'No packages match.') : 'No packages yet. Tracking numbers come in automatically from shipping emails, and every one shows up here.'}</div>`}
-      <div class="note small">Packages show up here as soon as a shipping email with a tracking number syncs. With 17TRACK or carrier keys, Crown Tools checks while it’s open: every 30 minutes once a package is out for delivery, every hour when it’s due within a day, and every 2 hours otherwise. <b>Needs a look</b> means the carrier reported a problem, the arrival date moved later, it’s past its date, or there haven’t been any new scans for ${PK_STUCK_DAYS} days.</div>`;
+      <div class="note small">Packages show up here as soon as a shipping email with a tracking number syncs. With 17TRACK or carrier keys, Kingpin checks while it’s open: every 30 minutes once a package is out for delivery, every hour when it’s due within a day, and every 2 hours otherwise. <b>Needs a look</b> means the carrier reported a problem, the arrival date moved later, it’s past its date, or there haven’t been any new scans for ${PK_STUCK_DAYS} days.</div>`;
     $('#pkQ').oninput = debounce(e => { PK.q = e.target.value; PK.limit = 120; PAGES.packages.render(); }, 160);
     pg.querySelectorAll('[data-pkf]').forEach(b => b.onclick = () => { PK.f = b.dataset.pkf; PK.limit = 120; PAGES.packages.render(); });
     if ($('#pkNow')) $('#pkNow').onclick = () => refreshAllTracking();

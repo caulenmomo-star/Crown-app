@@ -1,4 +1,4 @@
-/* Crown Tools - profile builder: make many profiles for one house at once, each with its own details
+/* Kingpin - profile builder: make many profiles for one house at once, each with its own details
    (address jig, unique line 2, names, emails, phones) and your cards spread across them. Nothing is created until you say so. */
 'use strict';
 const FIRST_NAMES = 'James Michael Robert John David William Richard Joseph Thomas Christopher Charles Daniel Matthew Anthony Mark Steven Paul Andrew Joshua Kevin Brian George Timothy Ryan Jacob Nicholas Eric Jonathan Justin Brandon Tyler Aaron Adam Nathan Zachary Kyle Ethan Logan Caleb Mason Mary Patricia Jennifer Linda Elizabeth Barbara Susan Jessica Sarah Karen Lisa Nancy Betty Sandra Ashley Emily Kimberly Michelle Amanda Melissa Stephanie Rebecca Laura Amy Rachel Hannah Samantha Lauren Megan Olivia Emma Madison Abigail Chloe Grace Natalie Brooke Kayla Taylor'.split(' ');

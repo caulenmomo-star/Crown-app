@@ -1,4 +1,4 @@
-/* Crown Tools - Orders & Houses: data model, email ingestion, profile linking, house grouping, pages, dialogs. */
+/* Kingpin - Orders & Houses: data model, email ingestion, profile linking, house grouping, pages, dialogs. */
 'use strict';
 
 /* ================= data helpers ================= */
@@ -340,7 +340,7 @@ function applyEmail(r, accountLabel, opts) {
   if (!o && r.payment) o = matchPayOrder(r);
   let created = false;
   if (!o) {
-    if (r.payment && !r.orderNumber) return { skipped: 'payment email for an order that isn’t in Crown Tools' };
+    if (r.payment && !r.orderNumber) return { skipped: 'payment email for an order that isn’t in Kingpin' };
     if (!r.orderNumber) return { skipped: 'no order number' };
     const st0 = r.status === 'cancelled' && r.partial ? 'placed' : r.status;
     o = newOrder({ orderNumber: r.orderNumber, store: r.store, status: st0, orderDate: r.date, source: 'email', history: [] });
@@ -439,7 +439,7 @@ function histColor(h) {
   if (h.status === 'pay') return h.kind === 'declined' ? '#ef5b5b' : h.kind === 'paid' ? '#3ecf8e' : h.kind === 'fixed' ? '#f5a524' : '#7c8cff';
   return h.status === 'partial' ? '#ef5b5b' : (STATUS[h.status] || STATUS.placed).c;
 }
-// Orders that a payment email made on its own (Crown Tools 0.12.0 did this when it couldn't find the original).
+// Orders that a payment email made on its own (Kingpin 0.12.0 did this when it couldn't find the original).
 // Removed before a re-read, which then attaches those emails to the original pre-order.
 function dropPaymentOnlyOrders() {
   const only = o => o.source === 'email' && (o.emails || []).length && o.emails.every(e => ['declined', 'paid', 'reminder'].includes(Parser.paymentEvent(e.subject || '', ''))) && o.profileLink !== 'manual' && !o.notes;
@@ -564,7 +564,7 @@ PAGES.orders = {
         <button class="sm danger" id="oDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="oClear">Clear selection</button></div>
       <div class="hstack" style="margin:0 0 10px;justify-content:space-between"><div class="seg" id="oView"><button data-ov="cards" class="${oView() === 'cards' ? 'on' : ''}">Cards</button><button data-ov="table" class="${oView() === 'table' ? 'on' : ''}">Table</button><button data-ov="calendar">Calendar</button><button data-ov="houses">Houses</button></div>
         <select id="oSort" style="width:auto">${[['date', 'Newest first'], ['eta', 'Arriving soonest'], ['total', 'Biggest total'], ['status', 'Status'], ['store', 'Store']].map(([k, l]) => `<option value="${k}" ${OF.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      ${oView() === 'cards' ? `<div class="olist ${oSelMode || oSelected.size ? 'selmode' : ''}">${shown.map(orderCardHtml).join('')}</div>${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown Tools will pull them in automatically, or add / import / paste them here.'}</div>`}` : ''}
+      ${oView() === 'cards' ? `<div class="olist ${oSelMode || oSelected.size ? 'selmode' : ''}">${shown.map(orderCardHtml).join('')}</div>${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}` : ''}
       <div class="tablewrap ${oSelMode || oSelected.size ? 'selmode' : ''}" ${oView() === 'cards' ? 'hidden' : ''}><table class="otable"><thead><tr><th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th class="c-trk">Tracking</th></tr></thead>
       <tbody>${shown.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return `<tr data-oid="${o.id}" class="${oSelected.has(o.id) ? 'sel' : ''}">
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
@@ -575,7 +575,7 @@ PAGES.orders = {
         <td class="ellipsis c-house" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint dash">—</span>'}</td>
         <td class="c-eta ${!o.eta && o.status !== 'delivered' ? 'est' : ''}">${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint dash">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : o.estEta ? `<span class="faint small" title="Not shipped yet — the order confirmation estimated this">not shipped · est. ${fmtDate(o.estEta)}</span>` : '<span class="faint dash">—</span>'}</td>
         <td class="c-trk">${(o.tracking || []).slice(0, 1).map(t => `<a href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener" class="small">${esc(t.carrier || 'Track')}</a>`).join('')}${o.tracking.length > 1 ? ` <span class="faint small">+${o.tracking.length - 1}</span>` : ''}</td></tr>`; }).join('')}</tbody></table>
-      ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Crown Tools will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
+      ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
       ${pages > 1 ? `<div class="pager">Page ${OF.page + 1} of ${pages}<button class="sm" id="oPrev" ${OF.page ? '' : 'disabled'}>‹ Prev</button><button class="sm" id="oNext" ${OF.page < pages - 1 ? '' : 'disabled'}>Next ›</button></div>` : ''}`;
     const rr = () => PAGES.orders.render();
     $('#oQ').oninput = debounce(e => { OF.q = e.target.value; OF.page = 0; rr(); setTimeout(() => { const i = $('#oQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 160);
@@ -615,7 +615,7 @@ async function clearAllOrders() {
   oSelected.clear(); invalidateStats(); save(); refresh();
   toast(`Cleared ${plural(n, 'order')}`, { undo: true });
   const accs = state.imapAccounts.filter(a => a.enabled !== false);
-  if (SERVER && accs.length) setTimeout(async () => { if (await ask('Rebuild your orders from your email now?\n\nCrown Tools will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
+  if (SERVER && accs.length) setTimeout(async () => { if (await ask('Rebuild your orders from your email now?\n\nKingpin will re-read every order email and create fresh orders with totals, items, pictures and houses. (Choose Cancel to keep the list empty.)')) rereadAll(false); }, 400);
 }
 function exportOrders(list) {
   if (!list.length) { toast('Nothing to export'); return; }

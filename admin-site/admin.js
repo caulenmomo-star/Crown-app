@@ -1,4 +1,4 @@
-/* Crown Tools Admin - a separate website for the owner: customers, free access, billing settings, discounts, activity. */
+/* Kingpin Admin - a separate website for the owner: customers, free access, billing settings, discounts, activity. */
 'use strict';
 const API = (window.CROWN_API || (/^(localhost|127\.)/.test(location.hostname) ? location.origin.replace(/:\d+$/, ':' + (new URLSearchParams(location.search).get('api') || '8870')) : 'https://crowntools.vercel.app')) + '/api';
 const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
@@ -12,7 +12,7 @@ async function api(path, body) {
   if (body) headers['Content-Type'] = 'application/json';
   let res, j = null;
   try { res = await fetch(API + path, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' }); }
-  catch (_) { throw new Error('Can’t reach Crown Tools. Check your connection.'); }
+  catch (_) { throw new Error('Can’t reach Kingpin. Check your connection.'); }
   try { j = await res.json(); } catch (_) { }
   if (!j || j.ok === false) {
     const e = new Error((j && j.error) || 'Request failed (' + res.status + ')'); e.data = j || {};
@@ -38,9 +38,9 @@ function planText(r) {
 function b32() { const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; const b = crypto.getRandomValues(new Uint8Array(20)); let bits = '', out = ''; b.forEach(x => bits += x.toString(2).padStart(8, '0')); for (let i = 0; i + 5 <= bits.length; i += 5) out += a[parseInt(bits.slice(i, i + 5), 2)]; return out; }
 async function gate(msg) {
   $('#app').hidden = true; $('#gate').hidden = false;
-  let st; try { st = await api('/admin/status'); } catch (e) { $('#gateBox').innerHTML = `<h1><span class="mark">♛</span>Crown Tools Admin</h1><div class="err">${esc(e.message)}</div>`; return; }
+  let st; try { st = await api('/admin/status'); } catch (e) { $('#gateBox').innerHTML = `<h1><span class="mark">♛</span>Kingpin Admin</h1><div class="err">${esc(e.message)}</div>`; return; }
   if (!st.setup) return setupForm();
-  $('#gateBox').innerHTML = `<h1><span class="mark">♛</span>Crown Tools Admin</h1><div class="muted small">Owner sign-in. Customers can’t use this site.</div>
+  $('#gateBox').innerHTML = `<h1><span class="mark">♛</span>Kingpin Admin</h1><div class="muted small">Owner sign-in. Customers can’t use this site.</div>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
     <label>Email</label><input id="gEmail" type="email" autocomplete="username" value="${esc(me)}">
     <label>Password</label><input id="gPw" type="password" autocomplete="current-password">
@@ -57,13 +57,13 @@ async function gate(msg) {
 function setupForm() {
   const secret = b32(); const pretty = secret.match(/.{1,4}/g).join(' ');
   $('#gateBox').innerHTML = `<h1><span class="mark">♛</span>Set up your admin account</h1>
-    <div class="muted small">One time only. You need the setup code from your Crown Tools project settings.</div>
+    <div class="muted small">One time only. You need the setup code from your Kingpin project settings.</div>
     <label>Setup code</label><input id="sCode" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX">
     <label>Your email</label><input id="sEmail" type="email" autocomplete="username">
     <label>Admin password (at least 10 characters)</label><input id="sPw" type="password" autocomplete="new-password">
     <label>Confirm password</label><input id="sPw2" type="password" autocomplete="new-password">
     <div class="sec">2-step sign-in</div>
-    <div class="small muted">Add Crown Tools Admin to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password or iPhone Passwords). On your phone, tap the button. On a computer, choose “Enter a setup key” in the app and type this key:</div>
+    <div class="small muted">Add Kingpin Admin to an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password or iPhone Passwords). On your phone, tap the button. On a computer, choose “Enter a setup key” in the app and type this key:</div>
     <div class="secret" style="margin-top:10px">${pretty}</div>
     <div class="actions"><a class="badge" style="padding:8px 12px" href="otpauth://totp/Crown%20Tools%20Admin?secret=${secret}&issuer=Crown%20Tools">Add to authenticator app</a><button id="sCopy">Copy key</button></div>
     <label>Then enter the 6-digit code it shows</label><input id="sTotp" inputmode="numeric" autocomplete="one-time-code" maxlength="7">
@@ -97,13 +97,13 @@ const VIEWS = {
     $('#main').innerHTML = `<h2>Dashboard</h2>
       <div class="kpis">${k('Monthly revenue', money(s.mrrCents, s.currency), 'estimated from paying customers')}${k('Paying', s.paying)}${k('Have access', s.access, `${s.trial} trial · ${s.free} free`)}${k('Waiting to pay', s.unpaid, 'signed up, no access')}${k('Payment failed', s.pastDue)}${k('Canceled', s.canceled)}${k('New this week', s.new7, s.new30 + ' in 30 days')}${k('All accounts', s.total, s.suspended ? s.suspended + ' suspended' : '')}</div>
       <div class="card"><h3>Launch checklist</h3><ul class="checklist">
-        ${check(s.billingReady, 'Payments connected (Stripe ' + (s.stripeMode === 'live' ? 'LIVE' : 'test mode') + ')', 'Add STRIPE_SECRET_KEY to the Crown Tools project in Vercel.')}
+        ${check(s.billingReady, 'Payments connected (Stripe ' + (s.stripeMode === 'live' ? 'LIVE' : 'test mode') + ')', 'Add STRIPE_SECRET_KEY to the Kingpin project in Vercel.')}
         ${check(s.webhookReady, 'Stripe webhook connected', 'In Stripe, add a webhook to https://crowntools.vercel.app/api/billing/webhook and put its signing secret in STRIPE_WEBHOOK_SECRET.')}
         ${check(s.mailReady, 'Emails can be sent (confirmations, password resets)', 'Add CROWN_SMTP_USER and CROWN_SMTP_PASS (a Gmail app password) in Vercel. Until then sign-ups don’t need to confirm their email.')}
         ${check(settings.signupsOpen, 'Sign-ups are open', 'Turn on sign-ups under Pricing & settings.')}
         ${check(s.stripeMode === 'live', 'Taking real payments', 'You’re in Stripe test mode. Switch to live keys when you’re ready to charge.')}
       </ul></div>
-      ${s.legacyData ? '<div class="note warn">Your earlier single-user Crown Tools data is still waiting to be moved into an account. Create your account in the app with “I have a setup code”.</div>' : ''}`;
+      ${s.legacyData ? '<div class="note warn">Your earlier single-user Kingpin data is still waiting to be moved into an account. Create your account in the app with “I have a setup code”.</div>' : ''}`;
   },
   async users() {
     $('#main').innerHTML = `<h2>Customers</h2>

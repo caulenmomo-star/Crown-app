@@ -1,4 +1,4 @@
-/* Crown Tools - selecting lots of things at once, the way a file list works:
+/* Kingpin - selecting lots of things at once, the way a file list works:
    - Shift-click a checkbox (or a row): selects (or unselects) everything between it and the last one you clicked.
    - Cmd/Ctrl-click a row: adds or removes just that row, without opening it.
    - Cmd/Ctrl+A: selects everything shown on the page. Esc: clears the selection.

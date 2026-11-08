@@ -1,4 +1,4 @@
-/* Crown Tools - a shareable invoice. Everything on the page comes from the part of the link after the #, which
+/* Kingpin - a shareable invoice. Everything on the page comes from the part of the link after the #, which
    browsers never send to a server, so nothing about the invoice is stored online. */
 'use strict';
 (function () {
@@ -30,6 +30,6 @@
     <div class="grand"><span class="label">Total${st === 'paid' ? '' : ' due'}</span><b>${money(d.total)}</b></div>
     ${d.notes ? `<p class="note">${esc(d.notes)}</p>` : ''}
     ${st === 'paid' ? '<div class="paidstamp">Paid — thank you!</div>' : st === 'void' ? '<div class="paidstamp" style="background:#eef0f4;color:#5d6574">This invoice was cancelled.</div>' : ways.length || P.note ? `<div class="pay"><h2>How to pay</h2>${ways.length ? `<div class="ways">${ways.join('')}</div>` : ''}${P.note ? `<p class="note">${esc(P.note)}</p>` : ''}${d.num ? `<p class="note">Please include <b>${esc(d.num)}</b> with your payment.</p>` : ''}</div>` : ''}
-  </div><div class="foot">Made with Crown Tools</div>`;
+  </div><div class="foot">Made with Kingpin</div>`;
   document.getElementById('pr').onclick = () => window.print();
 })();

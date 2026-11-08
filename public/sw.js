@@ -1,9 +1,9 @@
-/* Crown Tools service worker: lets Crown Tools install as an app on PC, Mac, iPhone and Android.
+/* Kingpin service worker: lets Kingpin install as an app on PC, Mac, iPhone and Android.
    Online it always loads the newest version from the server (so updates show up right away) and keeps a copy of the
    app's own files; offline it opens that copy. It never touches your data: everything under /api goes straight to
    the server, encrypted, and is never stored here. */
 'use strict';
-const CACHE = 'crown-app-v1';
+const CACHE = 'kingpin-v1';
 const SHELL = ['./', 'index.html', 'styles.css', 'manifest.webmanifest', 'ct-icon-180.png', 'ct-icon-192.png', 'ct-icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).catch(() => { }).then(() => self.skipWaiting()));
@@ -21,7 +21,7 @@ self.addEventListener('fetch', e => {
     return res;
   }).catch(() => caches.match(r).then(hit => hit || (r.mode === 'navigate' ? caches.match('index.html') : Response.error()))));
 });
-// tapping a Crown Tools notification opens the app on the right page
+// tapping a Kingpin notification opens the app on the right page
 self.addEventListener('notificationclick', e => {
   e.notification.close();
   const hash = (e.notification.data && e.notification.data.nav) ? '#' + e.notification.data.nav : '';

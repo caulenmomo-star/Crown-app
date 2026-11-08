@@ -1,4 +1,4 @@
-/* Crown Tools - right-click menus, like a real app.
+/* Kingpin - right-click menus, like a real app.
    Right-click a profile, account, card or order for the things you'd do to it: open it, move it to another group,
    set its status, copy it, duplicate it, delete it. If it's part of what you've selected, the action applies to all of
    them; if not, it becomes the selection (the way Finder works). Text boxes and links keep the normal menu so copy and

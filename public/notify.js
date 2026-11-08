@@ -1,7 +1,7 @@
-/* Crown Tools - notifications. Watches your orders, pre-orders, bot checkouts and ACO clients for anything new
+/* Kingpin - notifications. Watches your orders, pre-orders, bot checkouts and ACO clients for anything new
    (shipped, delivered, cancelled, a pre-order card that needs updating, a client's checkout, an invoice that's
    overdue) and lists it under the bell. With device notifications on, each one also pops up on this computer or
-   phone while Crown Tools is open or installed. Kept inside your encrypted data so every device shows the same list. */
+   phone while Kingpin is open or installed. Kept inside your encrypted data so every device shows the same list. */
 'use strict';
 const NOTIF_KINDS = [
   ['order', 'New orders', '🛒'], ['shipped', 'Shipped', '🚚'], ['out', 'Out for delivery', '📦'], ['delivered', 'Delivered', '✅'],
@@ -25,7 +25,7 @@ function addNotif(kind, title, body, nav, key) {
 }
 function devicePop(n, force) {
   if (!state.settings.notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-  if (!force && document.visibilityState === 'visible' && document.hasFocus()) return; // you're looking at Crown Tools already
+  if (!force && document.visibilityState === 'visible' && document.hasFocus()) return; // you're looking at Kingpin already
   const opts = { body: n.body, tag: n.key || n.id, icon: 'ct-icon-192.png', badge: 'ct-icon-192.png', data: { nav: n.nav } };
   const title = (NOTIF_ICON[n.kind] || '👑') + ' ' + n.title;
   if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(r => r ? r.showNotification(title, opts) : new Notification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (_) { } });
@@ -86,7 +86,7 @@ function notifScan() {
   return added;
 }
 // re-check shortly after anything is saved (email sync, tracking, Discord, ACO...) and every 10 minutes
-// the snapshot is saved too, so a change that happens while Crown Tools is closed still gets noticed next time
+// the snapshot is saved too, so a change that happens while Kingpin is closed still gets noticed next time
 function scheduleNotifScan() { clearTimeout(NF.timer); NF.timer = setTimeout(() => { if (notifScan() || NF.snapChanged) { NF.snapChanged = false; save(); } }, 1500); }
 setInterval(() => { if (cryptoKey && (notifScan() || NF.snapChanged)) { NF.snapChanged = false; save(); } }, 10 * 60e3);
 
@@ -116,10 +116,10 @@ function wireNotifs() {
 function notifCardHtml() {
   const S = state.settings, K = S.notifyKinds || {}, blocked = typeof Notification !== 'undefined' && Notification.permission === 'denied', none = typeof Notification === 'undefined';
   return `<div class="card" id="notifCard"><h3>Notifications</h3>
-    <div class="small muted" style="margin-bottom:8px">Everything new shows under the 🔔 bell. Turn on pop-ups to get them on this device too while Crown Tools is open or installed as an app.</div>
+    <div class="small muted" style="margin-bottom:8px">Everything new shows under the 🔔 bell. Turn on pop-ups to get them on this device too while Kingpin is open or installed as an app.</div>
     <div class="chips"><button class="chip ${S.notify ? 'on' : ''}" id="stNotify">${S.notify ? 'Pop-ups on' : 'Pop-ups off'}</button><button class="chip" id="stNotifyTest" ${S.notify ? '' : 'hidden'}>Send a test</button></div>
-    ${S.notify && blocked ? '<div class="note warn">Your browser is blocking notifications for Crown Tools. Allow them in the browser’s site settings.</div>' : ''}
-    ${none ? '<div class="note small">This browser can’t show notifications. On iPhone, install Crown Tools to your home screen first (Share → Add to Home Screen).</div>' : ''}
+    ${S.notify && blocked ? '<div class="note warn">Your browser is blocking notifications for Kingpin. Allow them in the browser’s site settings.</div>' : ''}
+    ${none ? '<div class="note small">This browser can’t show notifications. On iPhone, install Kingpin to your home screen first (Share → Add to Home Screen).</div>' : ''}
     <div class="section">Tell me about</div>
     <div class="chips" id="stNotifyKinds">${NOTIF_KINDS.map(([k, l, i]) => `<button class="chip ${K[k] !== false ? 'on' : ''}" data-nk="${k}">${i} ${l}</button>`).join('')}</div></div>`;
 }
@@ -129,6 +129,6 @@ function wireNotifCard() {
     if (!S.notify && typeof Notification !== 'undefined' && Notification.permission === 'default') { try { await Notification.requestPermission(); } catch (_) { } }
     S.notify = !S.notify; save(); PAGES.settings.render();
   };
-  $('#stNotifyTest').onclick = () => { const n = { id: uid(), kind: 'delivered', title: 'Notifications are working', body: 'This is what a Crown Tools notification looks like 👑', nav: 'dashboard' }; if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { toast('Allow notifications for Crown Tools in your browser first'); return; } devicePop(n, true); toast('Test sent'); };
+  $('#stNotifyTest').onclick = () => { const n = { id: uid(), kind: 'delivered', title: 'Notifications are working', body: 'This is what a Kingpin notification looks like 👑', nav: 'dashboard' }; if (typeof Notification === 'undefined' || Notification.permission !== 'granted') { toast('Allow notifications for Kingpin in your browser first'); return; } devicePop(n, true); toast('Test sent'); };
   $('#stNotifyKinds').onclick = e => { const b = e.target.closest('[data-nk]'); if (!b) return; S.notifyKinds = Object.assign({}, S.notifyKinds); S.notifyKinds[b.dataset.nk] = S.notifyKinds[b.dataset.nk] === false; save(); PAGES.settings.render(); };
 }

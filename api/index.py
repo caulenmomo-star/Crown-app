@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Crown Tools - local helper server.
+Kingpin - local helper server.
 
 Runs only on this computer (127.0.0.1). It:
-  * serves the Crown Tools app in your browser
+  * serves the Kingpin app in your browser
   * saves your encrypted data to the "data" folder and keeps automatic backups
   * reads order emails from your inboxes over IMAP (read-only, never marks mail as read)
   * optionally asks EasyPost for live package tracking
@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.19.0"  # prerelease - stays 0.x until Crown Tools is finished
+VERSION = "0.19.0"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -45,7 +45,7 @@ APP_DIR = os.path.join(ROOT, "app")
 
 
 def default_data_dir():
-    """A fixed home for your data, separate from the app folder, so updating Crown Tools never touches it."""
+    """A fixed home for your data, separate from the app folder, so updating Kingpin never touches it."""
     home = os.path.expanduser("~")
     if sys.platform == "darwin":
         return os.path.join(home, "Library", "Application Support", "Crown")
@@ -122,7 +122,7 @@ def read_vault():
 def write_vault(obj):
     for k in ("salt", "iv", "ct"):
         if not isinstance(obj.get(k), str) or not obj.get(k):
-            raise UserError("That doesn't look like a Crown Tools vault.")
+            raise UserError("That doesn't look like a Kingpin vault.")
     os.makedirs(BACKUP_DIR, exist_ok=True)
     with VAULT_LOCK:
         if os.path.exists(VAULT_PATH):
@@ -163,7 +163,7 @@ def vault_saved_at(path):
 
 
 def import_old_data():
-    """First run of a new version: find data from older Crown Tools folders (which kept it in Crown/data) and bring the newest copy here."""
+    """First run of a new version: find data from older Kingpin folders (which kept it in Crown/data) and bring the newest copy here."""
     if os.environ.get("CROWN_DATA") or os.path.exists(VAULT_PATH):
         return None
     import glob
@@ -187,7 +187,7 @@ def import_old_data():
             shutil.copy2(b, dest)
     try:
         with open(os.path.join(best, "MOVED - read me.txt"), "w") as f:
-            f.write("Crown Tools %s copied the data in this folder to:\n%s\n\nThis copy is no longer used. You can delete this old Crown Tools folder whenever you like.\n" % (VERSION, DATA_DIR))
+            f.write("Kingpin %s copied the data in this folder to:\n%s\n\nThis copy is no longer used. You can delete this old Kingpin folder whenever you like.\n" % (VERSION, DATA_DIR))
     except Exception:
         pass
     return best
@@ -874,7 +874,7 @@ TRACK_EVENTS = 40  # scans kept per package
 
 
 def _busy(kind):
-    return UserError("%s is busy — too many checks this hour. Crown Tools will try again later." % CARRIER_NAMES.get(kind, kind))
+    return UserError("%s is busy — too many checks this hour. Kingpin will try again later." % CARRIER_NAMES.get(kind, kind))
 
 
 def _place(*parts):
@@ -1121,7 +1121,7 @@ def image_fetch(req):
 
 # ---------------------------------------------------------------- Discord: reading bot checkout messages
 # A Discord bot you add to your server (View Channel + Read Message History, with Message Content Intent on) lets
-# Crown Tools read the checkout posts your bots send to a channel. The token comes from your encrypted data on each
+# Kingpin read the checkout posts your bots send to a channel. The token comes from your encrypted data on each
 # request and is never stored or logged here.
 DISCORD_API = (os.environ.get("CROWN_DISCORD_API") or "https://discord.com/api/v10").rstrip("/")
 BOT_TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{18,40}\.[A-Za-z0-9_\-]{4,12}\.[A-Za-z0-9_\-]{20,80}$")
@@ -1293,7 +1293,7 @@ def discord_send(req):
     if not DISCORD_RE.match(url):
         raise UserError("That isn't a Discord webhook link. In Discord: Server Settings → Integrations → Webhooks → New Webhook → Copy Webhook URL.")
     p = req.get("payload") or {}
-    body = {"username": _clip(p.get("username") or "Crown Tools", 80), "allowed_mentions": {"parse": []}}
+    body = {"username": _clip(p.get("username") or "Kingpin", 80), "allowed_mentions": {"parse": []}}
     if p.get("content"):
         body["content"] = _clip(p["content"], 1900)
     embeds = [x for x in (_clean_embed(e) for e in (p.get("embeds") or [])[:10]) if x]
@@ -1417,12 +1417,12 @@ def sku_info(req):
     if tcin:
         url = SKU_TARGET_URL + "/p/-/A-" + tcin
     if not url:
-        return {"ok": True, "found": False, "sku": raw, "store": store, "why": "Paste the product link for %s items so Crown Tools can read it." % (store or "this store's")}
+        return {"ok": True, "found": False, "sku": raw, "store": store, "why": "Paste the product link for %s items so Kingpin can read it." % (store or "this store's")}
     u = urllib.parse.urlsplit(url)
     sname = _sku_store(u.hostname) or ("Target" if tcin else "")
     local_ok = os.environ.get("CROWN_TARGET_URL") and url.startswith(SKU_TARGET_URL)
     if not local_ok and (u.scheme != "https" or not sname):
-        raise UserError("Crown Tools can only read product pages from big stores (Target, Walmart, Best Buy, Pokémon Center…).")
+        raise UserError("Kingpin can only read product pages from big stores (Target, Walmart, Best Buy, Pokémon Center…).")
     key = url.split("#")[0]
     hit = _SKUCACHE.get(key)
     if hit and hit[0] > time.time():
@@ -1898,7 +1898,7 @@ def market_prices(req):
 # ---------------------------------------------------------------- StockX (prices for sneakers, LEGO, consoles...)
 # Uses StockX's official API. The app owner registers a StockX developer app and sets STOCKX_CLIENT_ID,
 # STOCKX_CLIENT_SECRET and STOCKX_API_KEY; each person then signs in to StockX once (OAuth) and their tokens are kept
-# inside their own encrypted Crown Tools data, sent along with each price request.
+# inside their own encrypted Kingpin data, sent along with each price request.
 STOCKX_API = (os.environ.get("CROWN_STOCKX_API") or "https://api.stockx.com/v2").rstrip("/")
 STOCKX_AUTH = (os.environ.get("CROWN_STOCKX_AUTH") or "https://accounts.stockx.com").rstrip("/")
 
@@ -1919,7 +1919,7 @@ def stockx_status(req):
 def stockx_login_url(redirect_uri, state):
     c = stockx_conf()
     if not stockx_ready():
-        raise UserError("StockX isn't set up on this Crown Tools yet.")
+        raise UserError("StockX isn't set up on this Kingpin yet.")
     q = urllib.parse.urlencode({"response_type": "code", "client_id": c["id"], "redirect_uri": redirect_uri, "scope": "offline_access openid",
                                 "audience": "gateway.stockx.com", "state": state})
     return STOCKX_AUTH + "/authorize?" + q
@@ -1945,7 +1945,7 @@ def _stockx_auth(req):
     """The caller's tokens, refreshed when they're about to run out. Returns (tokens, changed)."""
     a = req.get("auth") or {}
     if not stockx_ready():
-        raise UserError("StockX isn't set up on this Crown Tools yet.")
+        raise UserError("StockX isn't set up on this Kingpin yet.")
     if not a.get("refresh") and not a.get("access"):
         raise UserError("Connect StockX in Settings first.")
     if a.get("access") and int(a.get("exp") or 0) > time.time():
@@ -2025,9 +2025,9 @@ def stockx_prices(req):
 
 
 def stockx_done_page(payload):
-    """After StockX sign-in: back to Crown Tools with the tokens in the part of the link that never reaches a server."""
+    """After StockX sign-in: back to Kingpin with the tokens in the part of the link that never reaches a server."""
     frag = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
-    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Crown Tools</title>"
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'><title>Kingpin</title>"
             "<meta http-equiv=refresh content='0;url=/#stockx=%s'><p style='font:16px system-ui;padding:24px'>Connecting StockX...</p>" % frag)
 
 
@@ -2119,7 +2119,7 @@ def aco_stripe_check(req):
 
 # ---- 17TRACK: tracks any package by its number (also ones shipped to you), for UPS, FedEx, USPS, OnTrac, LaserShip,
 # DHL and 3,000+ more. Each package is registered once (that uses one unit of your 17TRACK quota); 17TRACK then keeps
-# following it and Crown Tools reads the latest. Your Security Key is sent with each request and never stored here.
+# following it and Kingpin reads the latest. Your Security Key is sent with each request and never stored here.
 S17_BASE = os.environ.get("CROWN_17TRACK_URL", "https://api.17track.net/track/v2.2")
 S17_CARRIER = {"ups": 100002, "fedex": 100003, "usps": 21051}
 S17_STATUS = {"InfoReceived": "pre_transit", "InTransit": "in_transit", "OutForDelivery": "out_for_delivery", "Delivered": "delivered",
@@ -2139,7 +2139,7 @@ def _s17(key, path, body):
                 time.sleep(1.2)
                 continue
             if e.code == 429:
-                raise UserError("17TRACK is busy — too many checks right now. Crown Tools will try again later.")
+                raise UserError("17TRACK is busy — too many checks right now. Kingpin will try again later.")
             if e.code in (401, 403):
                 raise UserError("17TRACK rejected the Security Key. Check it in Settings → Carrier tracking.")
             raise UserError("17TRACK error %s." % e.code)
@@ -2160,7 +2160,7 @@ def _s17_err(code, msg):
     if code == -18019908:
         return "Your 17TRACK quota is used up. Add more at 17track.net (about 2¢ a package)."
     if code == -18019907:
-        return "17TRACK's daily limit is reached. Crown Tools will try again tomorrow."
+        return "17TRACK's daily limit is reached. Kingpin will try again tomorrow."
     if code == -18019903:
         return "17TRACK couldn't tell which carrier this is."
     if code in (-18010012, -18010013):
@@ -2363,7 +2363,7 @@ def track(req):
         if e.code == 401:
             raise UserError("EasyPost rejected the API key. Check it in Settings.")
         if e.code == 429:
-            raise UserError("EasyPost is busy — too many checks this hour. Crown Tools will try again later.")
+            raise UserError("EasyPost is busy — too many checks this hour. Kingpin will try again later.")
         raise UserError("EasyPost error %s%s" % (e.code, (": " + detail) if detail else ""))
     except urllib.error.URLError as e:
         raise UserError("Couldn't reach EasyPost (%s)." % e.reason)
@@ -2495,7 +2495,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             return
         if self.path == "/api/vault":
             if self.headers.get("X-Crown-App") != VERSION:
-                return self._send(200, {"ok": False, "outdated": True, "error": "Crown Tools was updated. Reload this tab to keep going."})
+                return self._send(200, {"ok": False, "outdated": True, "error": "Kingpin was updated. Reload this tab to keep going."})
 
             def fn():
                 write_vault(self._json())
@@ -2545,7 +2545,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
 
 
 def running_version(port):
-    """Version of a Crown Tools already running on this port ("" if it's an old one that doesn't say), or None."""
+    """Version of a Kingpin already running on this port ("" if it's an old one that doesn't say), or None."""
     try:
         req = urllib.request.Request("http://%s:%d/api/ping" % (HOST, port), headers={"X-Crown": "1"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -2557,7 +2557,7 @@ def running_version(port):
 
 
 def stop_old_crown(port):
-    """Close an older Crown Tools that's still running, so the new version can take over."""
+    """Close an older Kingpin that's still running, so the new version can take over."""
     try:
         req = urllib.request.Request("http://%s:%d/api/shutdown" % (HOST, port), data=b"{}", method="POST",
                                      headers={"X-Crown": "1", "Content-Type": "application/json"})
@@ -2598,15 +2598,15 @@ def main():
         # on Windows "reuse address" lets two programs share one port; we want the second to move to the next port
         ThreadingHTTPServer.allow_reuse_address = False
         try:
-            os.system("title Crown Tools")
+            os.system("title Kingpin")
         except Exception:
             pass
     os.makedirs(BACKUP_DIR, exist_ok=True)
     httpd = None
-    for port in range(BASE_PORT, BASE_PORT + 12):  # an old Crown Tools may still be running from the previous version
+    for port in range(BASE_PORT, BASE_PORT + 12):  # an old Kingpin may still be running from the previous version
         v = running_version(port)
         if v is not None and v != VERSION:
-            print("Closing the older Crown Tools (%s) that's still running..." % (v or "1.x"))
+            print("Closing the older Kingpin (%s) that's still running..." % (v or "1.x"))
             stop_old_crown(port)
     moved = import_old_data()
     if moved:
@@ -2614,11 +2614,11 @@ def main():
     for port in range(BASE_PORT, BASE_PORT + 12):
         v = running_version(port)
         if v is not None and v != VERSION:
-            print("Closing the older Crown Tools (%s) that's still running..." % (v or "1.x"))
+            print("Closing the older Kingpin (%s) that's still running..." % (v or "1.x"))
             stop_old_crown(port)
         if already_running(port):
             url = "http://%s:%d/" % (HOST, port)
-            print("Crown Tools is already running - opening %s" % url)
+            print("Kingpin is already running - opening %s" % url)
             if not os.environ.get("CROWN_NO_BROWSER"):
                 webbrowser.open(url)
             return
@@ -2635,21 +2635,21 @@ def main():
     threading.Thread(target=pool_sweeper, daemon=True).start()
     url = "http://%s:%d/" % (HOST, PORT)
     print("")
-    print("  Crown Tools %s is running at %s" % (VERSION, url))
+    print("  Kingpin %s is running at %s" % (VERSION, url))
     print("  Your data folder: %s" % DATA_DIR)
-    print("  Keep this window open while you use Crown Tools. Close it (or press Ctrl+C) to stop.")
+    print("  Keep this window open while you use Kingpin. Close it (or press Ctrl+C) to stop.")
     print("")
     if not os.environ.get("CROWN_NO_BROWSER"):
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\nCrown Tools stopped.")
+        print("\nKingpin stopped.")
 
 
 
 # =====================================================================
-# Crown Tools Online - Vercel serverless handler (appended to server.py at build time).
+# Kingpin Online - Vercel serverless handler (appended to server.py at build time).
 # Multi-user: every customer has an account and their own encrypted vault. Data is encrypted in the
 # browser with the customer's password; the server only stores ciphertext plus a hash of a
 # password-derived access key, so neither the server nor the admin can read anyone's profiles or orders.
@@ -2685,7 +2685,7 @@ MAX_CLOUD_BACKUPS = 20
 CLOUD_BACKUP_EVERY = 15 * 60
 DAY = 86400
 DEFAULT_SETTINGS = {"priceCents": 1500, "currency": "usd", "trialDays": 0, "graceDays": 3, "signupsOpen": True,
-                    "requireVerify": True, "announcement": "", "productName": "Crown Tools"}
+                    "requireVerify": True, "announcement": "", "productName": "Kingpin"}
 SAVE_SCRIPT = """
 local meta = redis.call('GET', KEYS[1])
 local cur = 0
@@ -2719,7 +2719,7 @@ class NoAccess(Exception):
 
 def kv(*cmd):
     if not KV_URL or not KV_TOKEN:
-        raise UserError("Crown Tools Online's storage isn't connected yet.")
+        raise UserError("Kingpin Online's storage isn't connected yet.")
     req = urllib.request.Request(KV_URL, data=json.dumps([str(c) if not isinstance(c, str) else c for c in cmd]).encode("utf-8"),
                                  method="POST", headers={"Authorization": "Bearer " + KV_TOKEN, "Content-Type": "application/json"})
     try:
@@ -2849,7 +2849,7 @@ def put_user(u):
 
 
 def access_of(u, s=None, t=None):
-    """Can this account use Crown Tools right now? Returns (allowed, reason)."""
+    """Can this account use Kingpin right now? Returns (allowed, reason)."""
     s = s or settings()
     t = t or now()
     if u.get("suspended"):
@@ -2924,7 +2924,7 @@ def vkeys(uid):
 
 def save_vault(uid, vault, base_rev):
     if not valid_vault(vault):
-        raise UserError("That doesn't look like a Crown Tools vault.")
+        raise UserError("That doesn't look like a Kingpin vault.")
     blob = json.dumps(vault, separators=(",", ":"))
     if len(blob) > 20 * 1024 * 1024:
         raise UserError("Your data is too large to save online.")
@@ -3000,7 +3000,7 @@ def send_mail(to, subject, text, html=None):
         return False
     msg = _MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = "%s <%s>" % (settings().get("productName") or "Crown Tools", MAIL_FROM)
+    msg["From"] = "%s <%s>" % (settings().get("productName") or "Kingpin", MAIL_FROM)
     msg["To"] = to
     msg.attach(_MIMEText(text, "plain", "utf-8"))
     if html:
@@ -3037,9 +3037,9 @@ def use_token(kind, tok, consume=True):
 def send_verify(u, headers):
     tok = make_token("verify", u["id"], 3 * DAY)
     url = "%s/?verify=%s" % (app_url(headers), tok)
-    return send_mail(u["email"], "Confirm your Crown Tools email",
-                     "Confirm your email for Crown Tools by opening this link:\n\n%s\n\nThe link works for 3 days." % url,
-                     mail_html("Confirm your email", "Tap the button to confirm the email address for your Crown Tools account.", "Confirm email", url))
+    return send_mail(u["email"], "Confirm your Kingpin email",
+                     "Confirm your email for Kingpin by opening this link:\n\n%s\n\nThe link works for 3 days." % url,
+                     mail_html("Confirm your email", "Tap the button to confirm the email address for your Kingpin account.", "Confirm email", url))
 
 
 # ---------------------------------------------------------------- Stripe (standard library only)
@@ -3080,7 +3080,7 @@ def ensure_price(s):
         return s["stripePriceId"]
     prod = s.get("stripeProductId") if s.get("stripeMode") == STRIPE_KEY[:8] else None
     if not prod:
-        prod = stripe("POST", "/v1/products", {"name": s.get("productName") or "Crown Tools", "metadata": {"app": "crowntools"}})["id"]
+        prod = stripe("POST", "/v1/products", {"name": s.get("productName") or "Kingpin", "metadata": {"app": "crowntools"}})["id"]
     price = stripe("POST", "/v1/prices", {"product": prod, "unit_amount": int(s["priceCents"]), "currency": s["currency"], "recurring": {"interval": "month"}, "metadata": {"app": "crowntools"}})
     cur = kv_json("ct:settings") or {}
     cur.update({"stripeProductId": prod, "stripePriceId": price["id"], "stripePriceCents": int(s["priceCents"]), "stripeCurrency": s["currency"], "stripeMode": STRIPE_KEY[:8]})
@@ -3306,11 +3306,11 @@ class handler(BaseHTTPRequestHandler):
         try:
             self._send(200, fn())
         except Conflict as c:
-            self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Crown Tools was changed on another device."})
+            self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Kingpin was changed on another device."})
         except TooMany:
             self._send(200, {"ok": False, "error": "Too many tries. Wait 15 minutes and try again."})
         except NoAccess as e:
-            self._send(200, {"ok": False, "noAccess": True, "reason": e.status, "error": "Your Crown Tools subscription isn't active."})
+            self._send(200, {"ok": False, "noAccess": True, "reason": e.status, "error": "Your Kingpin subscription isn't active."})
         except PermissionError as e:
             self._send(200, {"ok": False, "auth": True, "error": str(e)})
         except UserError as e:
@@ -3363,6 +3363,26 @@ class handler(BaseHTTPRequestHandler):
                         out["search"] = str(e)
                 return out
             return self._run(mstatus)
+        if r == "/probe/tmp":  # TEMPORARY: checks a few fixed public addresses while building the product list
+            def probe():
+                rate_limit("probe", client_ip(h), 30, 3600)
+                import gzip
+                q = self._query(); which = q.get("w") or ""
+                urls = {"robots": "https://www.target.com/robots.txt", "smi": "https://www.target.com/sitemap_index.xml.gz",
+                        "tcg3": TCG_BASE + "/3/groups", "x": q.get("u") or ""}
+                u = urls.get(which, "")
+                if which == "x" and not re.match(r"^https://(www\.)?target\.com/[\w./-]*\.(xml|xml\.gz|txt)$|^https://tcgcsv\.com/tcgplayer/3/\d+/products$", u):
+                    raise UserError("not allowed")
+                rq = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (compatible; Kingpin/%s)" % VERSION})
+                with urllib.request.urlopen(rq, timeout=25, context=ssl_context()) as resp:
+                    data = resp.read(30_000_000)
+                if data[:2] == b"\x1f\x8b":
+                    data = gzip.decompress(data)
+                t = data.decode("utf-8", "replace")
+                pat = q.get("grep") or ""
+                hits = [m.group(0) for m in re.finditer(pat, t)][:int(q.get("n") or 40)] if pat else []
+                return {"ok": True, "len": len(t), "head": t[:int(q.get("head") or 1500)], "hits": hits, "nhits": len(re.findall(pat, t)) if pat else 0}
+            return self._run(probe)
         if r == "/news/status":  # public health check of the news feeds (rate-limited)
             def nstatus():
                 rate_limit("nstat", client_ip(h), 20, 3600)
@@ -3438,7 +3458,7 @@ class handler(BaseHTTPRequestHandler):
         r = self._route()
         h = self.headers
         if r == "/vault" and h.get("X-Crown-App") != VERSION:
-            return self._send(200, {"ok": False, "outdated": True, "error": "Crown Tools was updated. Reload this page to keep going."})
+            return self._send(200, {"ok": False, "outdated": True, "error": "Kingpin was updated. Reload this page to keep going."})
         if r == "/vault":
             def put():
                 b = self._body()
@@ -3514,7 +3534,7 @@ class handler(BaseHTTPRequestHandler):
                     if not lm:
                         raise UserError("There's no earlier data to bring over.")
                     if not _hmac.compare_digest(hash_key(b["authKey"]), lm.get("authHash", "")):
-                        raise PermissionError("That isn't the password your earlier Crown Tools data used.")
+                        raise PermissionError("That isn't the password your earlier Kingpin data used.")
                     u["salt"] = lm.get("salt") or b["salt"]
                     u["verified"] = True
                     u["comp"] = {"until": "forever", "note": "Owner", "by": "setup code", "at": now()}
@@ -3598,9 +3618,9 @@ class handler(BaseHTTPRequestHandler):
                 if u and mail_ready():
                     tok = make_token("reset", u["id"], 3600)
                     url = "%s/?reset=%s" % (app_url(h), tok)
-                    send_mail(email, "Reset your Crown Tools password",
+                    send_mail(email, "Reset your Kingpin password",
                               "Open this link to choose a new password:\n\n%s\n\nImportant: your saved data is locked with your old password, so a reset starts you with empty data. If you remember your old password later, you can restore a backup.\n\nThe link works for 1 hour." % url,
-                              mail_html("Reset your password", "Choose a new password for Crown Tools. Your saved data is locked with your old password, so a reset starts you with empty data (backups made with the old password can still be restored if you remember it).", "Choose a new password", url))
+                              mail_html("Reset your password", "Choose a new password for Kingpin. Your saved data is locked with your old password, so a reset starts you with empty data (backups made with the old password can still be restored if you remember it).", "Choose a new password", url))
                 return {"ok": True, "mailReady": mail_ready()}  # same answer whether or not the email exists
             return self._run(forgot)
 

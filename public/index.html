@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Crown Tools">
+<meta name="apple-mobile-web-app-title" content="Kingpin">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="ct-icon-180.png">
-<title>Crown Tools</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23f6bd52'/%3E%3Cg fill='%2314172a'%3E%3Cpath d='M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z'/%3E%3Crect x='120' y='340' width='272' height='44' rx='22'/%3E%3C/g%3E%3C/svg%3E">
+<title>Kingpin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='112' fill='%23f6bd52'/%3E%3Cg fill='%2314172a'%3E%3Cpath d='M168 150 L152 70 L210 108 L256 52 L302 108 L360 70 L344 150 Z'/%3E%3Crect x='118' y='178' width='76' height='268' rx='10'/%3E%3Cpath d='M194 300 L320 178 L414 178 L262 326 Z'/%3E%3Cpath d='M236 296 L296 254 L420 446 L330 446 Z'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
 <!-- ================= LOCK ================= -->
 <div id="lock" class="lock">
   <div class="lockbox">
-    <div class="logo"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z"/><rect x="120" y="340" width="272" height="44" rx="22"/></g><g fill="#f6bd52"><circle cx="256" cy="268" r="18"/><circle cx="184" cy="284" r="12"/><circle cx="328" cy="284" r="12"/></g></svg>Crown Tools</div>
+    <div class="logo"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M168 150 L152 70 L210 108 L256 52 L302 108 L360 70 L344 150 Z"/><rect x="118" y="178" width="76" height="268" rx="10"/><path d="M194 300 L320 178 L414 178 L262 326 Z"/><path d="M236 296 L296 254 L420 446 L330 446 Z"/></g></svg>Kingpin</div>
     <div class="muted small" id="lockSub">Loading…</div>
     <input id="lockUser" type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
     <div class="field"><label for="pw1">Password</label><input type="password" id="pw1" autocomplete="current-password"></div>
@@ -34,7 +34,7 @@
     </div>
     <input type="file" id="lockRestoreFile" accept=".json" hidden>
   </div>
-  <button class="linkbtn lockinstall" id="installLock" hidden>⬇ Install Crown Tools as an app</button>
+  <button class="linkbtn lockinstall" id="installLock" hidden>⬇ Install Kingpin as an app</button>
 </div>
 
 <!-- ================= ACCOUNT (online) ================= -->
@@ -46,7 +46,7 @@
 <!-- ================= APP ================= -->
 <div id="app" hidden>
   <nav class="nav">
-    <div class="brand"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z"/><rect x="120" y="340" width="272" height="44" rx="22"/></g><g fill="#f6bd52"><circle cx="256" cy="268" r="18"/><circle cx="184" cy="284" r="12"/><circle cx="328" cy="284" r="12"/></g></svg><span class="bname">Crown Tools</span><span class="ver" id="verLbl"></span></div>
+    <div class="brand"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M168 150 L152 70 L210 108 L256 52 L302 108 L360 70 L344 150 Z"/><rect x="118" y="178" width="76" height="268" rx="10"/><path d="M194 300 L320 178 L414 178 L262 326 Z"/><path d="M236 296 L296 254 L420 446 L330 446 Z"/></g></svg><span class="bname">Kingpin</span><span class="ver" id="verLbl"></span></div>
     <div class="navlist" id="navlist"></div>
     <div class="navfoot">
       <div class="pillstat" id="syncStat"><span class="dot"></span><span>Email sync off</span></div>
@@ -59,7 +59,7 @@
     <div class="banner annbar" id="annBar" hidden><span></span></div>
     <div class="itip" id="installTip" hidden></div>
     <div class="subnav" id="subnav" hidden></div>
-    <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Crown Tools directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Crown Tools with <b>Start Crown Tools</b> to turn them on.</div>
+    <div class="banner" id="noServerBanner" hidden style="margin:16px 26px 0">You opened Kingpin directly as a file, so <b>email sync and automatic file backups are off</b>. Close this tab and open Kingpin with <b>Start Kingpin</b> to turn them on.</div>
     <section class="page" data-page="dashboard" id="pg-dashboard"></section>
     <section class="page" data-page="profiles" id="pg-profiles">
       <div class="pagehead"><h1>Profiles</h1><span class="sub" id="profSub"></span><div class="spacer"></div>
@@ -158,7 +158,7 @@
     <div class="fgrid"><div class="s2"><label>Store (for lines that don’t say)</label><select id="aiStore"></select></div><div class="s2"><label>Or load a file</label><input type="file" id="aiFile" accept=".txt,.csv,.tsv"></div></div>
     <div style="margin-top:12px"><label>Paste accounts — one per line (email:password), or a spreadsheet with email and password columns</label><textarea id="aiText" spellcheck="false" placeholder="name1@gmail.com:Password123&#10;name2@icloud.com:Hunter22!:Walmart"></textarea></div>
     <div id="aiPreview" class="small muted" style="margin-top:10px"></div>
-    <div class="note small" style="margin-top:10px">Accounts that are already saved (same store and email) are updated, not doubled. Passwords are encrypted with your Crown Tools password.</div>
+    <div class="note small" style="margin-top:10px">Accounts that are already saved (same store and email) are updated, not doubled. Passwords are encrypted with your Kingpin password.</div>
   </div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="aiGo" disabled>Import</button></div>
 </dialog>
@@ -220,7 +220,7 @@
     <div class="fgrid"><div class="s2"><label>Group</label><select id="caGroup"></select></div><div class="s2"><label>Or load a file</label><input type="file" id="caFile" accept=".txt,.csv,.tsv"></div></div>
     <div style="margin-top:12px"><label>Paste cards — a spreadsheet, or whatever you copy off your bank’s virtual-card page</label><textarea id="caText" spellcheck="false" placeholder="4111 1111 1111 1111  12/29  123&#10;5555555555554444,01,2031,456"></textarea></div>
     <div id="caPreview" class="small muted" style="margin-top:10px"></div>
-    <div class="note small" style="margin-top:10px">Crown Tools finds each card number, expiry and CVV, and skips bad or duplicate numbers. Everything is encrypted with your Crown Tools password.</div>
+    <div class="note small" style="margin-top:10px">Kingpin finds each card number, expiry and CVV, and skips bad or duplicate numbers. Everything is encrypted with your Kingpin password.</div>
   </div>
   <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="caGo" disabled>Add cards</button></div>
 </dialog>
@@ -236,7 +236,7 @@
       <label class="check"><input type="checkbox" id="csSame"> <span><b>Same name on every card</b></span></label>
       <input id="csName" placeholder="Name on the cards" autocomplete="cc-name" aria-label="Name on the cards">
     </div>
-    <div class="note small" style="margin-top:10px">Crown Tools reads the pictures right here on this device: they aren’t uploaded or saved. Check each card before adding. On an iPhone or iPad, “Type one” lets Safari’s keyboard scan a card with the camera too.</div>
+    <div class="note small" style="margin-top:10px">Kingpin reads the pictures right here on this device: they aren’t uploaded or saved. Check each card before adding. On an iPhone or iPad, “Type one” lets Safari’s keyboard scan a card with the camera too.</div>
     <div id="csList" class="cslist"></div>
   </div>
   <div class="dfoot"><span id="csSum" class="small muted" style="margin-right:auto"></span><button data-close>Cancel</button><button class="primary" id="csGo" disabled>Add cards</button></div>
@@ -340,8 +340,8 @@
 </dialog>
 
 <dialog id="dlgNews" class="wide">
-  <div class="dhead">What’s new in Crown Tools<button class="ghost sm x" data-close>✕</button></div>
-  <div class="dbody"><div class="small muted" style="margin-bottom:12px">Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.</div><div id="newsBody"></div></div>
+  <div class="dhead">What’s new in Kingpin<button class="ghost sm x" data-close>✕</button></div>
+  <div class="dbody"><div class="small muted" style="margin-bottom:12px">Kingpin is in prerelease, so versions stay at 0.x until it’s finished.</div><div id="newsBody"></div></div>
   <div class="dfoot"><button class="primary" data-close>Got it</button></div>
 </dialog>
 

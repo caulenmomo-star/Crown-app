@@ -1,4 +1,4 @@
-/* Crown Tools - saved cards in groups (e.g. "Cap One VCCs", "Amex"). Bulk-paste thousands at once from a bank's
+/* Kingpin - saved cards in groups (e.g. "Cap One VCCs", "Amex"). Bulk-paste thousands at once from a bank's
    virtual-card page, a spreadsheet or a CSV; assign a group across profiles; see which cards keep getting cancelled. */
 'use strict';
 const CARD_STATUS = [

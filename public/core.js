@@ -1,11 +1,11 @@
-/* Crown Tools - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
+/* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.19.0'; // prerelease: stays 0.x until Crown Tools is finished (see changelog.js)
+const VERSION = '0.19.0'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
-const THEMES_UI = [['crown', 'Crown', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
+const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
   ['royal', 'Royal', 'Deep purple and violet'], ['forest', 'Forest', 'Dark green and lime'], ['mono', 'Mono', 'Black and white'], ['ocean', 'Ocean', 'Light with teal'], ['cherry', 'Cherry', 'Light with red'],
-  ['auto', 'Match my device', 'Daylight by day, Crown at night']];
+  ['auto', 'Match my device', 'Daylight by day, Kingpin at night']];
 const THEME_BAR = { crown: '#17181b', daylight: '#f3f4f6', midnight: '#0d1526', ember: '#161314', royal: '#140f22', forest: '#0f1914', mono: '#111111', ocean: '#eef3f4', cherry: '#f6f3f3' };
 const DEFAULT_THEME = 'crown';
 function applyTheme(t) {
@@ -104,12 +104,12 @@ let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
 let CLOUD = false, cloudInfo = {}, authKey = null, acctEmail = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
-// A newer Crown Tools is running (or was deployed): this tab's code is old, so it must reload before it can save.
+// A newer Kingpin is running (or was deployed): this tab's code is old, so it must reload before it can save.
 function showOutdated() {
   if (document.getElementById('outdatedBar')) return;
   const d = document.createElement('div'); d.id = 'outdatedBar';
   d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:9999;background:var(--panel2);border:1px solid var(--warnLine);color:var(--warnText);padding:10px 14px;border-radius:12px;display:flex;gap:12px;align-items:center;box-shadow:0 8px 30px rgba(0,0,0,.4)';
-  d.innerHTML = '<span>Crown Tools was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
+  d.innerHTML = '<span>Kingpin was updated — reload to keep saving.</span><button class="primary sm">Reload</button>';
   d.querySelector('button').onclick = () => location.reload(); document.body.appendChild(d);
 }
 async function api(path, body, method) {
@@ -119,7 +119,7 @@ async function api(path, body, method) {
   if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; }
   try {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Crown Tools Online — check your internet connection.' : 'Crown Tools’ helper isn’t running. Open Crown Tools with “Start Crown Tools”.'); }
+  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Kingpin Online — check your internet connection.' : 'Kingpin’ helper isn’t running. Open Kingpin with “Start Kingpin”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
   if (j && j.outdated) showOutdated();
   if (j && j.noAccess && cryptoKey && typeof Account !== 'undefined') Account.lostAccess(j.reason);
@@ -134,8 +134,8 @@ const MIN_PW = 12;
 const PW_HINT = `Use at least ${MIN_PW} characters — a few random words works well.`;
 function b64e(buf) { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); }
 function b64d(s) { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
-// One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Crown Tools / Profile Manager
-// vaults), the last 32 are an access key that proves the password to Crown Tools Online without revealing it.
+// One PBKDF2 run gives 64 bytes: the first 32 are the encryption key (identical to older Kingpin / Profile Manager
+// vaults), the last 32 are an access key that proves the password to Kingpin Online without revealing it.
 async function deriveKeys(pw, saltBytes) {
   const base = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
   const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: 250000, hash: 'SHA-256' }, base, 512));
@@ -190,14 +190,14 @@ async function saveNow(opts) {
       if (SERVER) { try { await api('/api/vault', blob, 'PUT'); diskOk = true; } catch (e) { diskOk = false; } }
       lastSaveOk = localOk && diskOk;
       if (lastSaveOk) setSaveStat('ok', 'Saved ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
-      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Crown Tools’ window open?');
+      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Kingpin’ window open?');
       else setSaveStat('warn', 'Saved to disk only (browser storage full)');
     }
   } catch (e) { lastSaveOk = false; pendingSave = true; setSaveStat('bad', 'Not saved: ' + e.message); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 15000); }
   finally { saving = false; }
 }
 
-/* ---------- Crown Tools Online: saving, pulling and merging between devices ---------- */
+/* ---------- Kingpin Online: saving, pulling and merging between devices ---------- */
 async function cloudSave(opts) {
   for (let attempt = 0; attempt < 4; attempt++) {
     const json = JSON.stringify(state);
@@ -358,7 +358,7 @@ const isCompact = () => window.matchMedia('(max-width:1100px)').matches; // phon
 // re-draw when a window crosses between phone and desktop layouts (rotating an iPad, resizing a Windows/Mac window)
 window.matchMedia('(max-width:760px)').addEventListener('change', () => { if (typeof refresh === 'function') try { refresh(); } catch (_) { } });
 /* ---------- dialogs ---------- */
-// Crown Tools' own yes/no and type-a-name boxes. The browser's built-in confirm()/prompt() pop-ups are blocked or
+// Kingpin' own yes/no and type-a-name boxes. The browser's built-in confirm()/prompt() pop-ups are blocked or
 // skipped in some places (iPhone home-screen apps, in-app browsers), which made buttons silently do nothing.
 let askQueue = Promise.resolve();
 function ask(text, opts) { return askBox(Object.assign({ text }, opts || {})).then(v => v !== null); }
@@ -471,7 +471,7 @@ document.addEventListener('click', e => {
 /* ---------- lock / unlock ---------- */
 const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('crown') : null;
 const TAB_ID = uid();
-if (bc) bc.onmessage = e => { if (e.data && e.data.type === 'unlocked' && e.data.tab !== TAB_ID && cryptoKey && !CLOUD) { lock('Crown Tools was unlocked in another tab, so this tab locked itself to keep your data in sync.'); } };
+if (bc) bc.onmessage = e => { if (e.data && e.data.type === 'unlocked' && e.data.tab !== TAB_ID && cryptoKey && !CLOUD) { lock('Kingpin was unlocked in another tab, so this tab locked itself to keep your data in sync.'); } };
 async function loadBlob() {
   const local = readLocal(); let remote = null;
   if (SERVER && !CLOUD) { try { remote = (await api('/api/vault')).vault; } catch (_) { } }
@@ -490,8 +490,8 @@ function renderLockUI() {
   $('#lockCancelRestore').hidden = mode !== 'restore';
   $('#lockSub').textContent = mode === 'unlock' ? 'Enter your password to unlock.'
     : mode === 'restore' ? 'Enter the password this backup was made with' + (CLOUD ? ', plus your setup code.' : '.')
-      : CLOUD ? 'Welcome to Crown Tools Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
-        : 'Create a password of at least ' + MIN_PW + ' characters. Everything in Crown Tools is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
+      : CLOUD ? 'Welcome to Kingpin Online. Enter your setup code and create a password. Everything is encrypted with your password on this device before it’s saved — it can’t be recovered, so pick one you’ll remember.'
+        : 'Create a password of at least ' + MIN_PW + ' characters. Everything in Kingpin is encrypted with it. It can’t be recovered, so pick one you’ll remember.';
   $('#lockBtn').textContent = mode === 'unlock' ? 'Unlock' : mode === 'restore' ? 'Restore & open' : 'Create & open';
   $('#lockBtn').disabled = false;
 }
@@ -499,7 +499,7 @@ async function setupLock(msg) {
   if (CLOUD && cloudInfo.accounts && typeof Account !== 'undefined') { Account.show(msg); return; }
   $('#app').hidden = true; $('#lock').hidden = false;
   $('#pw1').value = ''; $('#pw2').value = ''; $('#lockErr').textContent = msg || '';
-  if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update your browser (Safari, Chrome or Edge).' : 'This browser can’t encrypt here. Open Crown Tools in Chrome, Edge or Safari using Start Crown Tools.'; return; }
+  if (!window.crypto || !crypto.subtle) { $('#lockSub').textContent = CLOUD ? 'This browser can’t encrypt here. Update your browser (Safari, Chrome or Edge).' : 'This browser can’t encrypt here. Open Kingpin in Chrome, Edge or Safari using Start Kingpin.'; return; }
   if (CLOUD) {
     try { const s = await api('/api/salt'); cloudExists = !!s.exists; }
     catch (e) { $('#lockSub').textContent = e.message; $('#lockBtn').disabled = true; return; }
@@ -536,7 +536,7 @@ async function doUnlock() {
         authKey = ks.auth; rev = r.rev; baseJSON = json; cloudExists = true; cryptoKey = ks.key;
       } else { cryptoKey = ks.key; await saveNow(); }
     } else if (CLOUD) {
-      const s = await api('/api/salt'); if (!s.exists) { cloudExists = false; renderLockUI(); throw new Error('Crown Tools Online has no data yet — set it up first.'); }
+      const s = await api('/api/salt'); if (!s.exists) { cloudExists = false; renderLockUI(); throw new Error('Kingpin Online has no data yet — set it up first.'); }
       salt = b64d(s.salt); const ks = await deriveKeys(pw, salt);
       authKey = ks.auth;
       let r; try { r = await api('/api/vault'); } catch (e) { authKey = null; throw e; }
@@ -583,9 +583,9 @@ function askPassword(title, text) {
   });
 }
 async function restoreFromBlob(blob) {
-  if (!validBlob(blob)) throw new Error('That file isn’t a Crown Tools or Profile Manager backup.');
+  if (!validBlob(blob)) throw new Error('That file isn’t a Kingpin or Profile Manager backup.');
   if (CLOUD && !cryptoKey) { pendingRestore = blob; $('#lockErr').textContent = ''; renderLockUI(); return true; }
-  if (!await ask('Replace everything currently in Crown Tools with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
+  if (!await ask('Replace everything currently in Kingpin with this backup?\n\nYou’ll unlock it with the password that backup was made with.')) return false;
   if (CLOUD) {
     const pw = await askPassword('Restore backup', 'Enter the password this backup was made with.');
     if (pw == null) return false;
@@ -614,13 +614,13 @@ const Crown = {
     ['#pw1', '#pw2', '#setupCode'].forEach(s => $(s).addEventListener('keydown', e => { if (e.key === 'Enter') doUnlock(); }));
     $('#resetBtn').onclick = async () => {
       if (CLOUD) {
-        const code = await askText('Forgot your password?\n\nThis permanently erases ALL Crown Tools Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
+        const code = await askText('Forgot your password?\n\nThis permanently erases ALL Kingpin Online data (profiles, orders, inboxes and online backups). Enter your setup code to continue:');
         if (!code) return;
-        if (!await ask('Last chance — erase everything in Crown Tools Online?', { ok: 'Erase everything', danger: true })) return;
-        try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Crown Tools up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
+        if (!await ask('Last chance — erase everything in Kingpin Online?', { ok: 'Erase everything', danger: true })) return;
+        try { await api('/api/reset', { code }); cloudExists = false; setupLock('Everything was erased. Set Kingpin up again below.'); } catch (e) { $('#lockErr').textContent = e.message; }
         return;
       }
-      if (!await ask('This permanently erases ALL Crown Tools data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
+      if (!await ask('This permanently erases ALL Kingpin data on this computer (profiles, orders, inboxes).\n\nOnly do this if you can’t remember your password. Continue?')) return;
       if (!await ask('Last chance — erase everything?', { ok: 'Erase everything', danger: true })) return;
       try { localStorage.removeItem(LS_KEY); } catch (_) { }
       if (SERVER) { try { await api('/api/vault', { app: 'crown', v: 2, salt: 'x', iv: 'x', ct: 'x', erased: true, savedAt: Date.now() }, 'PUT'); } catch (_) { } }
@@ -628,7 +628,7 @@ const Crown = {
     };
     $('#lockRestore').onclick = () => $('#lockRestoreFile').click();
     $('#lockCancelRestore').onclick = () => { pendingRestore = null; $('#lockErr').textContent = ''; renderLockUI(); };
-    $('#lockRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { $('#lockErr').textContent = err.message.includes('JSON') ? 'That file isn’t a Crown Tools backup.' : err.message; } };
+    $('#lockRestoreFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return; try { await restoreFromBlob(JSON.parse(await f.text())); } catch (err) { $('#lockErr').textContent = err.message.includes('JSON') ? 'That file isn’t a Kingpin backup.' : err.message; } };
     $('#lockNow').onclick = () => lock();
     document.addEventListener('keydown', e => {
       if (!cryptoKey) return;

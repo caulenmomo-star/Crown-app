@@ -1,6 +1,6 @@
-/* Crown Tools - add cards from photos. Either one picture per card (a screenshot of a virtual card, or a card with
+/* Kingpin - add cards from photos. Either one picture per card (a screenshot of a virtual card, or a card with
    everything on the front) or two (front and back, like an Amex: name and 4-digit CID on the front, number and expiry
-   on the back - the two are matched up into one card). Crown Tools reads them on this device with the Tesseract text
+   on the back - the two are matched up into one card). Kingpin reads them on this device with the Tesseract text
    reader in vendor/ocr. The pictures are never uploaded or saved: only the cards you add are kept, encrypted. */
 'use strict';
 const CardScan = (() => {
@@ -19,7 +19,7 @@ const CardScan = (() => {
   // (light text on a dark card)
   async function variants(file) {
     let bmp;
-    try { bmp = await createImageBitmap(file); } catch (e) { throw new Error('That file isn’t a picture Crown Tools can open.'); }
+    try { bmp = await createImageBitmap(file); } catch (e) { throw new Error('That file isn’t a picture Kingpin can open.'); }
     const k = Math.min(2.5, 1800 / Math.max(bmp.width, bmp.height)), W = Math.max(1, Math.round(bmp.width * k)), H = Math.max(1, Math.round(bmp.height * k));
     const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(bmp, 0, 0, W, H); if (bmp.close) bmp.close();

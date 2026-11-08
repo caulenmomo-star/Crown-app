@@ -1,4 +1,4 @@
-/* Crown Tools - ACO (checking out for clients). Each client has the bot profile names that are theirs. When your bot
+/* Kingpin - ACO (checking out for clients). Each client has the bot profile names that are theirs. When your bot
    posts a checkout on one of those profiles, it shows up here as that client's successful checkout, with the time,
    item, store and bot - it never becomes one of your own orders, since the order, card and tracking are the client's.
    Fees are worked out per client, invoices are made from the checkouts you haven't billed yet, and each invoice can
@@ -86,7 +86,7 @@ PAGES.aco = {
           <button class="htile" data-acotab="invoices"><span>Paid this month</span><b>${fmtMoney(paidMonth)}</b><i>${plural(I.filter(i => i.status === 'paid' && (i.paidAt || '').slice(0, 10) >= m0).length, 'invoice')}</i></button>
           <button class="htile" data-acotab="invoices" data-acoinv="overdue"><span>Overdue</span><b>${overdue.length}</b><i>${overdue.length ? fmtMoney(sum(overdue, acoInvTotal)) : 'nothing late'}</i></button>
           <button class="htile" data-acotab="clients"><span>Clients</span><b>${C.filter(c => c.active !== false).length}</b><i>${C.length ? C.filter(c => acoClientStats(c).last >= m0).length + ' active this month' : 'add your first'}</i></button></div></div>` : ''}
-      ${unclaimed.length && C.length && ACO.tab !== 'checkouts' ? `<div class="note warn small" style="margin:0 0 12px;display:flex;gap:10px;align-items:center"><span style="flex:1"><b>${plural(unclaimed.length, 'bot checkout')}</b> on profiles that aren’t yours or a client’s yet. Tell Crown Tools whose they are and it remembers the profile.</span><button class="sm" data-acotab="checkouts" data-acounc="1">Sort them</button></div>` : ''}
+      ${unclaimed.length && C.length && ACO.tab !== 'checkouts' ? `<div class="note warn small" style="margin:0 0 12px;display:flex;gap:10px;align-items:center"><span style="flex:1"><b>${plural(unclaimed.length, 'bot checkout')}</b> on profiles that aren’t yours or a client’s yet. Tell Kingpin whose they are and it remembers the profile.</span><button class="sm" data-acotab="checkouts" data-acounc="1">Sort them</button></div>` : ''}
       <div class="hstack" style="margin-bottom:12px"><div class="seg" id="acoTabs">${[['clients', 'Clients'], ['checkouts', 'Checkouts'], ['invoices', 'Invoices'], ['setup', 'Setup']].map(([k, l]) => `<button data-acotab="${k}" class="${ACO.tab === k ? 'on' : ''}">${l}${k === 'checkouts' && acoUnbilledCount() ? ` <span class="badge">${acoUnbilledCount()}</span>` : ''}</button>`).join('')}</div></div>
       <div id="acoBody">${ACO.tab === 'clients' ? acoClientsHtml() : ACO.tab === 'checkouts' ? acoCheckoutsHtml() : ACO.tab === 'invoices' ? acoInvoicesHtml() : acoSetupHtml()}</div>`;
     pg.onclick = acoClick;
@@ -111,7 +111,7 @@ function acoCheckoutsHtml() {
   if (ACO.ckStatus === 'unbilled') list = list.filter(k => k.status === 'success' && !k.invoiceId); else if (ACO.ckStatus === 'cancelled') list = list.filter(k => k.status !== 'success'); else if (ACO.ckStatus === 'billed') list = list.filter(k => k.invoiceId);
   if (q) list = list.filter(k => [k.item, k.profile, k.order, (acoClient(k.clientId) || {}).name, Parser.storeInfo(k.store).label].some(v => String(v || '').toLowerCase().includes(q)));
   list.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-  return `${unc.length && C.length ? `<div class="card" id="acoUnc" style="margin-bottom:14px"><h3>Whose checkouts are these? <span class="badge">${unc.length}</span></h3><div class="small muted" style="margin-bottom:8px">Your bot checked these out on profiles that aren’t in Crown Tools and aren’t on a client yet. Pick the client — Crown Tools adds the profile to that client so the next ones sort themselves.</div>
+  return `${unc.length && C.length ? `<div class="card" id="acoUnc" style="margin-bottom:14px"><h3>Whose checkouts are these? <span class="badge">${unc.length}</span></h3><div class="small muted" style="margin-bottom:8px">Your bot checked these out on profiles that aren’t in Kingpin and aren’t on a client yet. Pick the client — Kingpin adds the profile to that client so the next ones sort themselves.</div>
       <div class="list">${unc.slice().sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 40).map(c => `<div class="li"><div class="mmain"><div class="t2">${esc(c.qty)}× ${esc(acoShort(c.item))}</div><div class="small muted">${esc(Parser.storeInfo(c.store).label)} · profile <b>${esc(c.profile || '—')}</b> · ${esc(typeof botLabel === 'function' ? botLabel(c.bot) : '')} · ${esc(fmtDT(c.at))}</div></div>
         <select data-acoassign="${esc(c.id)}" style="width:auto;max-width:46%"><option value="">Whose is this?</option>${C.filter(x => x.active !== false).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}<option value="__mine">Mine (not ACO)</option><option value="__skip">Ignore</option></select></div>`).join('')}</div></div>` : ''}
     <div class="toolbar"><input class="search" data-search id="acoCkQ" placeholder="Search item, profile, client, order #…" value="${esc(ACO.ckQ)}">
@@ -136,7 +136,7 @@ function acoInvoicesHtml() {
 function acoSetupHtml() {
   const d = acoCfg();
   return `<div class="cols2"><div class="card"><h3>Your business</h3>
-      <label>Name on invoices</label><input id="acsBiz" value="${esc(d.business)}" placeholder="e.g. Crown Cooks">
+      <label>Name on invoices</label><input id="acsBiz" value="${esc(d.business)}" placeholder="e.g. Kingpin Cooks">
       <div class="section">Default fee</div><div class="small muted" style="margin-bottom:6px">Used for every client unless you set a different fee on the client. Only successful checkouts are charged.</div>
       <div class="cols3 tight"><div><label>Per item ($)</label><input id="acsUnit" inputmode="decimal" value="${esc(d.unit || '')}" placeholder="0"></div><div><label>% of the price</label><input id="acsPct" inputmode="decimal" value="${esc(d.pct || '')}" placeholder="0"></div><div><label>Per checkout ($)</label><input id="acsOrder" inputmode="decimal" value="${esc(d.perOrder || '')}" placeholder="0"></div></div>
       <div class="cols2 tight" style="margin-top:8px"><div><label>Invoices are due after (days)</label><input id="acsDue" inputmode="numeric" value="${esc(d.dueDays)}"></div><div><label>Invoice number starts with</label><input id="acsPrefix" value="${esc(d.prefix)}"></div></div>
@@ -145,7 +145,7 @@ function acoSetupHtml() {
       <div class="cols2 tight"><div><label>Venmo</label><input id="acsVenmo" value="${esc(d.venmo)}" placeholder="@your-name"></div><div><label>Cash App</label><input id="acsCash" value="${esc(d.cashapp)}" placeholder="$yourtag"></div><div><label>Zelle</label><input id="acsZelle" value="${esc(d.zelle)}" placeholder="email or phone"></div><div><label>PayPal</label><input id="acsPaypal" value="${esc(d.paypal)}" placeholder="paypal.me/yourname"></div></div>
       <label style="margin-top:8px">Note on invoices</label><input id="acsNote" value="${esc(d.payNote)}" placeholder="e.g. Friends & family only, include the invoice number">
       <div class="section">Card payments with Stripe <span class="small faint">(optional)</span></div>
-      <div class="small muted" style="margin-bottom:6px">Add a Stripe secret or restricted key and each invoice gets a “Pay with card” link. Crown Tools checks Stripe and marks the invoice paid on its own. Make a restricted key at dashboard.stripe.com → Developers → API keys with write access to Prices and Payment Links and read access to Checkout Sessions.</div>
+      <div class="small muted" style="margin-bottom:6px">Add a Stripe secret or restricted key and each invoice gets a “Pay with card” link. Kingpin checks Stripe and marks the invoice paid on its own. Make a restricted key at dashboard.stripe.com → Developers → API keys with write access to Prices and Payment Links and read access to Checkout Sessions.</div>
       <div class="hstack"><input id="acsStripe" type="password" autocomplete="off" placeholder="rk_live_… or sk_live_…" value="${esc(d.stripeKey)}" style="flex:1;min-width:200px"><button id="acsStripeTest">Save &amp; test</button></div></div></div>
     <div class="hstack" style="margin-top:12px"><button class="primary" id="acsSave">Save</button></div>`;
 }

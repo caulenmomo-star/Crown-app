@@ -1,1 +1,1 @@
-# Crown Tools Online uses only the Python standard library
+# Kingpin Online uses only the Python standard library

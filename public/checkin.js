@@ -1,4 +1,4 @@
-/* Crown Tools - check-in (delivered boxes stay flagged until you scan them in) and Discord alerts per house. */
+/* Kingpin - check-in (delivered boxes stay flagged until you scan them in) and Discord alerts per house. */
 'use strict';
 
 /* ---------- check-in ---------- */
@@ -132,7 +132,7 @@ const Alerts = (() => {
     if (o.name) fields.push({ name: 'Name on order', value: o.name, inline: true });
     if (tr) fields.push({ name: (tr.carrier || 'Tracking'), value: tr.number, inline: true });
     const prof = o.profileId && profileById(o.profileId); if (prof) fields.push({ name: 'Profile', value: prof.name || '—', inline: true });
-    return { title: TITLES[ev] + (h ? ' — ' + houseLabel(h) : ''), description: items.slice(0, 900), color: COLORS[ev], fields, thumbnail: orderImage(o) ? { url: orderImage(o) } : undefined, timestamp: new Date().toISOString(), footer: { text: 'Crown Tools' } };
+    return { title: TITLES[ev] + (h ? ' — ' + houseLabel(h) : ''), description: items.slice(0, 900), color: COLORS[ev], fields, thumbnail: orderImage(o) ? { url: orderImage(o) } : undefined, timestamp: new Date().toISOString(), footer: { text: 'Kingpin' } };
   }
   const pending = [];
   function queue(o, ev) { const a = S(); if (!a.on || !a[ev] || !hookFor(o)) return; if ((o.alerted || {})[ev]) return; pending.push([o, ev]); }
@@ -148,7 +148,7 @@ const Alerts = (() => {
         for (let i = 0; i < items.length; i += 10) {
           const chunk = items.slice(i, i + 10);
           chunk.forEach(([o, ev]) => { o.alerted = Object.assign({}, o.alerted, { [ev]: Date.now() }); }); // mark first so two devices don't both send
-          try { await api('/api/discord', { url, payload: { username: 'Crown Tools', embeds: chunk.map(([o, ev]) => embed(o, ev)) } }); sent += chunk.length; }
+          try { await api('/api/discord', { url, payload: { username: 'Kingpin', embeds: chunk.map(([o, ev]) => embed(o, ev)) } }); sent += chunk.length; }
           catch (e) { err = e.message; if (/doesn't exist|isn't a Discord/.test(e.message)) break; chunk.forEach(([o, ev]) => { delete o.alerted[ev]; }); }
         }
       }
@@ -157,7 +157,7 @@ const Alerts = (() => {
     } finally { busy = false; }
   }
   async function test(url, h) {
-    await api('/api/discord', { url, payload: { username: 'Crown Tools', embeds: [{ title: '👑 Crown Tools is connected' + (h ? ' — ' + houseLabel(h) : ''), description: h ? 'Alerts for this house will show up here.' : 'Delivery alerts will show up here.', color: 0x7c8cff, timestamp: new Date().toISOString() }] } });
+    await api('/api/discord', { url, payload: { username: 'Kingpin', embeds: [{ title: '👑 Kingpin is connected' + (h ? ' — ' + houseLabel(h) : ''), description: h ? 'Alerts for this house will show up here.' : 'Delivery alerts will show up here.', color: 0x7c8cff, timestamp: new Date().toISOString() }] } });
   }
   return { run, queue, test, embed };
 })();

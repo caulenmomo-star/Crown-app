@@ -1,4 +1,4 @@
-/* Crown Tools Online - accounts: sign in, create account (with the price up front), confirm email, subscribe,
+/* Kingpin Online - accounts: sign in, create account (with the price up front), confirm email, subscribe,
    forgot password, and the Account card in Settings. Only used online; the Mac/Windows app keeps its own lock screen. */
 'use strict';
 const Account = (() => {
@@ -35,15 +35,15 @@ const Account = (() => {
       $('#acGo').onclick = signIn; enter(['#acEmail', '#acPw'], signIn);
       focusFirst(remembered() ? '#acPw' : '#acEmail');
     } else if (panel === 'signup') {
-      box.innerHTML = head('Create your Crown Tools account.') + `
+      box.innerHTML = head('Create your Kingpin account.') + `
         <div class="pricecard">${cloudInfo.billingReady ? `<div class="pc1"><b>${esc(pr)}</b>${P().trialDays ? ` <span class="badge">${P().trialDays}-day free trial</span>` : ''}</div>` : '<div class="pc1"><b>Invite-only</b></div>'}
-          <div class="small muted">${cloudInfo.billingReady ? 'Crown Tools is a paid monthly subscription. Creating an account is free — you’ll subscribe on the next screen to start using it. Cancel anytime.' : 'Crown Tools is invite-only right now. Make your account, then the owner lets you in — there’s nothing to pay.'}</div></div>
+          <div class="small muted">${cloudInfo.billingReady ? 'Kingpin is a paid monthly subscription. Creating an account is free — you’ll subscribe on the next screen to start using it. Cancel anytime.' : 'Kingpin is invite-only right now. Make your account, then the owner lets you in — there’s nothing to pay.'}</div></div>
         <div class="field"><label for="acEmail">Email</label><input id="acEmail" type="email" autocomplete="username" inputmode="email" autocapitalize="off"></div>
         <div class="field"><label for="acPw">Password</label><input id="acPw" type="password" autocomplete="new-password" placeholder="At least ${MIN_PW} characters"></div>
         <div class="field"><label for="acPw2">Confirm password</label><input id="acPw2" type="password" autocomplete="new-password"></div>
-        <div class="note warn small">Your password also locks your data on this device — nobody, not even Crown Tools, can read it or recover it. If you forget it, you can reset it but you’ll start with empty data.</div>
-        <label class="check accheck"><input type="checkbox" id="acAgree"> <span>${cloudInfo.billingReady ? `I understand Crown Tools costs <b>${esc(pr)}</b> after I create my account, and I agree to the` : 'I agree to the'} <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
-        <div class="field" id="acClaimWrap" hidden><label for="acClaim">Setup code (only to bring over data from your earlier Crown Tools)</label><input id="acClaim" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX"></div>
+        <div class="note warn small">Your password also locks your data on this device — nobody, not even Kingpin, can read it or recover it. If you forget it, you can reset it but you’ll start with empty data.</div>
+        <label class="check accheck"><input type="checkbox" id="acAgree"> <span>${cloudInfo.billingReady ? `I understand Kingpin costs <b>${esc(pr)}</b> after I create my account, and I agree to the` : 'I agree to the'} <a href="terms.html" target="_blank" rel="noopener">Terms</a> and <a href="privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.</span></label>
+        <div class="field" id="acClaimWrap" hidden><label for="acClaim">Setup code (only to bring over data from your earlier Kingpin)</label><input id="acClaim" autocomplete="off" autocapitalize="characters" placeholder="XXXX-XXXX-XXXX"></div>
         <button class="primary" id="acGo">Create account</button>${errBox()}
         <div class="hstack acfoot"><button class="linkbtn" data-ap="signin">I already have an account</button><span class="spacer"></span><button class="linkbtn" id="acShowClaim">I have a setup code</button></div>`;
       $('#acGo').onclick = signUp; enter(['#acEmail', '#acPw', '#acPw2'], signUp);
@@ -79,11 +79,11 @@ const Account = (() => {
       const pastDue = sub.status === 'past_due' || sub.status === 'unpaid';
       const invite = !cloudInfo.billingReady && r !== 'suspended';
       box.innerHTML = head(why || (invite ? 'Your account is ready — waiting for access' : 'One more step: start your subscription.')) + ann + (r === 'suspended' ? '' : invite ? `
-        <div class="note small">Crown Tools is invite-only right now. Send the owner the email you signed up with: <b>${esc(acct.email || '')}</b>. Once they let you in, tap “Check again”.</div>
+        <div class="note small">Kingpin is invite-only right now. Send the owner the email you signed up with: <b>${esc(acct.email || '')}</b>. Once they let you in, tap “Check again”.</div>
         <button class="primary" id="acCheck" style="margin-top:12px">Check again</button>` : `
         <div class="pricecard big"><div class="pc1"><b>${esc(priceText())}</b>${P().trialDays && !acct.trialUsed ? ` <span class="badge">${P().trialDays}-day free trial</span>` : ''}</div>
           <ul class="plist"><li>Profiles for Valor, Hayha, Stellar, Shikari and AYCD</li><li>Orders read from your email automatically</li><li>Houses, delivery calendar and spending</li><li>Works on your phone, iPad, Windows and Mac</li><li>Encrypted — only you can read your data</li></ul></div>
-        ${pastDue ? '<div class="note warn small">Your last payment didn’t go through. Update your card to keep using Crown Tools.</div>' : ''}
+        ${pastDue ? '<div class="note warn small">Your last payment didn’t go through. Update your card to keep using Kingpin.</div>' : ''}
         ${cloudInfo.billingReady ? `<button class="primary" id="acPay">${pastDue && sub.hasCustomer ? 'Update payment method' : 'Subscribe — ' + esc(priceText())}</button><div class="small faint" style="margin-top:8px;text-align:center">Secure checkout by Stripe. Have a discount code? Enter it at checkout.</div>` : '<div class="note warn">Subscriptions open soon. You’ll get access as soon as the owner turns them on.</div>'}`) + `
         ${errBox()}
         <div class="hstack acfoot">${invite ? '' : '<button class="linkbtn" id="acRefresh">Already paid? Check again</button>'}<span class="spacer"></span><button class="linkbtn" id="acExport">Download my data</button><button class="linkbtn" id="acOut">Sign out</button></div>`;
@@ -211,7 +211,7 @@ const Account = (() => {
       catch (e) { notice = e.message; }
     }
     if (urlReset) { panel = 'reset'; }
-    else if (urlBilling === 'success') notice = 'Payment received — sign in to start using Crown Tools.';
+    else if (urlBilling === 'success') notice = 'Payment received — sign in to start using Kingpin.';
     else if (urlBilling === 'cancel') notice = 'Checkout was canceled — no charge was made. Sign in to try again.';
     show();
   }

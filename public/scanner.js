@@ -1,4 +1,4 @@
-/* Crown Tools - barcode scanning: the phone/computer camera, a photo, a USB or Bluetooth scanner, or typing.
+/* Kingpin - barcode scanning: the phone/computer camera, a photo, a USB or Bluetooth scanner, or typing.
    One scanner for everything: shipping labels (check-in) and product barcodes (inventory). */
 'use strict';
 const Scan = (() => {

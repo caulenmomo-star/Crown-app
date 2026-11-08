@@ -1,4 +1,4 @@
-/* Crown Tools - profile doctor: which profiles are burned (their orders keep getting cancelled) or broken, why,
+/* Kingpin - profile doctor: which profiles are burned (their orders keep getting cancelled) or broken, why,
    and a careful "smart line 2" fix that only ever changes address line 2. */
 'use strict';
 const isCancelled = o => o.status === 'cancelled';

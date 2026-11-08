@@ -1,4 +1,4 @@
-/* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
+/* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
   { v: '0.19.0', date: '2026-11-08', title: 'Right-click menus, lists keep their place', items: [
@@ -26,22 +26,22 @@ const CHANGELOG = [
   ] },
   { v: '0.18.1', date: '2026-11-06', title: 'Card photos you can trust', items: [
     '“2 pictures per card” now always pairs pictures 1+2, 3+4 and so on, with either side first in each pair.',
-    'A card number is only trusted when separate readings of the photo agree. Otherwise Crown Tools asks you to check it against the photo first.',
+    'A card number is only trusted when separate readings of the photo agree. Otherwise Kingpin asks you to check it against the photo first.',
     'Tap a picture to see it full size, and remove a stray picture so the rest pair up again.',
     'An extra digits-only reading makes card numbers more accurate.',
   ] },
   { v: '0.18.0', date: '2026-11-06', title: 'Front and back card photos', items: [
     '“2 pictures per card” for cards like an Amex: the name and CID come from the front, the number and expiry from the back. 10 pictures make 5 cards.',
-    'Crown Tools works out which picture is which side. If one is missing, only that card is flagged; the cards after it stay paired correctly.',
+    'Kingpin works out which picture is which side. If one is missing, only that card is flagged; the cards after it stay paired correctly.',
     '“Same name on every card” fills in one name for the whole batch.',
     'Reads photos more reliably: coloured cards, dark cards, glare and the black stripe on the back.',
   ] },
   { v: '0.17.1', date: '2026-11-06', title: 'Invite-only sign-up', items: [
-    'While payments are off, sign-up says Crown Tools is invite-only and free, with no price shown.',
+    'While payments are off, sign-up says Kingpin is invite-only and free, with no price shown.',
     'New accounts see a “waiting for access” screen. Once the owner lets them in, “Check again” opens the app.',
   ] },
   { v: '0.17.0', date: '2026-11-06', title: 'Cards from photos', items: [
-    'Add cards from photos or screenshots: Cards → From photos. Crown Tools reads the number, expiry, Amex CID and name, and you check each card before adding it.',
+    'Add cards from photos or screenshots: Cards → From photos. Kingpin reads the number, expiry, Amex CID and name, and you check each card before adding it.',
     'The pictures are read on your device and never uploaded or saved.',
     'Bad numbers, cards already saved and cards picked twice are flagged. Missing expiries or Amex CIDs have to be filled in before adding.',
   ] },
@@ -65,13 +65,13 @@ const CHANGELOG = [
     'Open any package to see every scan, plus the service, weight, where it shipped from and where it was left.',
     '“Needs a look” finds delivery problems, arrival dates that moved later, packages past their date and ones with no new scans for 4 days, with a notification.',
     'Packages are checked more often once they’re close: every 30 minutes when out for delivery.',
-    'When USPS says there have been too many checks, Crown Tools waits and tries again later instead of failing.',
+    'When USPS says there have been too many checks, Kingpin waits and tries again later instead of failing.',
   ] },
   { v: '0.13.1', date: '2026-11-01', title: 'Pre-orders: card not updated', items: [
     'Pre-orders cancelled for item demand or a quantity limit no longer show on the Pre-orders page.',
     'New “Cancelled — card not updated” group for pre-orders the store cancelled because the card wasn’t changed in time, with how many happened today.',
     'Those cancels are labeled “card not updated” everywhere and don’t count against a profile.',
-    'Notifications now catch changes that happened while Crown Tools was closed.',
+    'Notifications now catch changes that happened while Kingpin was closed.',
   ] },
   { v: '0.13.0', date: '2026-10-31', title: 'ACO, notifications and StockX', items: [
     'New ACO section: clients, their bot profiles, every checkout on them with the time, item and fee, and invoices.',
@@ -117,8 +117,8 @@ const CHANGELOG = [
     'Drag the edge of a column header to resize it in Profiles, Orders, Accounts and Cards — double-click to reset.',
     'Tables scroll sideways inside their own box, so the columns on the right are always reachable.',
   ] },
-  { v: '0.10.0', date: '2026-10-22', title: 'Crown Tools app', items: [
-    'Install Crown Tools as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.',
+  { v: '0.10.0', date: '2026-10-22', title: 'Kingpin app', items: [
+    'Install Kingpin as an app on iPhone, iPad, Mac and PC — its own icon and window, same account everywhere.',
     'Added a Get the app card in Settings and an install page with steps for each device.',
   ] },
   { v: '0.9.10', date: '2026-10-22', title: 'Simpler profit', items: [
@@ -178,7 +178,7 @@ const CHANGELOG = [
     'More stores and carriers, plus free USPS tracking.',
   ] },
   { v: '0.6.0', date: '2026-10-21', title: 'Accounts and subscriptions', items: [
-    'Crown Tools Online now has accounts: anyone can sign up with their email and a password, and each account’s data is kept separate and encrypted with that person’s own password.',
+    'Kingpin Online now has accounts: anyone can sign up with their email and a password, and each account’s data is kept separate and encrypted with that person’s own password.',
     'The sign-up screen shows the monthly price up front, and people tick a box to agree before their account is made. After signing up they confirm their email, then subscribe on a separate screen to get access.',
     'Subscriptions are paid monthly through Stripe. Customers can update their card or cancel from Settings → Account → Manage billing. If a payment fails, access continues for a short grace period.',
     'New separate admin website for the owner, protected by a password and authenticator codes: see revenue and sign-ups, find customers, give free access for any length of time, suspend accounts, change the price and trial, make discount codes, post an announcement, and review an activity log.',
@@ -188,18 +188,18 @@ const CHANGELOG = [
   ] },
   { v: '0.5.4', date: '2026-10-21', title: 'Profiles in Valor, Hayha, Stellar, Shikari and AYCD files', items: [
     'Export: pick Valor, Hayha, Stellar, Shikari or AYCD and you get a file in that bot’s exact layout (.valor.json, .Hayha, .stellar.json, .shikari.csv, .aycd.json), ready to load into the bot. Your last choice is remembered.',
-    'Import: load or paste a profile file from any of those bots and Crown Tools recognizes it automatically.',
+    'Import: load or paste a profile file from any of those bots and Kingpin recognizes it automatically.',
     'Importing the same file again updates the profiles that are already there (same name in the category) instead of making copies.',
     'Profiles now keep the email password and the “one checkout per profile” setting that Valor and Shikari files carry.',
     'Exported files are named after the category, like “Target.valor.json”.',
   ] },
   { v: '0.5.3', date: '2026-10-21', title: 'Adding categories works on phones', items: [
-    'Fixed: “+ New category” did nothing on iPhone. Phones (especially home-screen apps) can block the browser’s built-in pop-ups, so Crown Tools now uses its own box to type a name or confirm.',
+    'Fixed: “+ New category” did nothing on iPhone. Phones (especially home-screen apps) can block the browser’s built-in pop-ups, so Kingpin now uses its own box to type a name or confirm.',
     'Same fix for renaming and deleting categories, house nicknames, deleting orders and profiles, merging houses, removing inboxes, re-reading email and resetting a forgotten password.',
     'Buttons no longer stay highlighted after you tap them.',
   ] },
   { v: '0.5.2', date: '2026-10-21', title: 'Email is checked every time you open the app', items: [
-    'Fixed: with automatic sync set to Off, new emails were never read on their own, so delivered and “arrives today” emails didn’t show and the calendar kept old dates. Crown Tools now checks your email every time you open it or come back to it.',
+    'Fixed: with automatic sync set to Off, new emails were never read on their own, so delivered and “arrives today” emails didn’t show and the calendar kept old dates. Kingpin now checks your email every time you open it or come back to it.',
     'Automatic sync that was Off is switched to every 5 minutes. You can change it on the Inboxes page; “Only when I open it” replaces Off.',
     'Home shows a warning under Needs attention when email hasn’t been checked for more than 3 hours. Tap it to check now.',
   ] },
@@ -209,20 +209,20 @@ const CHANGELOG = [
     'Quantities over one show up front, like “2× Scarlet & Violet Booster Bundle”.',
     'The status on those Home lists is now just a colored dot: orange shipped, green delivered, red cancelled.',
   ] },
-  { v: '0.5.0', date: '2026-10-21', title: 'Crown Tools: made for phones, Windows and Mac', items: [
-    'New name: Crown is now Crown Tools, with a new app icon.',
+  { v: '0.5.0', date: '2026-10-21', title: 'Kingpin: made for phones, Windows and Mac', items: [
+    'New name: Crown is now Kingpin, with a new app icon.',
     'Phones: a bottom tab bar (Home, Orders, Calendar, Houses, More) and a slim top bar with Sync and Lock.',
     'Phones: orders and profiles show as easy-to-tap cards with the picture, total, status, arrival date and house. Tap Select to pick several at once.',
     'Phones: every pop-up opens full screen, page buttons sit in one row you can swipe, and filters scroll sideways instead of piling up.',
     'Phones: the calendar shows a count for each day. Tap a day to see its orders underneath.',
     'Phones: add it to your home screen and it opens full screen like an app.',
-    'Windows: double-click “Start Crown Tools.bat”. If Python is missing it offers to install it. Mac keeps “Start Crown Tools.command”.',
+    'Windows: double-click “Start Kingpin.bat”. If Python is missing it offers to install it. Mac keeps “Start Kingpin.command”.',
     'Windows: thin dark scrollbars, and saving waits a moment if antivirus is holding the data file.',
     'Charts are redrawn to fit when you rotate a phone or resize a window.',
   ] },
   { v: '0.4.8', date: '2026-10-21', title: 'House names: successful orders only', items: [
     'Each house’s Names used, Units / line 2 used and Profiles now count only successful orders (shipped or delivered) by default.',
-    'A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Crown Tools remembers your choice.',
+    'A Successful orders / All orders switch above them shows everything, including cancelled and pending orders. Kingpin remembers your choice.',
   ] },
   { v: '0.4.7', date: '2026-10-20', title: 'Checked against your real orders', items: [
     'Fixed: orders whose arrival date had been copied from the order confirmation by older versions kept that guess. Now only a shipping email, live carrier tracking or a date you typed counts as the arrival date. The rest show as “Original order said …”.',
@@ -231,7 +231,7 @@ const CHANGELOG = [
     'Walmart’s “You might also like” section is no longer read as part of the order.',
   ] },
   { v: '0.4.6', date: '2026-10-20', title: 'Live UPS & FedEx dates, fresh re-read', items: [
-    'New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Crown Tools asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Crown Tools and after every sync.',
+    'New Carrier tracking in Settings: paste your free UPS and FedEx developer keys and Kingpin asks the carriers directly for every package. You get the real delivery date (like UPS’s “Tomorrow, Oct 21”), out for delivery, and delivered on the actual day. Packages are checked when you open Kingpin and after every sync.',
     'Fixed a time-zone bug that could put live-tracking dates one day early.',
     'Your order emails are re-read once more with the current reader. An earlier version had marked them as done, so they never got the fixes. This fills in totals, addresses, houses and statuses, and repairs numbers like “…539ARE”.',
     'The Dashboard has a day selector at the top (Today, 3–365 days, any number of days, or From–To dates). Spent, orders, items and stick rate follow it.',
@@ -244,13 +244,13 @@ const CHANGELOG = [
     'Existing orders are fixed automatically: arrival dates that came from confirmation emails become the original estimate.',
   ] },
   { v: '0.4.4', date: '2026-10-20', title: 'Smarter houses, delivery windows', items: [
-    'Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Crown Tools matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.',
-    'Your existing houses are merged automatically when you open Crown Tools. Nicknames and notes are kept, and each house shows the spelling most of its orders use.',
+    'Houses now look past address jigs and typos. “XQZ 11662 S 2670 W”, “11662 S 2670 W ABC”, “abc11662…”, “11662 Suoth 2670 Wset” and “11662 South 2670 West” are all one house. Kingpin matches the house number and ZIP, then compares the street loosely, while different house numbers, streets and ZIPs stay separate.',
+    'Your existing houses are merged automatically when you open Kingpin. Nicknames and notes are kept, and each house shows the spelling most of its orders use.',
     'Profiles with jigged addresses still link to their orders.',
     'Delivery windows like “Arrives Thu, Sep 17 – Tue, Sep 22” are kept as a window, and each order shows which email its arrival date came from.',
   ] },
   { v: '0.4.3', date: '2026-10-20', title: 'Correct numbers, clear all, recap range', items: [
-    'New “Clear all orders” button on the Orders page. You can undo it right away, or have Crown Tools rebuild every order fresh from your email.',
+    'New “Clear all orders” button on the Orders page. You can undo it right away, or have Kingpin rebuild every order fresh from your email.',
     'Stick rate is now correct: only orders that shipped, are out for delivery, are ready or were delivered count as stuck. Placed and confirmed orders show as “pending” until they ship or get cancelled.',
     'Partial cancellations (“we had to cancel an item”) no longer cancel the whole order. Only those items are removed, and their share of the total comes off.',
     'Item quantities count correctly. A fully cancelled item counts as 0, not 1.',
@@ -263,14 +263,14 @@ const CHANGELOG = [
     'The re-read only counts as done when every inbox read without errors. Otherwise it tries again next time.',
     'New “Re-read all order emails” button on the Inboxes page, so you can refill everything whenever you want.',
     'Old orders whose numbers had words stuck on the end (like “…099ARE”) are repaired and merged back into the right order.',
-    'When the re-read finishes, Crown Tools tells you how many orders are in houses and how many have pictures.',
+    'When the re-read finishes, Kingpin tells you how many orders are in houses and how many have pictures.',
   ] },
   { v: '0.4.1', date: '2026-10-20', title: 'Second pass', items: [
     'Walmart “Shipped:”, “Arrived:” and “Canceled:” emails and Pokémon Center confirmations are now read correctly, all tested against your real emails.',
     'Orders whose emails have no street address (Amazon, PlayStation, cancellations) go into the house of the profile they’re linked to.',
     'Stores that send no pictures (Pokémon Center) borrow the picture from another order of the same product.',
     'Profile matching is about 18× faster with big lists, and details that don’t match now count against a profile.',
-    'After an update, an old open Crown Tools tab can no longer save over your data. It shows a Reload button instead.',
+    'After an update, an old open Kingpin tab can no longer save over your data. It shows a Reload button instead.',
     'Editing an order keeps its item pictures and doesn’t lock the total unless you changed it.',
   ] },
   { v: '0.4.0', date: '2026-10-20', title: 'Real-email reader', items: [
@@ -285,7 +285,7 @@ const CHANGELOG = [
     'Promo emails like “New Outerwear Has Arrived” are never read as orders.',
     'Existing orders are re-read once automatically after this update so they fill in.',
     'With an EasyPost key, packages are re-checked automatically after each sync.',
-    'Versions now use 0.x numbers while Crown Tools is in prerelease, and this changelog was added.',
+    'Versions now use 0.x numbers while Kingpin is in prerelease, and this changelog was added.',
   ] },
   { v: '0.3.0', date: '2026-10-19', title: 'Faster and cleaner', items: [
     'Much faster email reading. Promos, surveys and non-store emails are skipped before downloading.',
@@ -293,9 +293,9 @@ const CHANGELOG = [
     'Duplicate and not-an-order cleanup, arrival date and delivered-status fixes.',
     'Data carries over between updates automatically, and multiple devices stay in sync.',
   ] },
-  { v: '0.2.0', date: '2026-10-18', title: 'Order tracker and Crown Tools Online', items: [
+  { v: '0.2.0', date: '2026-10-18', title: 'Order tracker and Kingpin Online', items: [
     'Order tracker with IMAP email reading, delivery tracking, houses, a spending card and profile linking.',
-    'Crown Tools Online runs on any device, including iPad, with end-to-end encryption.',
+    'Kingpin Online runs on any device, including iPad, with end-to-end encryption.',
   ] },
   { v: '0.1.0', date: '2026-10-17', title: 'Profile manager', items: [
     'Checkout-bot profile manager with categories, mass import, individual and bulk edits, and a tap-to-pick address line 2 tool.',

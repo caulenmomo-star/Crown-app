@@ -1,5 +1,5 @@
-/* Crown Tools - profile files for checkout bots: Valor, Hayha, Stellar, Shikari and AYCD.
-   Each format can read a bot's export into Crown Tools profiles and write profiles back out in that bot's exact layout. */
+/* Kingpin - profile files for checkout bots: Valor, Hayha, Stellar, Shikari and AYCD.
+   Each format can read a bot's export into Kingpin profiles and write profiles back out in that bot's exact layout. */
 'use strict';
 const BotFormats = (() => {
   const STATES = { AL: 'Alabama', AK: 'Alaska', AZ: 'Arizona', AR: 'Arkansas', CA: 'California', CO: 'Colorado', CT: 'Connecticut', DE: 'Delaware', FL: 'Florida', GA: 'Georgia', HI: 'Hawaii', ID: 'Idaho', IL: 'Illinois', IN: 'Indiana', IA: 'Iowa', KS: 'Kansas', KY: 'Kentucky', LA: 'Louisiana', ME: 'Maine', MD: 'Maryland', MA: 'Massachusetts', MI: 'Michigan', MN: 'Minnesota', MS: 'Mississippi', MO: 'Missouri', MT: 'Montana', NE: 'Nebraska', NV: 'Nevada', NH: 'New Hampshire', NJ: 'New Jersey', NM: 'New Mexico', NY: 'New York', NC: 'North Carolina', ND: 'North Dakota', OH: 'Ohio', OK: 'Oklahoma', OR: 'Oregon', PA: 'Pennsylvania', RI: 'Rhode Island', SC: 'South Carolina', SD: 'South Dakota', TN: 'Tennessee', TX: 'Texas', UT: 'Utah', VT: 'Vermont', VA: 'Virginia', WA: 'Washington', WV: 'West Virginia', WI: 'Wisconsin', WY: 'Wyoming', DC: 'District of Columbia', PR: 'Puerto Rico' };
@@ -19,7 +19,7 @@ const BotFormats = (() => {
   const group4 = n => { const d = digits(n); return /^3[47]/.test(d) && d.length === 15 ? `${d.slice(0, 4)} ${d.slice(4, 10)} ${d.slice(10)}` : d.replace(/(.{4})(?=.)/g, '$1 '); };
   const csvCell = v => { v = v == null ? '' : String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
 
-  // a Crown Tools profile with every field filled the same way, whatever the source
+  // a Kingpin profile with every field filled the same way, whatever the source
   function blank() { return { name: '', email: '', emailPassword: '', phone: '', shipFirst: '', shipLast: '', shipAddr1: '', shipAddr2: '', shipCity: '', shipState: '', shipZip: '', shipCountry: 'US', sameBilling: true, billFirst: '', billLast: '', billAddr1: '', billAddr2: '', billCity: '', billState: '', billZip: '', billCountry: 'US', cardName: '', cardNumber: '', cardExpMonth: '', cardExpYear: '', cardCvv: '', notes: '', oneCheckout: false }; }
   function finish(p) {
     p.phone = digits(p.phone); p.cardNumber = digits(p.cardNumber); p.cardExpMonth = mm(p.cardExpMonth); p.cardExpYear = yyyy(p.cardExpYear);
