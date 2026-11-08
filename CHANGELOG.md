@@ -2,6 +2,11 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.18.4 — Builder: all accounts and custom line 2 (2026-11-07)
+
+- Saved accounts: switch between “Unused only” and “All accounts”. All accounts can reuse ones already on a profile, and their existing link stays as it is.
+- Line 2 “Custom mix”: tick exactly which styles to use (Apt, Unit, Suite, Ste, #, Bldg, Room, Lot, Fl, number only).
+
 ## v0.18.3 — Profile builder: emails, line 2 and names (2026-11-07)
 
 - Saved accounts now lists your account groups. Pick one, or use all of them.

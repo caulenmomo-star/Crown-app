@@ -1,6 +1,10 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.18.4', date: '2026-11-07', title: 'Builder: all accounts and custom line 2', items: [
+    'Saved accounts: switch between “Unused only” and “All accounts”. All accounts can reuse ones already on a profile, and their existing link stays as it is.',
+    'Line 2 “Custom mix”: tick exactly which styles to use (Apt, Unit, Suite, Ste, #, Bldg, Room, Lot, Fl, number only).',
+  ] },
   { v: '0.18.3', date: '2026-11-07', title: 'Profile builder: emails, line 2 and names', items: [
     'Saved accounts now lists your account groups. Pick one, or use all of them.',
     'New “Paste emails” option: paste a list (email:password lines work too) and each profile gets the next one.',
