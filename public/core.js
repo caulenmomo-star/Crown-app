@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.19.0'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.0'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -119,7 +119,7 @@ async function api(path, body, method) {
   if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; }
   try {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
-  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Kingpin Online — check your internet connection.' : 'Kingpin’ helper isn’t running. Open Kingpin with “Start Kingpin”.'); }
+  } catch (e) { throw new Error(CLOUD ? 'Can’t reach Kingpin Online — check your internet connection.' : 'Kingpin’s helper isn’t running. Open Kingpin with “Start Kingpin”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
   if (j && j.outdated) showOutdated();
   if (j && j.noAccess && cryptoKey && typeof Account !== 'undefined') Account.lostAccess(j.reason);
@@ -190,7 +190,7 @@ async function saveNow(opts) {
       if (SERVER) { try { await api('/api/vault', blob, 'PUT'); diskOk = true; } catch (e) { diskOk = false; } }
       lastSaveOk = localOk && diskOk;
       if (lastSaveOk) setSaveStat('ok', 'Saved ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
-      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Kingpin’ window open?');
+      else if (!diskOk) setSaveStat('bad', 'Not saved to disk — is Kingpin’s window open?');
       else setSaveStat('warn', 'Saved to disk only (browser storage full)');
     }
   } catch (e) { lastSaveOk = false; pendingSave = true; setSaveStat('bad', 'Not saved: ' + e.message); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 15000); }
@@ -326,9 +326,10 @@ function undo() {
 }
 function toast(msg, opts) {
   const t = $('#toast'); $('#toastMsg').textContent = msg;
-  const b = $('#toastBtn'); b.hidden = !(opts && opts.undo && lastUndo);
-  b.onclick = () => { t.classList.remove('show'); undo(); };
-  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), opts && opts.undo ? 7000 : 2800);
+  const b = $('#toastBtn'), act = opts && opts.action && opts.onAction;
+  b.hidden = !(act || (opts && opts.undo && lastUndo)); b.textContent = act ? opts.action : 'Undo';
+  b.onclick = () => { t.classList.remove('show'); if (act) opts.onAction(); else undo(); };
+  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), opts && (opts.undo || act) ? 7000 : 2800);
 }
 function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
 
@@ -358,7 +359,7 @@ const isCompact = () => window.matchMedia('(max-width:1100px)').matches; // phon
 // re-draw when a window crosses between phone and desktop layouts (rotating an iPad, resizing a Windows/Mac window)
 window.matchMedia('(max-width:760px)').addEventListener('change', () => { if (typeof refresh === 'function') try { refresh(); } catch (_) { } });
 /* ---------- dialogs ---------- */
-// Kingpin' own yes/no and type-a-name boxes. The browser's built-in confirm()/prompt() pop-ups are blocked or
+// Kingpin's own yes/no and type-a-name boxes. The browser's built-in confirm()/prompt() pop-ups are blocked or
 // skipped in some places (iPhone home-screen apps, in-app browsers), which made buttons silently do nothing.
 let askQueue = Promise.resolve();
 function ask(text, opts) { return askBox(Object.assign({ text }, opts || {})).then(v => v !== null); }
@@ -388,6 +389,7 @@ document.addEventListener('mouseup', e => { if (e.target.tagName === 'DIALOG' &&
 
 /* ---------- navigation ---------- */
 const ICONS = {
+  news: '<rect x="3" y="4" width="15" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M18 8h3v10a2 2 0 0 1-2 2h-1M7 8h7M7 12h7M7 16h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   dashboard: '<path d="M3 3h8v10H3zM13 3h8v6h-8zM13 11h8v10h-8zM3 15h8v6H3z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   profiles: '<circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 010 7M18 14.6c1.8.7 3 2.5 3.5 5.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   orders: '<path d="M3.5 7.5L12 3l8.5 4.5v9L12 21l-8.5-4.5z M3.5 7.5L12 12l8.5-4.5M12 12v9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
@@ -396,7 +398,6 @@ const ICONS = {
   spending: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   inboxes: '<path d="M3 13l2.5-8h13L21 13v6H3z M3 13h5l1.5 2.5h5L16 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   more: '<circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/>',
-  news: '<path d="M12 3l2.5 5.5L20 9.3l-4 4 1 5.7-5-2.8-5 2.8 1-5.7-4-4 5.5-.8z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
   inventory: '<path d="M4 8.5L12 4l8 4.5v7L12 20l-8-4.5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M4 8.5l8 4.5 8-4.5M12 13v7M8 6.3l8 4.4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   sales: '<path d="M3 17l5.5-5.5 4 4L21 7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 7h6v6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
@@ -412,7 +413,7 @@ const ICONS = {
 // Pages are grouped into a few hubs. The phone shows one bottom tab per hub, with the hub's pages as sub-tabs;
 // computers show the hubs as sidebar sections. Keeps the bottom bar short instead of a long "More" list.
 const HUBS = [
-  { k: 'home', l: 'Home', side: '', icon: 'dashboard', pages: [['dashboard', 'Dashboard']] },
+  { k: 'home', l: 'Home', side: '', icon: 'dashboard', pages: [['dashboard', 'Dashboard'], ['news', 'News']] },
   { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards'], ['skus', 'SKU lists'], ['aco', 'ACO']] },
   { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['packages', 'Packages'], ['preorders', 'Pre-orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
   { k: 'resell', l: 'Resell', side: 'Reselling', icon: 'inventory', pages: [['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending']] },
@@ -434,7 +435,7 @@ function applyRoute() {
   renderNav(); renderPage(); $('#main').scrollTop = 0;
 }
 window.addEventListener('hashchange', () => { if (cryptoKey) applyRoute(); });
-function navCounts() { return { profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length, skus: (state.skuLists || []).reduce((n, l) => n + l.items.length, 0), aco: typeof acoUnbilledCount === 'function' ? acoUnbilledCount() : 0, preorders: typeof preTodoCount === 'function' ? preTodoCount() : 0, packages: typeof pkProblemCount === 'function' ? pkProblemCount() : 0 }; }
+function navCounts() { return { news: typeof newsUnread === 'function' ? newsUnread() : 0, profiles: state.profiles.length, orders: state.orders.length, houses: state.houses.filter(h => houseOrders(h.id).length).length, inboxes: state.imapAccounts.length, inventory: sum(state.inventory || [], i => Math.max(0, Number(i.qty) || 0)), accounts: (state.accounts || []).length, cards: (state.cards || []).length, skus: (state.skuLists || []).reduce((n, l) => n + l.items.length, 0), aco: typeof acoUnbilledCount === 'function' ? acoUnbilledCount() : 0, preorders: typeof preTodoCount === 'function' ? preTodoCount() : 0, packages: typeof pkProblemCount === 'function' ? pkProblemCount() : 0 }; }
 const navItem = (k, l, counts) => `<button class="navitem ${route.page === k ? 'active' : ''}" data-nav="${k}"><svg viewBox="0 0 24 24">${ICONS[k]}</svg>${l}${counts[k] ? `<span class="count">${counts[k]}</span>` : ''}</button>`;
 function renderNav() {
   renderNavExtras();

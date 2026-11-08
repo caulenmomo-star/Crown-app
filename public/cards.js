@@ -360,6 +360,6 @@ function wireCardAssign() {
 }
 function openCardExport() {
   const list = cardSel.size ? state.cards.filter(c => cardSel.has(c.id)) : visibleCards();
-  download(`crown-tools-cards-${stamp()}.csv`, toCSV(['number', 'month', 'year', 'cvv', 'name', 'group', 'status'], list.map(c => ({ number: c.number, month: c.month, year: c.year, cvv: c.cvv, name: c.name, group: (cardGroupById(c.groupId) || {}).name || '', status: (CARDS[c.status] || {}).l || c.status }))), 'text/csv');
+  download(`kingpin-cards-${stamp()}.csv`, toCSV(['number', 'month', 'year', 'cvv', 'name', 'group', 'status'], list.map(c => ({ number: c.number, month: c.month, year: c.year, cvv: c.cvv, name: c.name, group: (cardGroupById(c.groupId) || {}).name || '', status: (CARDS[c.status] || {}).l || c.status }))), 'text/csv');
   toast(`Exported ${plural(list.length, 'card')}`);
 }

@@ -1,0 +1,9 @@
+Kingpin isn't from the Microsoft Store, so the first time you open it Windows may show
+"Windows protected your PC". Click "More info", then "Run anyway". You only do this once.
+
+1. Right-click the zip → Extract All, and put the Kingpin folder somewhere you'll keep it
+   (for example your Documents folder).
+2. Open the Kingpin folder and double-click Kingpin.exe.
+   Tip: right-click Kingpin.exe → Pin to Start / Pin to taskbar.
+
+Kingpin opens the same data as before; it's kept in %APPDATA%\Crown.

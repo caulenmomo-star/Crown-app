@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.19.0"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.20.0"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1483,6 +1483,8 @@ NEWS_FEEDS = [
     ("bleedingcool", "Bleeding Cool", "https://bleedingcool.com/tag/pokemon/feed/", False),
     ("reddit-tcg", "r/PokemonTCG", "https://www.reddit.com/r/PokemonTCG/new/.rss", False),
 ]
+if os.environ.get("CROWN_NEWS_FEEDS"):  # tests point the built-in list at a local mock
+    NEWS_FEEDS = [tuple(x) for x in json.loads(os.environ["CROWN_NEWS_FEEDS"])]
 NEWS_EXTRA = {  # other addresses tried by the health check, to find feeds that moved
     "pokeguardian": ["https://www.pokeguardian.com/rss", "https://www.pokeguardian.com/feed.xml", "https://pokeguardian.com/feed/"],
     "pokebeach": ["https://www.pokebeach.com/feed"],
@@ -1748,7 +1750,7 @@ _PK_URL = re.compile(r"<loc>https://www\.target\.com/p/([^<]*?)/-/A-(\d{6,12})</
 _PK_POKE = re.compile(r"(?:^|-)pok(?:e|-233-|%c3%a9)mon(?:-|$)", re.I)
 _PK_TCG = re.compile(r"\b(?:tcg|trading card|booster|elite trainer|etb|tin|blister|collection|card game|deck|sleeved|build battle|premium|bundle|box set|binder|portfolio|display|surprise box)\b", re.I)
 _PK_MERCH = re.compile(r"\b(?:plush|figure|shirt|t shirt|hoodie|pajama|sock|hat|cap|backpack|lunch|bottle|mug|cup|towel|blanket|pillow|bedding|sheet|costume|toy|lego|mega construx|squishmallow|nintendo switch|switch 2|video game|game for|amiibo|book|puzzle|keychain|key chain|sticker|watch|lamp|night light|ornament|poster frame|wallet|bag|jacket|shoes|slippers|figurine|battle figure|action figure|clip n go|clip 'n' go|funko)\b", re.I)
-_PK_IMPORT = re.compile(r"\b(?:japanese|japan|korean|chinese|thai|indonesian|simplified|traditional|import|\d+ ?(?:pack|pk)s? lot|lot of|set of \d|bundle of \d|\d+[- ]pack(?! (?:blister|booster))|case of|sealed case|(?:2|3|4|5|6|8|10|12|24|36) ?x)\b", re.I)
+_PK_IMPORT = re.compile(r"\b(?:psa|cgc|bgs|graded|gem mint|acrylic|jpn|kor|pack kit|single multicolor|ages 13|japanese|japan|korean|chinese|thai|indonesian|simplified|traditional|import|\d+ ?(?:pack|pk)s? lot|lot of|set of \d|bundle of \d|\d+[- ]pack(?! (?:blister|booster))|case of|sealed case|(?:2|3|4|5|6|8|10|12|24|36) ?x)\b", re.I)
 PK_TYPES = [
     ("Elite Trainer Box", r"elite trainer|\betb\b"),
     ("Booster Bundle", r"booster bundle"),
@@ -1763,7 +1765,7 @@ PK_TYPES = [
     ("Binder / Poster", r"binder|portfolio|poster collection|poster box"),
     ("Surprise Box", r"surprise box|mystery"),
     ("Booster Pack", r"booster pack|\bbooster\b"),
-    ("Collection Box", r"collection|\bbox\b|chest|bundle|gift set|pin|figure collection"),
+    ("Collection Box", r"collection|\bbox\b|chest|bundle|gift set|pin|figure collection|\bex & [\w’]+ ex\b|\bv & [\w’]+ v\b"),
 ]
 _PK_TYPES = [(n, re.compile(rx, re.I)) for n, rx in PK_TYPES]
 _PK_WORDS = {"pokemon": "Pokémon", "pokémon": "Pokémon", "tcg": "TCG", "etb": "ETB", "ex": "ex", "gx": "GX", "vmax": "VMAX", "vstar": "VSTAR", "v": "V", "sv": "SV",
@@ -1771,9 +1773,16 @@ _PK_WORDS = {"pokemon": "Pokémon", "pokémon": "Pokémon", "tcg": "TCG", "etb":
              "in": "in", "for": "for", "to": "to"}
 
 
+_PK_ENT = {"8212": " — ", "8211": " – ", "8217": "’", "8216": "‘", "39": "’", "38": " & ", "233": "é", "174": "", "8482": ""}
+
+
 def _pk_words(slug):
-    s = urllib.parse.unquote(slug).lower().replace("-233-", "é").replace("pok-é-mon", "pokémon")
-    return re.sub(r"[-_]+", " ", s).strip()
+    # Target writes punctuation in its page addresses as numbers: —, &, é and ’ become -8212-, -38-, -233-, -8217-
+    s = urllib.parse.unquote(slug).lower()
+    s = re.sub(r"(?<=[a-z])-233-(?=[a-z])", "é", s)
+    s = re.sub(r"-(8212|8211|8217|8216|39|38|233|174|8482)-(?=[a-z])", lambda m: "-" + _PK_ENT[m.group(1)].strip() + "-" if _PK_ENT[m.group(1)].strip() in ("—", "–", "&") else _PK_ENT[m.group(1)] + "-" if m.group(1) in ("8217", "39") else "-", s)
+    s = s.replace("-’-", "’").replace("’-s-", "’s-")
+    return re.sub(r"\s+", " ", re.sub(r"[-_]+", " ", s)).strip()
 
 
 def _pk_name(words):
@@ -1816,7 +1825,8 @@ def _pk_classify(words, sets):
         if re.search(r"(?:^|\s)" + re.escape(st["key"]) + r"(?:\s|$)", words):
             s = st["id"]
             break
-    return {"ty": t if tcg else ("Merch" if merch else "Other"), "s": s, "tcg": tcg, "imp": bool(_PK_IMPORT.search(words))}
+    return {"ty": t if tcg else ("Merch" if merch else "Other"), "s": s, "tcg": tcg, "imp": bool(_PK_IMPORT.search(words)),
+            "o": words.startswith("pokémon trading card game") or words.startswith("pokemon trading card game")}
 
 
 def pk_scan_target(prev=None):
@@ -1857,9 +1867,11 @@ def pk_scan_target(prev=None):
             seen.add(tcin)
             w = _pk_words(slug)
             c = _pk_classify(w, sets)
+            if not c["tcg"]:
+                continue  # trading-card products only (no shirts, plush or games)
             o = old.get(tcin) or {}
             im = img.rsplit("/", 1)[-1] if img.startswith("https://target.scene7.com/is/image/Target/") else ""
-            items.append({"t": tcin, "n": _pk_name(w), "s": c["s"], "ty": c["ty"], "tcg": c["tcg"], "imp": c["imp"], "img": im,
+            items.append({"t": tcin, "n": _pk_name(w), "s": c["s"], "ty": c["ty"] or "Other", "o": c["o"], "imp": c["imp"], "img": im,
                           "f": o.get("f") if "f" in o else (0 if first_scan else now_ms)})
     # products no longer on Target's list are kept for a while, marked gone (so they still show up in your history)
     for t, o in old.items():
@@ -2917,6 +2929,22 @@ def kv_set_json(key, obj, ttl=None):
     return kv("SET", key, json.dumps(obj, separators=(",", ":")))
 
 
+def pk_shared(fresh=False, cron=False):
+    """One copy of the Pokémon product list for everyone, re-read from Target's sitemap at most about once a day."""
+    cur = kv_json("pk:catalog")
+    age = time.time() - (cur["at"] / 1000.0) if cur else 1e9
+    want = age > PK_MAX_AGE or (fresh and age > 1800) or (cron and age > 6 * 3600)
+    if want and kv("SET", "pk:lock", "1", "NX", "EX", "290"):
+        try:
+            cur = pk_scan_target(cur)
+            kv_set_json("pk:catalog", cur)
+        finally:
+            kv("DEL", "pk:lock")
+    elif not cur:
+        raise UserError("The product list is being put together right now. Try again in a minute.")
+    return dict(cur, ok=True)
+
+
 # ---------------------------------------------------------------- helpers
 
 def sha(s):
@@ -3527,26 +3555,6 @@ class handler(BaseHTTPRequestHandler):
                         out["search"] = str(e)
                 return out
             return self._run(mstatus)
-        if r == "/probe/tmp":  # TEMPORARY: checks a few fixed public addresses while building the product list
-            def probe():
-                rate_limit("probe", client_ip(h), 30, 3600)
-                import gzip
-                q = self._query(); which = q.get("w") or ""
-                urls = {"robots": "https://www.target.com/robots.txt", "smi": "https://www.target.com/sitemap_index.xml.gz",
-                        "tcg3": TCG_BASE + "/3/groups", "x": q.get("u") or ""}
-                u = urls.get(which, "")
-                if which == "x" and not re.match(r"^https://(www\.)?target\.com/[\w./-]*\.(xml|xml\.gz|txt)$|^https://tcgcsv\.com/tcgplayer/3/\d+/products$", u):
-                    raise UserError("not allowed")
-                rq = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0 (compatible; Kingpin/%s)" % VERSION})
-                with urllib.request.urlopen(rq, timeout=25, context=ssl_context()) as resp:
-                    data = resp.read(30_000_000)
-                if data[:2] == b"\x1f\x8b":
-                    data = gzip.decompress(data)
-                t = data.decode("utf-8", "replace")
-                pat = q.get("grep") or ""
-                hits = [m.group(0) for m in re.finditer(pat, t)][:int(q.get("n") or 40)] if pat else []
-                return {"ok": True, "len": len(t), "head": t[:int(q.get("head") or 1500)], "hits": hits, "nhits": len(re.findall(pat, t)) if pat else 0}
-            return self._run(probe)
         if r in ("/pk/catalog", "/pk/cron"):  # the shared Pokémon product list (public; read by the app and the Mac/PC app)
             def pkcat():
                 q = self._query()
@@ -3554,18 +3562,7 @@ class handler(BaseHTTPRequestHandler):
                     rate_limit("pkcron", client_ip(h), 4, 3600)
                 elif r == "/pk/catalog":
                     rate_limit("pkcat", client_ip(h), 120, 3600)
-                cur = kv_json("pk:catalog")
-                age = time.time() - (cur["at"] / 1000.0) if cur else 1e9
-                want = age > PK_MAX_AGE or (q.get("fresh") and age > 1800) or (r == "/pk/cron" and age > 6 * 3600)
-                if want and kv("SET", "pk:lock", "1", "NX", "EX", "290"):
-                    try:
-                        cur = pk_scan_target(cur)
-                        kv_set_json("pk:catalog", cur)
-                    finally:
-                        kv("DEL", "pk:lock")
-                elif not cur:
-                    raise UserError("The product list is being put together right now. Try again in a minute.")
-                return dict(cur, ok=True, updating=bool(want) and age > PK_MAX_AGE)
+                return pk_shared(bool(q.get("fresh")), r == "/pk/cron")
             return self._run(pkcat)
         if r == "/news/status":  # public health check of the news feeds (rate-limited)
             def nstatus():
@@ -3902,6 +3899,7 @@ class handler(BaseHTTPRequestHandler):
             "/track17": track17,
             "/skuinfo": sku_info,
             "/news": news_fetch,
+            "/pk/catalog": lambda b: pk_shared(bool(b.get("fresh"))),
             "/s17test": s17_test,
             "/discord": discord_send,
             "/discord/check": discord_check,

@@ -1,6 +1,14 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.0', date: '2026-11-08', title: 'Kingpin: News and every Pokémon SKU', items: [
+    'Crown Tools is now Kingpin, with a new icon and a cleaner dark background. Your data, sign-in and settings are unchanged.',
+    'New News page under Dashboard. Pokémon news from public news sites is sorted into Drops, Raffles, Changes, Restocks and News, and grouped by day.',
+    'Click a headline to read it, see the products it mentions with their SKUs, add them to a SKU list in one click, save it, or set a reminder.',
+    'News checks on its own 1, 2, 4, 6 or 12 times a day (you choose), or when you hit Refresh. You can switch sites off or add your own.',
+    'SKU lists now has a Pokémon products tab: every Pokémon trading-card product on Target with its TCIN. Group it by set, type or when it showed up, filter it, and copy or add SKUs in one click.',
+    'Target SKU lists suggest new SKUs: new on Target, in the news, or from the newest set.',
+  ] },
   { v: '0.19.0', date: '2026-11-08', title: 'Right-click menus, lists keep their place', items: [
     'Right-click a profile, account, card or order to open it, move it to another group, set its status, copy it, duplicate it or delete it. If it’s part of your selection, the action applies to everything selected.',
     'Arrow keys, Enter and Esc work in these menus. Text boxes and links still get the normal copy/paste menu.',

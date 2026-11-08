@@ -3,7 +3,7 @@
    picture; its price comes from that page when it shows one, from what you paid in your orders, or from you. The
    TCGplayer value shows too when it's a trading-card product. */
 'use strict';
-const SK = { list: '', q: '', busy: 0 };
+const SK = { list: '', q: '', busy: 0, view: 'lists' };
 const SKU_STORES = ['Target', 'Walmart', 'Best Buy', 'Pokémon Center', 'GameStop', 'Costco', "Sam's Club", 'Amazon', 'Other'];
 const skuListById = id => (state.skuLists || []).find(l => l.id === id);
 function newSkuList(name, store) { return { id: uid(), name: String(name || '').trim() || 'SKU list', store: store || 'Target', notes: '', items: [], createdAt: Date.now(), updatedAt: Date.now() }; }
@@ -95,13 +95,20 @@ PAGES.skus = {
     const q = SK.q.trim().toLowerCase();
     const items = l ? l.items.filter(i => !q || [i.sku, i.name, i.notes].some(v => String(v || '').toLowerCase().includes(q))) : [];
     const total = l ? l.items.reduce((s, i) => { const p = skuPrice(i); return s + (p ? p.v * (Number(i.qty) || 1) : 0); }, 0) : 0;
-    pg.innerHTML = `<div class="pagehead"><h1>SKU lists</h1><span class="sub">${plural(L.length, 'list')} · ${plural(L.reduce((s, x) => s + x.items.length, 0), 'SKU')}</span><div class="spacer"></div><button class="primary" id="sklNew">+ New list</button></div>
+    const seg = `<div class="seg" id="skView"><button data-skv="lists" class="${SK.view === 'lists' ? 'on' : ''}">My lists</button><button data-skv="products" class="${SK.view === 'products' ? 'on' : ''}">Pokémon products</button></div>`;
+    if (SK.view === 'products') {
+      pg.innerHTML = `<div class="pagehead"><h1>SKU lists</h1><span class="sub">Every Pokémon product on Target, with its TCIN</span><div class="spacer"></div>${seg}</div>${pkCatalogHtml(l)}`;
+      $('#skView').onclick = e => { const b = e.target.closest('[data-skv]'); if (b) { SK.view = b.dataset.skv; PAGES.skus.render(); } };
+      wirePkCatalog(pg, l); return;
+    }
+    pg.innerHTML = `<div class="pagehead"><h1>SKU lists</h1><span class="sub">${plural(L.length, 'list')} · ${plural(L.reduce((s, x) => s + x.items.length, 0), 'SKU')}</span><div class="spacer"></div>${seg}<button class="primary" id="sklNew">+ New list</button></div>
       ${L.length ? `<div class="split"><div class="catlist">${side}<button id="sklNew3" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New list</button></div><div style="min-width:0">
         <div class="card"><div class="hstack" style="flex-wrap:wrap;gap:8px"><h3 style="margin:0;flex:1;min-width:160px" class="ellipsis">${esc(l.name)}</h3>
           <select id="sklStore" style="width:auto" aria-label="Store">${SKU_STORES.map(s => `<option ${s === l.store ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select>
           <button class="sm ghost" id="sklRen">Rename</button><button class="sm ghost" id="sklDup">Duplicate</button><button class="sm ghost danger" id="sklDel">Delete</button></div>
           <textarea id="sklAdd" rows="3" placeholder="Paste SKUs or product links — one per line, or separated by commas. ${l.store === 'Target' ? 'Target: the TCIN (the number after A- in the link) or the whole link.' : 'A product link works best — Kingpin reads the product from it.'}" style="margin-top:10px"></textarea>
-          <div class="hstack" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="primary" id="sklAddBtn">Add SKUs</button><span class="small faint">Each one is looked up for its name, picture and price.</span></div></div>
+          <div class="hstack" style="margin-top:8px;flex-wrap:wrap;gap:8px"><button class="primary" id="sklAddBtn">Add SKUs</button><span class="small faint">Each one is looked up for its name, picture and price.</span><span class="spacer"></span><button class="sm ghost" id="sklBrowse">Browse Pokémon products</button></div></div>
+        ${pkSuggestHtml(l)}
         ${l.items.length ? `<div class="card"><div class="hstack" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>For your bot</b><span class="small faint">${plural(l.items.length, 'SKU')}${total ? ' · about ' + fmtMoney(total) + ' for everything' : ''}</span><span class="spacer"></span>
             <button class="sm" id="sklCopyLines">Copy, one per line</button><button class="sm" id="sklCopyComma">Copy, comma separated</button><button class="sm ghost" id="sklCsv">Download CSV</button></div>
           <textarea readonly id="sklOut" rows="${Math.min(6, Math.max(2, l.items.length))}" class="mono" style="font-size:12px">${esc(skuExport(l))}</textarea></div>
@@ -120,7 +127,10 @@ PAGES.skus = {
     const mk = async () => { const n = await askText('New SKU list', '', { placeholder: 'Pokémon restock, Target drops…', ok: 'Make list' }); if (!n || !n.trim()) return; const x = newSkuList(n, l ? l.store : 'Target'); state.skuLists.push(x); SK.list = x.id; save(); PAGES.skus.render(); setTimeout(() => $('#sklAdd') && $('#sklAdd').focus(), 50); };
     $('#sklNew').onclick = mk; if ($('#sklNew2')) $('#sklNew2').onclick = mk; if ($('#sklNew3')) $('#sklNew3').onclick = mk;
     pg.querySelectorAll('[data-skl]').forEach(b => b.onclick = () => { SK.list = b.dataset.skl; SK.q = ''; PAGES.skus.render(); });
+    $('#skView').onclick = e => { const b = e.target.closest('[data-skv]'); if (b) { SK.view = b.dataset.skv; PAGES.skus.render(); } };
     if (!l) return;
+    $('#sklBrowse').onclick = () => { SK.view = 'products'; PAGES.skus.render(); };
+    wirePkSuggest(pg, l);
     $('#sklStore').onchange = e => { l.store = e.target.value; skuTouch(l); save(); PAGES.skus.render(); };
     $('#sklRen').onclick = async () => { const n = await askText('Rename list', l.name); if (n && n.trim()) { l.name = n.trim(); skuTouch(l); save(); PAGES.skus.render(); } };
     $('#sklDup').onclick = () => { const x = JSON.parse(JSON.stringify(l)); x.id = uid(); x.name = l.name + ' copy'; x.items.forEach(i => i.id = uid()); x.createdAt = x.updatedAt = Date.now(); state.skuLists.push(x); SK.list = x.id; save(); PAGES.skus.render(); toast('List copied'); };
@@ -137,7 +147,7 @@ PAGES.skus = {
     if (!l.items.length) return;
     $('#sklCopyLines').onclick = () => copyText(skuExport(l), 'SKUs');
     $('#sklCopyComma').onclick = () => copyText(skuExport(l, 'comma'), 'SKUs');
-    $('#sklCsv').onclick = () => download(`crown-tools-skus-${l.name.replace(/[^\w-]+/g, '-').toLowerCase()}.csv`, toCSV(['sku', 'name', 'qty', 'price', 'store', 'link', 'notes'], l.items.map(i => { const p = skuPrice(i); return { sku: i.sku, name: i.name, qty: Number(i.qty) || 1, price: p ? p.v.toFixed(2) : '', store: i.store || l.store, link: skuStoreLink(i, l), notes: i.notes }; })), 'text/csv');
+    $('#sklCsv').onclick = () => download(`kingpin-skus-${l.name.replace(/[^\w-]+/g, '-').toLowerCase()}.csv`, toCSV(['sku', 'name', 'qty', 'price', 'store', 'link', 'notes'], l.items.map(i => { const p = skuPrice(i); return { sku: i.sku, name: i.name, qty: Number(i.qty) || 1, price: p ? p.v.toFixed(2) : '', store: i.store || l.store, link: skuStoreLink(i, l), notes: i.notes }; })), 'text/csv');
     $('#sklQ').oninput = debounce(e => { SK.q = e.target.value; PAGES.skus.render(); const q = $('#sklQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
     if ($('#sklLook')) $('#sklLook').onclick = () => skuLookupAll(l, true);
     const tb = pg.querySelector('.skutbl');

@@ -245,8 +245,8 @@ function wireAccImport() {
 function openAccExport() {
   const list = accSel.size ? state.accounts.filter(a => accSel.has(a.id)) : filteredAccounts();
   $('#aeCount').textContent = `${plural(list.length, 'account')}${accSel.size ? ' selected' : AF.store || AF.status !== 'all' || AF.q ? ' shown' : ''}`;
-  $('#aeCsv').onclick = () => { download(`crown-tools-accounts-${stamp()}.csv`, toCSV(['store', 'email', 'password', 'phone', 'status', 'group', 'profile', 'notes'], list.map(a => ({ store: accStoreLabel(a), group: (accGroupById(a.groupId) || {}).name || '', email: a.email, password: a.password, phone: a.phone, status: (ACCS[a.status] || ACCS.new).l, profile: (accProfile(a) || {}).name || '', notes: a.notes }))), 'text/csv'); closeDlg('dlgAccExport'); };
-  $('#aeTxt').onclick = () => { download(`crown-tools-accounts-${stamp()}.txt`, list.map(a => `${a.email}:${a.password}`).join('\n') + '\n', 'text/plain'); closeDlg('dlgAccExport'); };
+  $('#aeCsv').onclick = () => { download(`kingpin-accounts-${stamp()}.csv`, toCSV(['store', 'email', 'password', 'phone', 'status', 'group', 'profile', 'notes'], list.map(a => ({ store: accStoreLabel(a), group: (accGroupById(a.groupId) || {}).name || '', email: a.email, password: a.password, phone: a.phone, status: (ACCS[a.status] || ACCS.new).l, profile: (accProfile(a) || {}).name || '', notes: a.notes }))), 'text/csv'); closeDlg('dlgAccExport'); };
+  $('#aeTxt').onclick = () => { download(`kingpin-accounts-${stamp()}.txt`, list.map(a => `${a.email}:${a.password}`).join('\n') + '\n', 'text/plain'); closeDlg('dlgAccExport'); };
   $('#aeCopy').onclick = () => { copyText(list.map(a => `${a.email}:${a.password}`).join('\n'), plural(list.length, 'login')); closeDlg('dlgAccExport'); };
   openDlg('dlgAccExport');
 }

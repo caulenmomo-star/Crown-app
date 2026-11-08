@@ -171,7 +171,7 @@ PAGES.sales = {
     $('#slCsv').onclick = () => {
       const rows = (state.sales || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).flatMap(s => s.lines.map((l, i) => ({ date: s.date, platform: platformInfo(s.platform).l, item: l.name, qty: l.qty, price_each: l.price, cost_each: l.cost ?? '', fees: i ? '' : s.fees ?? '', shipping: i ? '' : s.shipping ?? '', profit: i ? '' : r2(saleProfit(s)), buyer: s.buyer, notes: s.notes })));
       const ex = (state.expenses || []).map(e => ({ date: e.date, platform: 'EXPENSE', item: e.category + (e.note ? ' — ' + e.note : ''), qty: '', price_each: '', cost_each: '', fees: '', shipping: '', profit: -e.amount, buyer: '', notes: '' }));
-      download(`crown-tools-sales-${stamp()}.csv`, toCSV(['date', 'platform', 'item', 'qty', 'price_each', 'cost_each', 'fees', 'shipping', 'profit', 'buyer', 'notes'], rows.concat(ex)), 'text/csv');
+      download(`kingpin-sales-${stamp()}.csv`, toCSV(['date', 'platform', 'item', 'qty', 'price_each', 'cost_each', 'fees', 'shipping', 'profit', 'buyer', 'notes'], rows.concat(ex)), 'text/csv');
     };
     $('#slRange').onclick = e => { const b = e.target.closest('[data-sr]'); if (b) { SL.range = b.dataset.sr; PAGES.sales.render(); } };
     $('#slTabs').onclick = e => { const b = e.target.closest('[data-st]'); if (b) { SL.tab = b.dataset.st; PAGES.sales.render(); } };

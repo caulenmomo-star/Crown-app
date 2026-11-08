@@ -1,0 +1,9 @@
+Kingpin isn't from the App Store, so the first time you open it your Mac asks to make sure:
+
+1. Drag Kingpin into your Applications folder, then double-click it.
+2. If it says Apple can't check it, click Done, then open System Settings → Privacy & Security.
+   Scroll down and click "Open Anyway" next to Kingpin, then confirm.
+   (On older macOS: right-click Kingpin → Open → Open.)
+
+You only do this once. Kingpin opens the same data as before; it's kept in
+Library/Application Support/Crown in your home folder.

@@ -125,7 +125,7 @@ async function syncAccount(a, totals, opts) {
 }
 async function syncAll(manual, ids, opts) {
   if (!cryptoKey) return;
-  if (!SERVER) { if (manual) toast('Email sync needs Kingpin’ helper — open Kingpin with Start Kingpin'); return; }
+  if (!SERVER) { if (manual) toast('Email sync needs Kingpin’s helper — open Kingpin with Start Kingpin'); return; }
   if (syncing) { if (manual) toast('Already syncing…'); return; }
   const accs = state.imapAccounts.filter(a => ids ? ids.includes(a.id) : a.enabled !== false);
   if (!accs.length) { if (manual) toast(state.imapAccounts.length ? 'All inboxes are paused' : 'Add an inbox first'); return; }
@@ -232,7 +232,7 @@ async function rereadAll(auto) {
     for (let i = 0; i < 1200 && syncing; i++) await new Promise(r => setTimeout(r, 500)); // wait for a running sync to finish
     if (!cryptoKey) return;
     const dropped = dropPaymentOnlyOrders(), fixed = fixOrderNumbers(), merged0 = mergeSameNumber(); if (dropped) { invalidateStats(); save(); } if (fixed || merged0) { invalidateStats(); save(); refresh(); }
-    toast(auto ? 'Kingpin’ email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
+    toast(auto ? 'Kingpin’s email reader was upgraded — re-reading your order emails to fill in totals, items, pictures and addresses…' : 'Re-reading all order emails…');
     const days = Math.min(180, Math.max(60, ...accs.map(a => a.lookback || 60), state.settings.firstLookback || 60));
     await syncAll(false, accs.map(a => a.id), { days, fresh: true, reapply: true, full: true });
     if (!cryptoKey) return;
@@ -249,7 +249,7 @@ function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); if (typeof refreshPrices === 'function') refreshPrices(false, true); });
 $('#syncNowNav').onclick = () => syncAll(true);
 $('#scanNav').onclick = () => openUniversalScanner();
-Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardScan(); wireSelRange(); wireNoAutofill(); wireCtxMenu(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
+Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardScan(); wireSelRange(); wireNoAutofill(); wireCtxMenu(); wireNews(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
 const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress', OnTrac: 'OnTrac', 'Canada Post': 'CanadaPost' };
@@ -321,7 +321,7 @@ function noteTrackError(t, msg) {
 }
 async function liveTrack(orderId, idx, btn, quiet) {
   const o = state.orders.find(x => x.id === orderId); if (!o || !o.tracking[idx]) return false;
-  if (!SERVER) { if (!quiet) toast('Live tracking needs Kingpin’ helper running'); return false; }
+  if (!SERVER) { if (!quiet) toast('Live tracking needs Kingpin’s helper running'); return false; }
   const t = o.tracking[idx];
   if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
   try {

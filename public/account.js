@@ -188,7 +188,7 @@ const Account = (() => {
     } catch (e) { fail(e); }
   }
   async function exportData() {
-    try { const r = await api('/api/export'); if (!r.vault) throw new Error('No data saved yet.'); download(`crown-tools-backup-${stamp()}.json`, JSON.stringify(r.vault), 'application/json'); }
+    try { const r = await api('/api/export'); if (!r.vault) throw new Error('No data saved yet.'); download(`kingpin-backup-${stamp()}.json`, JSON.stringify(r.vault), 'application/json'); }
     catch (e) { fail(e); }
   }
   function signOut() { authKey = null; acctEmail = null; keys = null; acct = null; setPanel('signin'); }

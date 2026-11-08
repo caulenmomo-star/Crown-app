@@ -1,0 +1,95 @@
+# Builds Kingpin for Mac (Apple Silicon and Intel) and Windows on GitHub's own Mac and Windows machines, then puts the
+# downloads on a GitHub release. Runs when the desktop files change, or by hand from the Actions tab ("Run workflow").
+name: Desktop apps
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['desktop/**', '.github/workflows/desktop.yml']
+permissions:
+  contents: write
+concurrency:
+  group: desktop
+  cancel-in-progress: true
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, plat: darwin, arch: arm64, py: aarch64-apple-darwin, out: Kingpin-Mac-Apple-Silicon }
+          - { os: macos-14, plat: darwin, arch: x64, py: x86_64-apple-darwin, out: Kingpin-Mac-Intel }
+          - { os: windows-latest, plat: win32, arch: x64, py: x86_64-pc-windows-msvc, out: Kingpin-Windows }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Put the app together
+        shell: bash
+        run: |
+          mkdir -p build/src build/engine
+          cp desktop/main.js desktop/package.json desktop/icon.icns desktop/icon.ico desktop/icon.png build/src/
+          cp desktop/server.py build/engine/server.py
+          cp -R public build/engine/app
+          cd build/src && npm install --no-audit --no-fund --save-dev electron@latest @electron/packager@latest
+      - name: Get a Python to put inside the app
+        shell: bash
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          url=$(gh api repos/astral-sh/python-build-standalone/releases/latest --jq '.assets[].browser_download_url' | grep -E "cpython-3\.12\.[0-9]+\+[0-9]+-${{ matrix.py }}-install_only_stripped\.tar\.gz$" | head -1)
+          echo "Python: $url"; test -n "$url"
+          curl -sSL "$url" -o py.tgz && mkdir -p build/py && tar -xzf py.tgz -C build/py && ls build/py/python
+      - name: Make the app
+        shell: bash
+        run: |
+          cd build/src
+          icon=$([ "${{ matrix.plat }}" = darwin ] && echo icon.icns || echo icon.ico)
+          npx @electron/packager . Kingpin --platform=${{ matrix.plat }} --arch=${{ matrix.arch }} --icon=$icon \
+            --app-bundle-id=app.kingpin.desktop --app-version=$(node -p "require('./package.json').version") --app-copyright="Kingpin" \
+            --win32metadata.ProductName=Kingpin --win32metadata.FileDescription=Kingpin --win32metadata.CompanyName=Kingpin \
+            --extra-resource=../engine --extra-resource=../py/python --extra-resource=icon.ico \
+            --out=../out --overwrite --asar
+          ls ../out
+      - name: Check the engine starts with the bundled Python
+        if: matrix.plat == 'win32' || matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          if [ "${{ matrix.plat }}" = darwin ]; then R=build/out/Kingpin-darwin-arm64/Kingpin.app/Contents/Resources; PY=$R/python/bin/python3; else R=build/out/Kingpin-win32-x64/resources; PY=$R/python/python.exe; fi
+          CROWN_NO_BROWSER=1 CROWN_DATA=$PWD/testdata CROWN_PORT=8899 "$PY" -u "$R/engine/server.py" > engine.log 2>&1 &
+          for i in $(seq 60); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8899/api/ping | grep -q '"ok": true' && break; sleep 1; done
+          cat engine.log; curl -s -H 'X-Crown: 1' http://127.0.0.1:8899/api/ping | tee ping.json; grep -q '"ok": true' ping.json
+          curl -s -o /dev/null -w "page %{http_code}\n" http://127.0.0.1:8899/
+          curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8899/api/shutdown || true
+      - name: Sign for this Mac (ad hoc) and zip
+        if: matrix.plat == 'darwin'
+        run: |
+          cd build/out/Kingpin-darwin-${{ matrix.arch }}
+          find Kingpin.app/Contents/Resources/python -type f \( -name '*.dylib' -o -name '*.so' -o -perm -u+x \) -print0 | xargs -0 -n 50 codesign --force --sign - 2>/dev/null || true
+          codesign --force --deep --sign - Kingpin.app
+          codesign --verify --deep --strict --verbose=2 Kingpin.app
+          mkdir -p ../pack/Kingpin && mv Kingpin.app ../pack/Kingpin/ && cp "../../../desktop/First time opening Kingpin (Mac).txt" ../pack/Kingpin/
+          cd ../pack && ditto -c -k --sequesterRsrc --keepParent Kingpin "../../../${{ matrix.out }}.zip"
+      - name: Zip
+        if: matrix.plat == 'win32'
+        shell: pwsh
+        run: |
+          Rename-Item build/out/Kingpin-win32-x64 Kingpin
+          Copy-Item "desktop/First time opening Kingpin (Windows).txt" build/out/Kingpin/
+          Compress-Archive -Path build/out/Kingpin -DestinationPath ${{ matrix.out }}.zip
+      - uses: actions/upload-artifact@v4
+        with: { name: '${{ matrix.out }}', path: '${{ matrix.out }}.zip', retention-days: 30 }
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+      - name: Put the downloads on a release
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          v=$(node -p "require('./desktop/package.json').version"); tag="desktop-v$v"
+          gh release delete "$tag" -y --cleanup-tag --repo "${{ github.repository }}" 2>/dev/null || true
+          gh release create "$tag" dist/*.zip --repo "${{ github.repository }}" --title "Kingpin $v for Mac and Windows" --latest \
+            --notes "Mac with an M1/M2/M3/M4 chip: Kingpin-Mac-Apple-Silicon.zip. Older Intel Mac: Kingpin-Mac-Intel.zip. Windows: Kingpin-Windows.zip. Each zip has a short note on opening it the first time."
