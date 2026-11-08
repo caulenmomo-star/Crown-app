@@ -59,6 +59,29 @@ jobs:
             --extra-resource=../engine --extra-resource=../py/python --extra-resource=icon.ico \
             --out=../out --overwrite --asar
           ls ../out
+      - name: Slim Python down for Windows (fewer files = much faster unzip)
+        if: matrix.plat == 'win32'
+        shell: bash
+        run: |
+          P=build/out/Kingpin-win32-x64/resources/python
+          echo "files before: $(find build/out/Kingpin-win32-x64 -type f | wc -l)"
+          # only what Kingpin needs: no Tk, headers, IDLE, pip, test suite or build tools
+          rm -rf $P/tcl $P/include $P/libs $P/Scripts $P/Lib/site-packages/* $P/DLLs/_tkinter.pyd $P/DLLs/tcl*.dll $P/DLLs/tk*.dll $P/tcl*.dll $P/tk*.dll
+          for d in test idlelib tkinter turtledemo ensurepip lib2to3 pydoc_data venv; do rm -rf $P/Lib/$d; done
+          find $P -name '__pycache__' -type d -prune -exec rm -rf {} +
+          # the standard library as one zip of compiled files (the way python.org's Windows "embeddable" Python ships)
+          V=$(ls $P | grep -oE '^python3[0-9]+\.dll$' | sed 's/\.dll$//')
+          "$P/python.exe" -m compileall -b -q -j 0 "$P/Lib" >/dev/null || true
+          (cd "$P/Lib" && "../python.exe" -c "import zipfile,os
+          z=zipfile.ZipFile('../$V.zip','w',zipfile.ZIP_DEFLATED)
+          for d,ds,fs in os.walk('.'):
+              ds[:]=[x for x in ds if x!='site-packages']
+              for f in fs:
+                  if f.endswith('.pyc'): z.write(os.path.join(d,f), os.path.relpath(os.path.join(d,f),'.'))
+          z.close()")
+          find "$P/Lib" -mindepth 1 -maxdepth 1 ! -name site-packages -exec rm -rf {} +
+          ls $P; echo "files after: $(find build/out/Kingpin-win32-x64 -type f | wc -l)"
+          "$P/python.exe" -c "import sys, json, ssl, email, imaplib, http.server, urllib.request, hashlib, zipfile, sqlite3; print('python ok', sys.version.split()[0])" || "$P/python.exe" -c "import sys, json, ssl, email, imaplib, http.server, urllib.request, hashlib; print('python ok (no sqlite)', sys.version)"
       - name: Check the engine starts with the bundled Python
         if: matrix.plat == 'win32' || matrix.arch == 'arm64'
         shell: bash
@@ -76,6 +99,7 @@ jobs:
           P=Kingpin.app/Contents/Resources/python
           # only what Kingpin needs: no man pages, headers, IDLE, Tk, test suite or build tools
           rm -rf $P/share $P/include $P/lib/pkgconfig $P/lib/tcl* $P/lib/tk* $P/lib/itcl* $P/lib/thread*
+          rm -rf $P/lib/python3.*/site-packages/*
           rm -f $P/bin/idle3* $P/bin/pydoc3* $P/bin/python3*-config $P/bin/2to3*
           for d in test idlelib tkinter turtledemo ensurepip lib2to3 pydoc_data; do rm -rf $P/lib/python3.*/$d; done
           find $P -name '__pycache__' -type d -prune -exec rm -rf {} +
