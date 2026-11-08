@@ -73,11 +73,28 @@ jobs:
         if: matrix.plat == 'darwin'
         run: |
           cd build/out/Kingpin-darwin-${{ matrix.arch }}
-          find Kingpin.app/Contents/Resources/python -type f \( -name '*.dylib' -o -name '*.so' -o -perm -u+x \) -print0 | xargs -0 -n 50 codesign --force --sign - 2>/dev/null || true
+          P=Kingpin.app/Contents/Resources/python
+          # only what Kingpin needs: no man pages, headers, IDLE, Tk, test suite or build tools
+          rm -rf $P/share $P/include $P/lib/pkgconfig $P/lib/tcl* $P/lib/tk* $P/lib/itcl* $P/lib/thread*
+          rm -f $P/bin/idle3* $P/bin/pydoc3* $P/bin/python3*-config $P/bin/2to3*
+          for d in test idlelib tkinter turtledemo ensurepip lib2to3 pydoc_data; do rm -rf $P/lib/python3.*/$d; done
+          find $P -name '__pycache__' -type d -prune -exec rm -rf {} +
+          # links become real files (a signed app can't have links that point around inside it)
+          find $P -type l | while read -r l; do t=$(readlink -f "$l"); rm "$l"; [ -e "$t" ] && cp -R "$t" "$l" || true; done
+          # sign each program file inside Python, then the whole app
+          find $P -type f | while read -r f; do if file "$f" | grep -q 'Mach-O'; then codesign --force --sign - "$f"; fi; done
           codesign --force --deep --sign - Kingpin.app
           codesign --verify --deep --strict --verbose=2 Kingpin.app
+          # the app still starts its engine after signing
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            CROWN_NO_BROWSER=1 CROWN_DATA=$PWD/td CROWN_PORT=8898 $P/bin/python3 -u Kingpin.app/Contents/Resources/engine/server.py > e2.log 2>&1 &
+            for i in $(seq 40); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8898/api/ping | grep -q '"ok": true' && break; sleep 1; done
+            cat e2.log; curl -s -H 'X-Crown: 1' http://127.0.0.1:8898/api/ping | grep -q '"ok": true'
+            curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8898/api/shutdown || true; sleep 1; rm -rf td
+          fi
           mkdir -p ../pack/Kingpin && mv Kingpin.app ../pack/Kingpin/ && cp "../../../desktop/First time opening Kingpin (Mac).txt" ../pack/Kingpin/
           cd ../pack && ditto -c -k --sequesterRsrc --keepParent Kingpin "../../../${{ matrix.out }}.zip"
+          ls -la ../../../${{ matrix.out }}.zip
       - name: Zip
         if: matrix.plat == 'win32'
         shell: pwsh
