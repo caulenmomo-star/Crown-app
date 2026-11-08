@@ -4,7 +4,17 @@
    copy SKUs or add them to a list in one click; and as suggestions at the top of a Target SKU list. */
 'use strict';
 const PKD = { cat: null, at: 0, busy: false, err: '', byT: new Map(), sets: new Map(), tried: 0 };
-const PKV = { q: '', set: '', type: '', group: 'set', imports: false, onlyTarget: false, shown: 120, sel: new Set() };
+const PKV = { q: '', set: '', type: '', group: 'set', imports: false, onlyTarget: false, shown: 120, sel: new Set(), mode: 'drops' };
+// what Target drops online: its own listings (not other sellers on Target) of sealed products that sell out —
+// ETBs, bundles, displays, blisters, premium and collection boxes, tins, poster/binder collections — from recent sets
+const PK_DROP_TYPES = ['Elite Trainer Box', 'Booster Bundle', 'Booster Box', 'Premium Collection', 'Collection Box', 'Tin', 'Mini Tin', 'Blister', 'Binder / Poster', 'Surprise Box', 'Build & Battle'];
+const PK_NOT_DROP = /ultra pro|portfolio|zippered|card sleeves|\bsleeves\b|deck box|playmat|storage|toploader|binder album/i;
+function pkIsDrop(x) {
+  if (!x || !x.o || x.imp || x.gone || !PK_DROP_TYPES.includes(x.ty) || PK_NOT_DROP.test(x.n)) return false;
+  const d = x.s ? pkSetDate(x.s) : '';
+  const cut = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10);
+  return d ? d >= cut : +x.t >= 91000000; // no set found: Target's item numbers this high are from the last two years
+}
 const PK_TYPE_ORDER = ['Elite Trainer Box', 'Booster Bundle', 'Booster Box', 'Premium Collection', 'Collection Box', 'Tin', 'Mini Tin', 'Blister', 'Sleeved Booster', 'Booster Pack', 'Build & Battle', 'Deck', 'Binder / Poster', 'Surprise Box', 'Other'];
 const pkByTcin = t => PKD.byT.get(String(t)) || null;
 const pkImg = (c, w) => c && c.img ? `https://target.scene7.com/is/image/Target/${encodeURIComponent(c.img)}?wid=${w || 96}&hei=${w || 96}&qlt=80&fmt=webp` : '';
@@ -43,15 +53,15 @@ function pkMatchText(text, n) {
   if (!sets.length) return [];
   const ids = new Set(sets.map(s => String(s.id)));
   const types = [['Elite Trainer Box', /elite trainer|\betb\b/], ['Booster Bundle', /booster bundle/], ['Booster Box', /booster (box|display)/], ['Premium Collection', /premium collection|\bupc\b|\bspc\b/], ['Tin', /\btins?\b/], ['Mini Tin', /mini tin/], ['Blister', /blister/], ['Booster Pack', /booster packs?/], ['Collection Box', /collection/]].filter(([, rx]) => rx.test(t)).map(x => x[0]);
-  return (PKD.cat.items || []).filter(x => ids.has(String(x.s)) && !x.imp && !x.gone && (!types.length || types.includes(x.ty))).sort((a, b) => (b.o - a.o) || (+b.t - +a.t)).slice(0, n || 8);
+  return (PKD.cat.items || []).filter(x => ids.has(String(x.s)) && pkIsDrop(x) && (!types.length || types.includes(x.ty))).sort((a, b) => (b.o - a.o) || (+b.t - +a.t)).slice(0, n || 8);
 }
 function pkShown() {
   if (!PKD.cat) return [];
   const q = PKV.q.trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
   return PKD.cat.items.filter(x => {
     if (x.gone) return false;
-    if (!PKV.imports && x.imp) return false;
-    if (PKV.onlyTarget && !x.o) return false;
+    if (PKV.mode === 'drops') { if (!pkIsDrop(x)) return false; }
+    else { if (!PKV.imports && x.imp) return false; if (PKV.onlyTarget && !x.o) return false; }
     if (PKV.set && String(x.s) !== PKV.set) return false;
     if (PKV.type && x.ty !== PKV.type) return false;
     if (words.length) { const h = (x.n + ' ' + x.t + ' ' + pkSetName(x.s) + ' ' + x.ty).toLowerCase(); if (!words.every(w => h.includes(w))) return false; }
@@ -78,14 +88,17 @@ function pkRowHtml(x, l) {
 function pkCatalogHtml(l) {
   pkLoadCache(); if (!PKD.busy && SERVER) setTimeout(() => pkFetch(false), 0);
   if (!PKD.cat) return `<div class="empty">${PKD.busy ? 'Getting the Pokémon product list… (the first time can take a minute)' : PKD.err ? esc(PKD.err) + ' <button class="sm" id="pkRetry">Try again</button>' : SERVER ? 'Loading…' : 'The product list needs Kingpin running (the app or Kingpin Online).'}</div>`;
-  const list = pkShown(), groups = pkGroupsOf(list), sets = [...PKD.sets.values()].filter(s => PKD.cat.items.some(x => String(x.s) === String(s.id))), types = PK_TYPE_ORDER.filter(t => PKD.cat.items.some(x => x.ty === t));
+  const pool = PKD.cat.items.filter(x => PKV.mode === 'drops' ? pkIsDrop(x) : !x.gone);
+  const list = pkShown(), groups = pkGroupsOf(list), sets = [...PKD.sets.values()].filter(s => pool.some(x => String(x.s) === String(s.id))), types = PK_TYPE_ORDER.filter(t => pool.some(x => x.ty === t));
   let left = PKV.shown;
   const lists = state.skuLists || [];
-  return `<div class="toolbar pktools"><input class="search" data-search id="pkQ" placeholder="Search products or TCINs…" value="${esc(PKV.q)}">
+  return `<div class="seg pkmode" id="pkMode" style="margin-bottom:10px"><button data-pkm="drops" class="${PKV.mode === 'drops' ? 'on' : ''}">Online drops</button><button data-pkm="all" class="${PKV.mode === 'all' ? 'on' : ''}">Everything on Target</button></div>
+    <div class="small faint" style="margin:-4px 0 10px">${PKV.mode === 'drops' ? 'Target’s own listings of what drops online — ETBs, bundles, displays, blisters, collection and premium boxes, tins — from the last two years. No single packs, decks or other sellers.' : 'Every Pokémon trading-card product on Target, including single packs, older sets and other sellers on Target.'}</div>
+    <div class="toolbar pktools"><input class="search" data-search id="pkQ" placeholder="Search products or TCINs…" value="${esc(PKV.q)}">
       <select id="pkSet" style="width:auto" aria-label="Set"><option value="">All sets</option>${sets.map(s => `<option value="${esc(s.id)}" ${PKV.set === String(s.id) ? 'selected' : ''}>${esc(s.name)}${s.date ? ' · ' + esc(s.date.slice(0, 7)) : ''}</option>`).join('')}</select>
       <select id="pkGroup" style="width:auto" aria-label="Group by">${[['set', 'Group by set'], ['type', 'Group by type'], ['seen', 'Group by when it showed up'], ['none', 'Newest first']].map(([v, t]) => `<option value="${v}" ${PKV.group === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
-      <label class="check small" style="width:auto"><input type="checkbox" id="pkOnly" ${PKV.onlyTarget ? 'checked' : ''}> Target’s own listings only</label>
-      <label class="check small" style="width:auto"><input type="checkbox" id="pkImp" ${PKV.imports ? 'checked' : ''}> Include marketplace & imports</label></div>
+      ${PKV.mode === 'all' ? `<label class="check small" style="width:auto"><input type="checkbox" id="pkOnly" ${PKV.onlyTarget ? 'checked' : ''}> Target’s own listings only</label>
+      <label class="check small" style="width:auto"><input type="checkbox" id="pkImp" ${PKV.imports ? 'checked' : ''}> Include marketplace & imports</label>` : ''}</div>
     <div class="chips" id="pkTypes" style="margin-bottom:10px"><button class="chip ${!PKV.type ? 'on' : ''}" data-pkty="">All types</button>${types.map(t => `<button class="chip ${PKV.type === t ? 'on' : ''}" data-pkty="${esc(t)}">${esc(t)}</button>`).join('')}</div>
     <div class="hstack pkselbar" style="flex-wrap:wrap;gap:8px;margin-bottom:8px"><b>${plural(list.length, 'product')}</b>${PKV.sel.size ? `<span class="small">${PKV.sel.size} selected</span>` : ''}<span class="spacer"></span>
       ${lists.length ? `<label class="small muted hstack" style="gap:6px">List <select id="pkList" style="width:auto">${lists.map(x => `<option value="${x.id}" ${l && x.id === l.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>` : ''}
@@ -94,7 +107,7 @@ function pkCatalogHtml(l) {
       return `<div class="pkgroup"><div class="pkghead"><b>${esc(g.title)}</b> <span class="small faint">${esc(g.sub)}${g.sub ? ' · ' : ''}${plural(g.items.length, 'product')}</span><button class="ghost sm" data-pkgsel="${esc(g.k)}">Select all</button></div>${its.map(x => pkRowHtml(x, l)).join('')}</div>`; }).join('')}</div>
     ${list.length > PKV.shown ? `<div style="text-align:center;margin:12px"><button id="pkMore">Show more (${list.length - PKV.shown} left)</button></div>` : ''}
     ${!list.length ? '<div class="empty">No products match.</div>' : ''}
-    <div class="small faint" style="margin-top:12px">Every Pokémon trading-card product on Target’s site, from Target’s public product index · updated ${esc(newsAgo(PKD.at))}${PKD.busy ? ' · updating…' : ''} · <button class="linkbtn small" id="pkRefresh" ${PKD.busy ? 'disabled' : ''}>Update now</button>. Sets and release dates: TCGplayer. “When it showed up” starts from the day Kingpin first saw the product.</div>`;
+    <div class="small faint" style="margin-top:12px">From Target’s public product index · updated ${esc(newsAgo(PKD.at))}${PKD.busy ? ' · updating…' : ''} · <button class="linkbtn small" id="pkRefresh" ${PKD.busy ? 'disabled' : ''}>Update now</button>. Sets and release dates: TCGplayer. “When it showed up” starts from the day Kingpin first saw the product.</div>`;
 }
 function pkAddTcins(l, tcins) {
   const have = new Set(l.items.map(i => i.sku)), fresh = tcins.filter(t => !have.has(t));
@@ -117,8 +130,9 @@ function wirePkCatalog(pg, l) {
   $('#pkQ').oninput = debounce(e => { PKV.q = e.target.value; PKV.shown = 120; rer(); }, 200);
   $('#pkSet').onchange = e => { PKV.set = e.target.value; PKV.shown = 120; rer(); };
   $('#pkGroup').onchange = e => { PKV.group = e.target.value; rer(); };
-  $('#pkOnly').onchange = e => { PKV.onlyTarget = e.target.checked; rer(); };
-  $('#pkImp').onchange = e => { PKV.imports = e.target.checked; rer(); };
+  if ($('#pkOnly')) $('#pkOnly').onchange = e => { PKV.onlyTarget = e.target.checked; rer(); };
+  if ($('#pkImp')) $('#pkImp').onchange = e => { PKV.imports = e.target.checked; rer(); };
+  $('#pkMode').onclick = e => { const b = e.target.closest('[data-pkm]'); if (!b) return; PKV.mode = b.dataset.pkm; PKV.type = ''; PKV.set = ''; PKV.shown = 120; PKV.sel.clear(); rer(); };
   $('#pkTypes').onclick = e => { const b = e.target.closest('[data-pkty]'); if (!b) return; PKV.type = b.dataset.pkty; PKV.shown = 120; rer(); };
   if ($('#pkList')) $('#pkList').onchange = e => { SK.list = e.target.value; rer(); };
   if ($('#pkMore')) $('#pkMore').onclick = () => { PKV.shown += 200; rer(); };
@@ -137,7 +151,7 @@ function wirePkCatalog(pg, l) {
 function pkSuggest(l) {
   if (!PKD.cat || !pkTargetList(l)) return [];
   const have = new Set(l.items.map(i => i.sku)), hide = new Set((l.pkHide || []).map(String)), out = [], seen = new Set();
-  const push = (x, why) => { if (!x || seen.has(x.t) || have.has(x.t) || hide.has(x.t) || x.imp || x.gone) return; seen.add(x.t); out.push({ x, why }); };
+  const push = (x, why) => { if (!x || seen.has(x.t) || have.has(x.t) || hide.has(x.t) || !pkIsDrop(x)) return; seen.add(x.t); out.push({ x, why }); };
   const cut = Date.now() - 2 * 86400000;
   if (typeof NW !== 'undefined') for (const it of NW.items) { if (!(it.date > cut)) continue; for (const s of it.skus || []) if (s.store === 'Target') push(pkByTcin(s.sku), 'In the news ' + newsAgo(it.date)); for (const x of pkMatchText(it.title, 3)) push(x, 'In the news ' + newsAgo(it.date)); if (out.length >= 4) break; }
   const fresh = PKD.cat.items.filter(x => x.f && x.f > Date.now() - 7 * 86400000).sort((a, b) => b.f - a.f);

@@ -1,6 +1,12 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.1', date: '2026-11-08', title: 'Drops only, and made for phones', items: [
+    'Pokémon products now shows only what Target drops online: Target’s own listings of ETBs, bundles, displays, blisters, collection and premium boxes and tins from the last two years. Single packs, decks, accessories and other sellers are gone. “Everything on Target” still shows the full list.',
+    'Suggestions and news matches use the drops list too.',
+    'Phones: nothing scrolls sideways any more. Rows of filters are a dropdown, extra buttons are under “More”, and the page tabs fit on screen.',
+    'Phones: SKU lists are tidy rows. Tap one for its price, value, quantity, link, Edit and Remove.',
+  ] },
   { v: '0.20.0', date: '2026-11-08', title: 'Kingpin: News and every Pokémon SKU', items: [
     'Crown Tools is now Kingpin, with a new icon and a cleaner dark background. Your data, sign-in and settings are unchanged.',
     'New News page under Dashboard. Pokémon news from public news sites is sorted into Drops, Raffles, Changes, Restocks and News, and grouped by day.',

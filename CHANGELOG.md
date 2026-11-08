@@ -2,6 +2,13 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.1 — Drops only, and made for phones (2026-11-08)
+
+- Pokémon products now shows only what Target drops online: Target’s own listings of ETBs, bundles, displays, blisters, collection and premium boxes and tins from the last two years. Single packs, decks, accessories and other sellers are gone. “Everything on Target” still shows the full list.
+- Suggestions and news matches use the drops list too.
+- Phones: nothing scrolls sideways any more. Rows of filters are a dropdown, extra buttons are under “More”, and the page tabs fit on screen.
+- Phones: SKU lists are tidy rows. Tap one for its price, value, quantity, link, Edit and Remove.
+
 ## v0.20.0 — Kingpin: News and every Pokémon SKU (2026-11-08)
 
 - Crown Tools is now Kingpin, with a new icon and a cleaner dark background. Your data, sign-in and settings are unchanged.

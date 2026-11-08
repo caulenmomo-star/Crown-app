@@ -97,7 +97,7 @@ PAGES.skus = {
     const total = l ? l.items.reduce((s, i) => { const p = skuPrice(i); return s + (p ? p.v * (Number(i.qty) || 1) : 0); }, 0) : 0;
     const seg = `<div class="seg" id="skView"><button data-skv="lists" class="${SK.view === 'lists' ? 'on' : ''}">My lists</button><button data-skv="products" class="${SK.view === 'products' ? 'on' : ''}">Pokémon products</button></div>`;
     if (SK.view === 'products') {
-      pg.innerHTML = `<div class="pagehead"><h1>SKU lists</h1><span class="sub">Every Pokémon product on Target, with its TCIN</span><div class="spacer"></div>${seg}</div>${pkCatalogHtml(l)}`;
+      pg.innerHTML = `<div class="pagehead"><h1>SKU lists</h1><span class="sub">Pokémon drops on Target, with their TCINs</span><div class="spacer"></div>${seg}</div>${pkCatalogHtml(l)}`;
       $('#skView').onclick = e => { const b = e.target.closest('[data-skv]'); if (b) { SK.view = b.dataset.skv; PAGES.skus.render(); } };
       wirePkCatalog(pg, l); return;
     }
@@ -122,7 +122,18 @@ PAGES.skus = {
               <td class="num">${m ? `<b>${fmtMoney(m.v)}</b><div class="small faint">TCGplayer</div>` : '<span class="faint">—</span>'}</td>
               <td class="num"><input class="skqty" data-skqty="${i.id}" type="number" min="1" max="99" value="${Number(i.qty) || 1}" inputmode="numeric" aria-label="Quantity"></td>
               <td class="num" style="white-space:nowrap"><button class="sm ghost" data-skedit="${i.id}">Edit</button><button class="sm ghost" data-skdel="${i.id}" aria-label="Remove">✕</button></td></tr>`; }).join('')}
-          </tbody></table></div>${!items.length ? '<div class="empty">No SKUs match.</div>' : ''}` : `<div class="empty">No SKUs in this list yet. Paste some above.</div>`}
+          </tbody></table></div>
+          <div class="skucards">${items.map(i => { const p = skuPrice(i), m = skuMarket(i), link = skuStoreLink(i, l), paid = skuPaid(i);
+            return `<details class="skucard" data-ski="${i.id}"><summary>${thumb(i.image)}<div class="scmain"><div class="scname">${i.looking ? '<span class="faint">Looking up…</span>' : i.name ? esc(typeof pkShort === 'function' ? pkShort(i.name) : i.name) : `<span class="faint">${esc(i.lookErr || 'Not looked up yet')}</span>`}</div>
+                <div class="small muted"><span class="mono">${esc(i.sku)}</span>${p ? ' · <b>' + fmtMoney(p.v) + '</b>' : ''}${(Number(i.qty) || 1) > 1 ? ' · ×' + (Number(i.qty) || 1) : ''}</div></div>
+                <button class="ghost sm icopy" data-skcopy="${esc(i.sku)}" title="Copy SKU" aria-label="Copy SKU">⧉</button><span class="scchev" aria-hidden="true">▾</span></summary>
+              <div class="scmore">
+                <div class="scrow"><span class="muted">Price</span><span>${p ? `<b>${fmtMoney(p.v)}</b> <span class="small faint">${p.from === 'you' ? 'you typed' : p.from === 'paid' ? 'you paid' + (p.date ? ' ' + esc(fmtDate(p.date)) : '') : esc(p.from)}</span>` : '<span class="faint">—</span>'}</span></div>
+                <div class="scrow"><span class="muted">Value</span><span>${m ? `<b>${fmtMoney(m.v)}</b> <span class="small faint">TCGplayer</span>` : '<span class="faint">—</span>'}</span></div>
+                ${paid || i.notes ? `<div class="scrow"><span class="muted">Notes</span><span class="small">${[paid ? `bought ${paid.n === 1 ? 'once' : paid.n + ' times'}` : '', i.notes].filter(Boolean).map(esc).join(' · ')}</span></div>` : ''}
+                <div class="scrow"><span class="muted">Quantity</span><input class="skqty" data-skqty="${i.id}" type="number" min="1" max="99" value="${Number(i.qty) || 1}" inputmode="numeric" aria-label="Quantity"></div>
+                <div class="hstack" style="gap:8px;margin-top:8px">${link ? `<a class="btn" href="${esc(link)}" target="_blank" rel="noopener">${esc(i.store || l.store)} ↗</a>` : ''}<span class="spacer"></span><button class="sm" data-skedit="${i.id}">Edit</button><button class="sm danger" data-skdel="${i.id}">Remove</button></div>
+              </div></details>`; }).join('')}</div>${!items.length ? '<div class="empty">No SKUs match.</div>' : ''}` : `<div class="empty">No SKUs in this list yet. Paste some above.</div>`}
       </div></div>` : `<div class="empty">Save the SKUs you run in your bots, grouped into lists like “Pokémon restock” or “Target drops”. Paste a pile of SKUs or product links and Kingpin shows what each product is and what it costs. <div style="margin-top:12px"><button class="primary" id="sklNew2">Make your first list</button></div></div>`}`;
     const mk = async () => { const n = await askText('New SKU list', '', { placeholder: 'Pokémon restock, Target drops…', ok: 'Make list' }); if (!n || !n.trim()) return; const x = newSkuList(n, l ? l.store : 'Target'); state.skuLists.push(x); SK.list = x.id; save(); PAGES.skus.render(); setTimeout(() => $('#sklAdd') && $('#sklAdd').focus(), 50); };
     $('#sklNew').onclick = mk; if ($('#sklNew2')) $('#sklNew2').onclick = mk; if ($('#sklNew3')) $('#sklNew3').onclick = mk;
@@ -150,13 +161,15 @@ PAGES.skus = {
     $('#sklCsv').onclick = () => download(`kingpin-skus-${l.name.replace(/[^\w-]+/g, '-').toLowerCase()}.csv`, toCSV(['sku', 'name', 'qty', 'price', 'store', 'link', 'notes'], l.items.map(i => { const p = skuPrice(i); return { sku: i.sku, name: i.name, qty: Number(i.qty) || 1, price: p ? p.v.toFixed(2) : '', store: i.store || l.store, link: skuStoreLink(i, l), notes: i.notes }; })), 'text/csv');
     $('#sklQ').oninput = debounce(e => { SK.q = e.target.value; PAGES.skus.render(); const q = $('#sklQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
     if ($('#sklLook')) $('#sklLook').onclick = () => skuLookupAll(l, true);
-    const tb = pg.querySelector('.skutbl');
+    const tb = pg.querySelector('.skutbl'), cards = pg.querySelector('.skucards');
     tb.onchange = e => { const q = e.target.closest('[data-skqty]'); if (!q) return; const it = l.items.find(i => i.id === q.dataset.skqty); it.qty = Math.max(1, Math.min(99, parseInt(q.value, 10) || 1)); skuTouch(l); save(); };
     tb.onclick = async e => {
       const cp = e.target.closest('[data-skcopy]'); if (cp) { copyText(cp.dataset.skcopy, 'SKU'); return; }
       const del = e.target.closest('[data-skdel]'); if (del) { snapshot('remove SKU'); l.items = l.items.filter(i => i.id !== del.dataset.skdel); skuTouch(l); save(); PAGES.skus.render(); toast('SKU removed', { undo: true }); return; }
       const ed = e.target.closest('[data-skedit]'); if (ed) openSkuEdit(l, l.items.find(i => i.id === ed.dataset.skedit));
     };
+    // phones: the same buttons, in the tap-to-open rows (copying doesn't open the row)
+    if (cards) { cards.onchange = tb.onchange; cards.onclick = e => { if (e.target.closest('[data-skcopy]')) e.preventDefault(); return tb.onclick(e); }; }
   },
 };
 // edit one SKU: its name, your price, notes

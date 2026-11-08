@@ -250,7 +250,7 @@ PAGES.spending = {
     pg.innerHTML = `<div class="pagehead"><h1>Spending</h1><span class="sub">${esc(spRangeLabel())}</span><div class="spacer"></div>
       <div class="chips">${SP_RANGES.map(([k, l]) => `<button class="chip ${SP.range === k ? 'on' : ''}" data-sr="${k}">${l}</button>`).join('')}</div>
       <select id="spMonth" style="width:auto"><option value="">Pick a month…</option>${months.map(([k, l]) => `<option value="${k}" ${SP.range === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <span class="hstack" style="gap:6px"><input type="date" id="spFrom" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[1] : ''}" title="From"><span class="faint">to</span><input type="date" id="spTo" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[2] : ''}" title="To"></span></div>
+      <span class="hstack daterange" style="gap:6px"><input type="date" id="spFrom" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[1] : ''}" title="From"><span class="faint">to</span><input type="date" id="spTo" style="width:auto" value="${SP.range.startsWith('c:') ? SP.range.split(':')[2] : ''}" title="To"></span></div>
       <div class="kpis">
         <div class="kpi"><div class="l">Spent</div><div class="v">${fmtMoney(s.spent)}</div><div class="d">${s.pending.length ? fmtMoney(s.pendingSpent) + ' still pending · ' : ''}cancelled not counted</div></div>
         <div class="kpi"><div class="l">Orders that stuck</div><div class="v">${s.stuck.length}</div><div class="d">${s.pending.length ? s.pending.length + ' pending · ' : ''}${s.items} items</div></div>
