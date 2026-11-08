@@ -17,8 +17,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: macos-14, plat: darwin, arch: arm64, py: aarch64-apple-darwin, out: Kingpin-Mac-Apple-Silicon }
-          - { os: macos-14, plat: darwin, arch: x64, py: x86_64-apple-darwin, out: Kingpin-Mac-Intel }
+          - { os: macos-15, plat: darwin, arch: arm64, py: aarch64-apple-darwin, out: Kingpin-Mac-Apple-Silicon }
+          - { os: macos-15, plat: darwin, arch: x64, py: x86_64-apple-darwin, out: Kingpin-Mac-Intel }
           - { os: windows-latest, plat: win32, arch: x64, py: x86_64-pc-windows-msvc, out: Kingpin-Windows }
     runs-on: ${{ matrix.os }}
     steps:
@@ -37,8 +37,16 @@ jobs:
         shell: bash
         env: { GH_TOKEN: '${{ github.token }}' }
         run: |
-          url=$(gh api repos/astral-sh/python-build-standalone/releases/latest --jq '.assets[].browser_download_url' | grep -E "cpython-3\.12\.[0-9]+\+[0-9]+-${{ matrix.py }}-install_only_stripped\.tar\.gz$" | head -1)
-          echo "Python: $url"; test -n "$url"
+          gh api repos/astral-sh/python-build-standalone/releases/latest --jq '.assets[].browser_download_url' > assets.txt || true
+          echo "$(wc -l < assets.txt) files in the latest Python release"
+          url=""
+          for v in 3.13 3.12; do
+            for kind in install_only_stripped install_only; do
+              if [ -z "$url" ]; then url=$(grep -E "cpython-${v//./\\.}\.[0-9]+\+[0-9]+-${{ matrix.py }}(-shared)?-${kind}\.tar\.gz$" assets.txt | head -1 || true); fi
+            done
+          done
+          echo "Python: $url"
+          if [ -z "$url" ]; then grep -E "${{ matrix.py }}" assets.txt | head -20; exit 1; fi
           curl -sSL "$url" -o py.tgz && mkdir -p build/py && tar -xzf py.tgz -C build/py && ls build/py/python
       - name: Make the app
         shell: bash
