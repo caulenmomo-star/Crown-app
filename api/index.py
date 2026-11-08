@@ -1465,6 +1465,277 @@ def sku_info(req):
     return out
 
 
+# ---------------------------------------------------------------- Pokémon news (public RSS feeds from news sites)
+# Only public feeds that the sites publish for readers. Each feed is read at most every 20 minutes per server.
+NEWS_FEEDS = [
+    # id, name, url, only items that mention Pokémon (for general gaming sites)
+    ("pokebeach", "PokéBeach", "https://www.pokebeach.com/forums/forum/-/index.rss", False),
+    ("pokemon", "Pokémon (official)", "https://www.pokemon.com/us/pokemon-news/rss", False),
+    ("pokeguardian", "PokéGuardian", "https://www.pokeguardian.com/feed", False),
+    ("pokejungle", "PokéJungle", "https://pokejungle.net/feed/", False),
+    ("pokemondb", "Pokémon Database", "https://pokemondb.net/news/feed", False),
+    ("pokemonblog", "Pokémon Blog", "https://pokemonblog.com/feed/", False),
+    ("nintendolife", "Nintendo Life", "https://www.nintendolife.com/feeds/latest/tags/pokemon", False),
+    ("polygon", "Polygon", "https://www.polygon.com/rss/pokemon/index.xml", False),
+    ("gamerant", "Game Rant", "https://gamerant.com/feed/category/pokemon-news/", False),
+    ("siliconera", "Siliconera", "https://www.siliconera.com/feed/", True),
+    ("dexerto", "Dexerto", "https://www.dexerto.com/pokemon/feed/", False),
+    ("bleedingcool", "Bleeding Cool", "https://bleedingcool.com/tag/pokemon/feed/", False),
+    ("reddit-tcg", "r/PokemonTCG", "https://www.reddit.com/r/PokemonTCG/new/.rss", False),
+]
+NEWS_EXTRA = {  # other addresses tried by the health check, to find feeds that moved
+    "pokeguardian": ["https://www.pokeguardian.com/rss", "https://www.pokeguardian.com/feed.xml", "https://pokeguardian.com/feed/"],
+    "pokebeach": ["https://www.pokebeach.com/feed"],
+    "trackalacker": ["https://www.trackalacker.com/feed", "https://www.trackalacker.com/rss.xml", "https://www.trackalacker.com/articles/rss"],
+    "tcgdropradar": ["https://tcgdropradar.com/rss.xml", "https://tcgdropradar.com/feed.xml", "https://tcgdropradar.com/blog/rss.xml"],
+    "serebii": ["https://www.serebii.net/rss.xml", "https://www.serebii.net/news.rss"],
+    "reddit-pi": ["https://www.reddit.com/r/PokeInvesting/new/.rss"],
+}
+_NEWSCACHE = {}
+NEWS_TTL = 20 * 60
+_POKE = re.compile(r"pok[eé]mon|pikachu|\btcg\b|elite trainer|booster", re.I)
+
+
+def _news_get(url, ttl=NEWS_TTL):
+    hit = _NEWSCACHE.get(url)
+    if hit and hit[0] > time.time():
+        return hit[1]
+    u = urllib.parse.urlsplit(url)
+    local_ok = os.environ.get("CROWN_NEWS_ALLOW_LOCAL") and u.scheme == "http" and u.hostname in ("127.0.0.1", "localhost")
+    if not (u.scheme == "https" or local_ok) or not u.hostname or (not local_ok and not _public_host(u.hostname)):
+        raise UserError("That feed address can't be used.")
+    rq = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Kingpin/%s news reader)" % VERSION,
+                                              "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.5"})
+    try:
+        with urllib.request.urlopen(rq, timeout=12, context=ssl_context()) as resp:
+            data = resp.read(3_000_000)
+    except urllib.error.HTTPError as e:
+        raise UserError("The site answered %s." % e.code)
+    except (urllib.error.URLError, OSError) as e:
+        raise UserError("Couldn't reach the site (%s)." % getattr(e, "reason", e))
+    _NEWSCACHE[url] = (time.time() + ttl, data)
+    return data
+
+
+def _strip_html(h):
+    h = re.sub(r"(?is)<(script|style|iframe|noscript)[^>]*>.*?</\1>", " ", h or "")
+    h = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</h[1-6]>", "\n", h)
+    h = re.sub(r"(?i)<li[^>]*>", "\n• ", h)
+    t = re.sub(r"<[^>]+>", "", h)
+    t = html_unescape(t).replace("\xa0", " ")
+    t = re.sub(r"[ \t]+", " ", t)
+    paras = [p.strip() for p in re.split(r"\n\s*", t) if p.strip()]
+    return "\n\n".join(paras)
+
+
+def html_unescape(t):
+    import html as _h
+    return _h.unescape(t or "")
+
+
+# retailer product links → store + SKU
+_SKU_PATTERNS = [
+    ("Target", re.compile(r"target\.com/p/(?:[^\s\"'<>?#]*?/)?-?/?A-(\d{6,10})", re.I)),
+    ("Walmart", re.compile(r"walmart\.com/ip/(?:[^\s\"'<>?#]*/)?(\d{6,12})(?=[/?#\"'\s<]|$)", re.I)),
+    ("Best Buy", re.compile(r"bestbuy\.com/site/[^\s\"'<>]*?(?:/(\d{7})\.p|skuId=(\d{7}))", re.I)),
+    ("Pokémon Center", re.compile(r"pokemoncenter\.com/(?:[a-z-]+/)?product/(\d{2,3}-\d{5}(?:-\d+)?)", re.I)),
+    ("GameStop", re.compile(r"gamestop\.com/[^\s\"'<>]*?/(\d{5,8})\.html", re.I)),
+    ("Amazon", re.compile(r"amazon\.com/(?:[^\s\"'<>]*?/)?(?:dp|gp/product)/([A-Z0-9]{10})", re.I)),
+]
+
+
+def _unwrap(href):
+    # affiliate and tracking links carry the real address inside them
+    for _ in range(3):
+        try:
+            q = urllib.parse.parse_qs(urllib.parse.urlsplit(href).query)
+        except ValueError:
+            return href
+        inner = next((v[0] for k, v in q.items() if k.lower() in ("url", "u", "murl", "dest", "destination", "redirect", "target", "r") and v and v[0].startswith("http")), "")
+        if not inner:
+            return href
+        href = inner
+    return href
+
+
+def _skus_in(html):
+    out, seen = [], set()
+    for m in re.finditer(r"(?is)<a\b[^>]*href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", html or ""):
+        href, label = _unwrap(html_unescape(m.group(1))), _strip_html(m.group(2)).strip()
+        for store, rx in _SKU_PATTERNS:
+            mm = rx.search(href)
+            if mm:
+                sku = next(g for g in mm.groups() if g)
+                if (store, sku) in seen:
+                    break
+                seen.add((store, sku))
+                bad = not label or len(label) < 6 or label.lower() in ("here", "link", "this link", "click here", "buy now", "shop now") or label.lower().startswith(("http", "www."))
+                out.append({"store": store, "sku": sku, "url": href.split("#")[0][:500], "name": "" if bad or store.lower() in label.lower() and len(label) < 20 else label[:160]})
+                break
+    # plain "TCIN: 12345678" written in the text
+    for mm in re.finditer(r"\bTCIN[:#\s]*?(\d{8,10})\b", _strip_html(html or ""), re.I):
+        if ("Target", mm.group(1)) not in seen:
+            seen.add(("Target", mm.group(1)))
+            out.append({"store": "Target", "sku": mm.group(1), "url": "https://www.target.com/p/-/A-" + mm.group(1), "name": ""})
+    return out[:40]
+
+
+_KIND_RULES = [
+    ("raffle", re.compile(r"\braffle|\blottery\b|\bdrawing\b|enter (?:for|to win) a chance|chance to (?:buy|purchase)|sign[- ]?ups? (?:are )?open", re.I)),
+    ("change", re.compile(r"\blimit(?:s|ed|ing)? (?:of |to )?\d|per (?:customer|guest|household|person)|purchase limit|policy|no longer|\bbann?(?:ed|ing)\b|\bbots?\b|cancel(?:s|led|ling)? (?:orders|preorders)|crack(?:s|ing)? down|new rule", re.I)),
+    ("restock", re.compile(r"\brestock|back in stock|in stock (?:now|again)|\breprint", re.I)),
+    ("drop", re.compile(r"\bdrop(?:s|ping|ped)?\b|release date|releas(?:e|es|ing) (?:on|in|this|today|tomorrow|next)|launch(?:es|ing)?\b|pre-?orders?|goes live|available (?:now|today|on)|on sale", re.I)),
+]
+
+
+def _news_kind(title, text):
+    t = title or ""
+    for k, rx in _KIND_RULES:
+        if rx.search(t):
+            return k
+    head = (text or "")[:600]
+    for k, rx in _KIND_RULES:
+        if k != "drop" and rx.search(head):
+            return k
+    return "drop" if _KIND_RULES[3][1].search(head) and re.search(r"target|walmart|best buy|pok[eé]mon center|gamestop|amazon", t + " " + head, re.I) else "news"
+
+
+def _news_date(s):
+    from email.utils import parsedate_to_datetime
+    s = (s or "").strip()
+    if not s:
+        return 0
+    try:
+        return int(parsedate_to_datetime(s).timestamp() * 1000)
+    except (TypeError, ValueError, IndexError):
+        pass
+    try:
+        s2 = re.sub(r"Z$", "+00:00", s)
+        return int(datetime.datetime.fromisoformat(s2).timestamp() * 1000)
+    except ValueError:
+        return 0
+
+
+def _parse_feed(data, src, name, poke_only):
+    import xml.etree.ElementTree as ET
+    txt = data.decode("utf-8", "replace") if isinstance(data, bytes) else data
+    txt = re.sub(r"^[^<]+", "", txt)
+    try:
+        root = ET.fromstring(txt.encode("utf-8"))
+    except ET.ParseError:
+        # a few sites send slightly broken XML: drop characters XML doesn't allow and try once more
+        try:
+            root = ET.fromstring(re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", txt).replace("&nbsp;", "&#160;").encode("utf-8"))
+        except ET.ParseError:
+            raise UserError("The feed couldn't be read.")
+    loc = lambda tag: tag.rsplit("}", 1)[-1].lower() if isinstance(tag, str) else ""
+    entries = [e for e in root.iter() if loc(e.tag) in ("item", "entry")]
+    if not entries and loc(root.tag) not in ("rss", "feed", "rdf"):
+        raise UserError("That address isn't a news feed.")
+    out = []
+    for e in entries[:60]:
+        f = {}
+        for c in e:
+            k = loc(c.tag)
+            if k == "link":
+                href = c.get("href")
+                if href and (c.get("rel") in (None, "alternate")):
+                    f.setdefault("link", href)
+                elif (c.text or "").strip():
+                    f.setdefault("link", c.text.strip())
+            elif k in ("encoded", "content") and (c.text or "").strip():
+                f["content"] = c.text if len(c.text) > len(f.get("content", "")) else f["content"]
+            elif k in ("description", "summary") and (c.text or "").strip():
+                f.setdefault("desc", c.text)
+            elif k in ("pubdate", "published", "updated", "date"):
+                f.setdefault("date", (c.text or "").strip())
+            elif k == "title":
+                f["title"] = _strip_html(c.text or "").replace("\n\n", " ")
+            elif k in ("thumbnail", "content") and c.get("url"):
+                f.setdefault("image", c.get("url"))
+            elif k == "enclosure" and str(c.get("type") or "").startswith("image") and c.get("url"):
+                f.setdefault("image", c.get("url"))
+            elif k == "group":
+                for g in c:
+                    if loc(g.tag) in ("thumbnail", "content") and g.get("url"):
+                        f.setdefault("image", g.get("url"))
+            elif k == "category":
+                f.setdefault("cats", []).append((c.text or c.get("term") or "").strip())
+        body = f.get("content") or f.get("desc") or ""
+        title = (f.get("title") or "").strip()
+        if not title or not f.get("link"):
+            continue
+        text = _strip_html(body)
+        if poke_only and not _POKE.search(title + " " + text[:1500] + " " + " ".join(f.get("cats", []))):
+            continue
+        img = f.get("image") or ""
+        if not img:
+            m = re.search(r"(?is)<img\b[^>]*\bsrc=[\"'](https://[^\"']+)[\"']", body)
+            img = html_unescape(m.group(1)) if m else ""
+        link = f["link"].strip()
+        if not link.startswith("https://") and not link.startswith("http://"):
+            continue
+        ts = _news_date(f.get("date")) or 0
+        # removing "[...]" stubs and "The post X appeared first on Y" footers
+        text = re.sub(r"\s*(?:\[(?:…|\.\.\.|&hellip;)\]|The post .{0,200} appeared first on .{0,80}\.)\s*$", "", text).strip()
+        out.append({"id": src + ":" + hashlib.sha1(link.encode()).hexdigest()[:16], "src": src, "srcName": name, "title": title[:240], "link": link[:600],
+                    "date": ts, "text": text[:12000], "image": img[:600] if img.startswith("https://") else "", "skus": _skus_in(body),
+                    "kind": _news_kind(title, text), "tcg": bool(re.search(r"\btcg\b|trading card|booster|elite trainer|\betb\b|collection box|\bpacks?\b|card game|\bset\b", title + " " + text[:800], re.I))})
+    return out
+
+
+def news_fetch(req):
+    """Reads the news feeds (built-in ones the person kept switched on, plus their own), newest first."""
+    from concurrent.futures import ThreadPoolExecutor
+    off = set(str(x) for x in (req.get("off") or []))
+    feeds = [(i, n, u, p) for (i, n, u, p) in NEWS_FEEDS if i not in off]
+    for c in (req.get("custom") or [])[:15]:
+        u = str((c or {}).get("url") or "").strip()
+        if u.startswith(("https://", "http://")) and len(u) < 600:
+            feeds.append(("c-" + hashlib.sha1(u.encode()).hexdigest()[:8], str(c.get("name") or urllib.parse.urlsplit(u).hostname or "Feed")[:60], u, bool(c.get("pokeOnly"))))
+    fresh = bool(req.get("fresh"))
+
+    def one(f):
+        i, n, u, p = f
+        try:
+            if fresh:
+                hit = _NEWSCACHE.get(u)
+                if hit and hit[0] - NEWS_TTL + 5 * 60 < time.time():  # "refresh now" re-reads anything older than 5 minutes
+                    _NEWSCACHE.pop(u, None)
+            items = _parse_feed(_news_get(u), i, n, p)
+            return {"id": i, "name": n, "url": u, "ok": True, "count": len(items)}, items
+        except UserError as e:
+            return {"id": i, "name": n, "url": u, "ok": False, "error": str(e)}, []
+        except Exception as e:  # one bad feed never breaks the rest
+            return {"id": i, "name": n, "url": u, "ok": False, "error": "Couldn't read it (%s)." % type(e).__name__}, []
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        res = list(ex.map(one, feeds))
+    items = [it for _, its in res for it in its]
+    since = int(req.get("since") or 0)
+    if since:
+        items = [it for it in items if not it["date"] or it["date"] >= since]
+    items.sort(key=lambda x: -(x["date"] or 0))
+    return {"ok": True, "at": int(time.time() * 1000), "sources": [s for s, _ in res], "items": items[:400],
+            "builtin": [{"id": i, "name": n, "url": u} for (i, n, u, p) in NEWS_FEEDS]}
+
+
+def news_status(req=None):
+    """Health check of every built-in feed and the other addresses tried (for finding moved feeds)."""
+    from concurrent.futures import ThreadPoolExecutor
+    cands = [(i, u, p) for (i, n, u, p) in NEWS_FEEDS] + [(i, u, False) for i, us in NEWS_EXTRA.items() for u in us]
+
+    def one(c):
+        i, u, p = c
+        try:
+            items = _parse_feed(_news_get(u, 300), i, i, p)
+            return {"id": i, "url": u, "ok": True, "count": len(items), "newest": items and max(x["date"] for x in items), "skus": sum(len(x["skus"]) for x in items),
+                    "sample": [x["title"][:80] for x in items[:2]], "kinds": sorted({x["kind"] for x in items})}
+        except Exception as e:
+            return {"id": i, "url": u, "ok": False, "error": str(e)[:120]}
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        return {"ok": True, "feeds": list(ex.map(one, cands))}
+
+
 # ---------------------------------------------------------------- market prices (TCGplayer data via tcgcsv.com)
 TCG_BASE = os.environ.get("CROWN_TCGCSV_URL", "https://tcgcsv.com/tcgplayer")
 _MCACHE = {}
@@ -2248,6 +2519,8 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/carriertest": carrier_test,
             "/api/track17": track17,
             "/api/skuinfo": sku_info,
+            "/api/news": news_fetch,
+            "/api/news/status": news_status,
             "/api/s17test": s17_test,
             "/api/discord": discord_send,
             "/api/discord/check": discord_check,
@@ -3090,6 +3363,11 @@ class handler(BaseHTTPRequestHandler):
                         out["search"] = str(e)
                 return out
             return self._run(mstatus)
+        if r == "/news/status":  # public health check of the news feeds (rate-limited)
+            def nstatus():
+                rate_limit("nstat", client_ip(h), 20, 3600)
+                return news_status()
+            return self._run(nstatus)
         if r in ("/stockx/login", "/stockx/callback"):  # browser sign-in with StockX (no app headers on these)
             q = self._query()
             redirect = app_url(h).rstrip("/") + "/api/stockx/callback"
@@ -3419,6 +3697,7 @@ class handler(BaseHTTPRequestHandler):
             "/carriertest": carrier_test,
             "/track17": track17,
             "/skuinfo": sku_info,
+            "/news": news_fetch,
             "/s17test": s17_test,
             "/discord": discord_send,
             "/discord/check": discord_check,
