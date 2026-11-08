@@ -1060,3 +1060,19 @@ html[data-theme=cherry]{--heroA:#d6334a;--heroB:#8a3ad6;--heroC:#5b3df5}
 .cszoom img{max-width:100%;max-height:calc(100% - 60px);object-fit:contain;border-radius:10px}
 .cszbar{display:flex;gap:8px;align-items:center;width:min(100%,700px);color:#fff}
 .csimg img{cursor:zoom-in}.csok{margin-left:6px;padding:3px 9px}
+
+/* a box the browser filled in by itself (see noautofill.js) */
+@keyframes nafFilled { from { opacity: 1 } to { opacity: 1 } }
+input:-webkit-autofill { animation: nafFilled 1ms; }
+
+/* right-click menus (ctxmenu.js) */
+.ctxmenu{position:fixed;z-index:10000;min-width:210px;max-width:300px;max-height:min(70vh,520px);overflow:auto;padding:5px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;animation:ctxIn .08s ease-out}
+@keyframes ctxIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+.ctxitem{all:unset;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:6px 10px;border-radius:6px;font-size:13px;line-height:1.3;cursor:default;color:inherit;white-space:nowrap}
+.ctxitem>span:first-child{overflow:hidden;text-overflow:ellipsis}
+.ctxitem:hover:not([disabled]),.ctxitem:focus-visible,.ctxitem:focus:not([disabled]),.ctxitem.open{background:var(--gold);color:#14172a}
+.ctxitem.danger{color:var(--danger)}.ctxitem.danger:hover,.ctxitem.danger:focus{background:var(--danger);color:#fff}
+.ctxitem[disabled]{opacity:.55}
+.ctxhead{font-size:11.5px;color:var(--muted);padding:4px 10px 3px}
+.ctxarrow,.ctxhint{opacity:.6;font-size:12px}
+.ctxsep{height:1px;background:var(--line2);margin:4px 6px}

@@ -29,7 +29,54 @@ function srRange(g, from, to) {
 }
 const srTyping = el => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !(el.tagName === 'INPUT' && /^(checkbox|radio|button|submit)$/.test(el.type)));
 const srDialogOpen = () => !!document.querySelector('dialog[open]');
+// Redrawing a page rebuilds its list, which used to throw you back to the top. Every redraw now keeps each list's scroll
+// position, and the row you just clicked stays right where it was on screen (even if a selection bar appears above it).
+const SR_SCROLLERS = 'main, .tablewrap, .olist, .list, .dbody, [data-keepscroll]';
+const SR_ROWKEYS = ['data-id', 'data-acc', 'data-card', 'data-oid', 'data-house', 'data-item', 'data-sale', 'data-pk', 'data-pre'];
+let srLastRow = null, srPending = null, srSeenRoute = '', srGen = 0, srNav = false;
+function srRowKey(el) {
+  const row = el && el.closest && el.closest(SR_ROWKEYS.map(a => `[${a}]`).join(','));
+  if (!row) return null; const a = SR_ROWKEYS.find(x => row.hasAttribute(x));
+  return { attr: a, val: row.getAttribute(a), tag: row.tagName };
+}
+const srFindRow = k => k && [...document.querySelectorAll(`${k.tag}[${k.attr}]`)].find(x => x.getAttribute(k.attr) === k.val && srShown(x));
+function srKeepScroll(fn) {
+  // each scrolling box is remembered by its id, or its kind and position among boxes of the same kind
+  const snap = () => { const m = new Map(), n = {}; for (const x of document.querySelectorAll(SR_SCROLLERS)) { if (!srShown(x)) continue; const pgEl = x.closest('[data-page], dialog'), c = (pgEl ? (pgEl.dataset.page || pgEl.id) : '') + '|' + x.tagName + '.' + (x.classList[0] || ''); n[c] = (n[c] || 0) + 1; m.set(x.id ? '#' + x.id : c + ':' + n[c], x); } return m; };
+  // a redraw right after another one (before the first has settled) aims for the same place, not the half-way one
+  const reuse = srPending && srPending.gen === srGen && Date.now() < srPending.until;
+  const P = reuse ? srPending : (() => { const k = srLastRow && Date.now() - srLastRow.at < 1500 ? srLastRow.key : null, r0 = k && srFindRow(k);
+    return { before: new Map([...snap()].map(([k, x]) => [k, [x.scrollTop, x.scrollLeft]])), win: [scrollX, scrollY], k, top0: r0 ? r0.getBoundingClientRect().top : null, gen: srGen }; })();
+  P.until = Date.now() + 120; srPending = P;
+  const { before, win, k, top0 } = P;
+  const gen = srGen; const out = fn();
+  // put it back now, and again once the table has its final size (that happens a moment after drawing)
+  const restore = () => { if (gen !== srGen) return; try {
+    for (const [key, x] of snap()) { const b = before.get(key); if (!b) continue; if (x.scrollTop !== b[0]) x.scrollTop = b[0]; if (x.scrollLeft !== b[1]) x.scrollLeft = b[1]; }
+    if (scrollX !== win[0] || scrollY !== win[1]) scrollTo(win[0], win[1]);
+    // keep the clicked row where it was
+    if (top0 != null) { const r1 = srFindRow(k); if (r1) { const d = r1.getBoundingClientRect().top - top0; if (Math.abs(d) >= 1) { let sc = r1.parentElement; while (sc && !(sc.scrollHeight > sc.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(sc).overflowY))) sc = sc.parentElement; (sc || document.scrollingElement).scrollTop += d; } } }
+  } catch (_) { } };
+  restore(); queueMicrotask(restore); requestAnimationFrame(restore); setTimeout(restore, 60);
+  return out;
+}
+// true while you stay on the same page; the first draw after going to another page is left alone (it starts at the top)
+function srSamePage() { const p = typeof route !== 'undefined' ? route.page : ''; if (p !== srSeenRoute) { srSeenRoute = p; srGen++; return false; } return true; }
+function wireKeepScroll() {
+  document.addEventListener('pointerdown', e => { const key = srRowKey(e.target); srLastRow = key ? { key, at: Date.now() } : null; }, true);
+  document.addEventListener('keydown', () => { if (srLastRow) srLastRow.at = 0; }, true);
+  // only a redraw of the page you're on keeps its place; going to another page starts at the top as usual
+  for (const [name, pg] of Object.entries(PAGES)) {
+    if (!pg || typeof pg.render !== 'function' || pg.render.__keep) continue;
+    // (going to another page still starts at the top: the page switch resets the scroll after drawing)
+    const orig = pg.render; pg.render = function (...a) { if (srNav || srSamePage()) return srNav ? orig.apply(this, a) : srKeepScroll(() => orig.apply(this, a)); srNav = true; try { return orig.apply(this, a); } finally { srNav = false; } };
+    pg.render.__keep = true;
+  }
+  const rt = renderTable; renderTable = function (...a) { return !srNav && srSamePage() ? srKeepScroll(() => rt.apply(this, a)) : rt.apply(this, a); };
+  window.addEventListener('hashchange', () => { srGen++; }, true);
+}
 function wireSelRange() {
+  wireKeepScroll();
   // no text highlighting when shift-clicking down a list
   document.addEventListener('mousedown', e => {
     if (!e.shiftKey || !(e.target instanceof Element)) return;

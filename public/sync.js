@@ -249,7 +249,7 @@ function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); if (typeof refreshPrices === 'function') refreshPrices(false, true); });
 $('#syncNowNav').onclick = () => syncAll(true);
 $('#scanNav').onclick = () => openUniversalScanner();
-Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardScan(); wireSelRange(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
+Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardScan(); wireSelRange(); wireNoAutofill(); wireCtxMenu(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id);
 
 /* ---------- live tracking (EasyPost via helper) ---------- */
 const EP_CARRIER = { UPS: 'UPS', USPS: 'USPS', FedEx: 'FedEx', DHL: 'DHLExpress', OnTrac: 'OnTrac', 'Canada Post': 'CanadaPost' };

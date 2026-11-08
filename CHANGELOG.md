@@ -2,6 +2,13 @@
 
 Crown Tools is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.19.0 — Right-click menus, lists keep their place (2026-11-08)
+
+- Right-click a profile, account, card or order to open it, move it to another group, set its status, copy it, duplicate it or delete it. If it’s part of your selection, the action applies to everything selected.
+- Arrow keys, Enter and Esc work in these menus. Text boxes and links still get the normal copy/paste menu.
+- Clicking or shift-clicking in a long list no longer jumps you to the top. The row you clicked stays exactly where it was.
+- Your browser or password manager no longer fills your login email into the search boxes. If one still does, it’s cleared right away. An email you type yourself is kept.
+
 ## v0.18.4 — Builder: all accounts and custom line 2 (2026-11-07)
 
 - Saved accounts: switch between “Unused only” and “All accounts”. All accounts can reuse ones already on a profile, and their existing link stays as it is.

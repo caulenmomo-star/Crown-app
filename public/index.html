@@ -21,6 +21,7 @@
   <div class="lockbox">
     <div class="logo"><svg class="mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#f6bd52"/><g fill="#14172a"><path d="M120 318 L104 176 L190 240 L256 128 L322 240 L408 176 L392 318 Z"/><rect x="120" y="340" width="272" height="44" rx="22"/></g><g fill="#f6bd52"><circle cx="256" cy="268" r="18"/><circle cx="184" cy="284" r="12"/><circle cx="328" cy="284" r="12"/></g></svg>Crown Tools</div>
     <div class="muted small" id="lockSub">Loading…</div>
+    <input id="lockUser" type="text" name="username" autocomplete="username" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">
     <div class="field"><label for="pw1">Password</label><input type="password" id="pw1" autocomplete="current-password"></div>
     <div class="field" id="pw2wrap" hidden><label for="pw2">Confirm password</label><input type="password" id="pw2" autocomplete="new-password"></div>
     <div class="field" id="codeWrap" hidden><label for="setupCode">Setup code</label><input id="setupCode" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX"></div>
@@ -412,6 +413,8 @@
 <script src="cards.js"></script>
 <script src="cardscan.js"></script>
 <script src="selrange.js"></script>
+<script src="noautofill.js"></script>
+<script src="ctxmenu.js"></script>
 <script src="skus.js"></script>
 <script src="addresses.js"></script>
 <script src="builder.js"></script>
