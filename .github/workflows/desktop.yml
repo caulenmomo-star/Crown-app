@@ -42,7 +42,7 @@ jobs:
           url=""
           for v in 3.13 3.12; do
             for kind in install_only_stripped install_only; do
-              if [ -z "$url" ]; then url=$(grep -E "cpython-${v//./\\.}\.[0-9]+\+[0-9]+-${{ matrix.py }}(-shared)?-${kind}\.tar\.gz$" assets.txt | head -1 || true); fi
+              if [ -z "$url" ]; then url=$(grep -E "cpython-${v//./\\.}\.[0-9]+(\+|%2B)[0-9]+-${{ matrix.py }}(-shared)?-${kind}\.tar\.gz$" assets.txt | head -1 || true); fi
             done
           done
           echo "Python: $url"
