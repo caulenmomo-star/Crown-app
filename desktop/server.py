@@ -2728,8 +2728,25 @@ class Handler(BaseHTTPRequestHandler):
         self._run(lambda: fn(self._json()))
 
 
+def port_free(port):
+    """Nothing is listening here (checked by trying to take the port, which is instant - asking a closed port over
+    HTTP takes ~2 seconds on Windows, and checking 12 ports that way made Kingpin slow to open)."""
+    sk = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if os.name == "nt" and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sk.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        sk.bind((HOST, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sk.close()
+
+
 def running_version(port):
     """Version of a Kingpin already running on this port ("" if it's an old one that doesn't say), or None."""
+    if port_free(port):
+        return None
     try:
         req = urllib.request.Request("http://%s:%d/api/ping" % (HOST, port), headers={"X-Crown": "1"})
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
