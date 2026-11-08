@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.2'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.3'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -85,7 +85,7 @@ function stickInfo(list) {
 /* ---------- state ---------- */
 const DEFAULT_SETTINGS = { trackUnknown: false, ignoredSenders: [], autoSyncMin: 15, notify: false, autoLockMin: 15, discordToken: '', discordLookback: 30, easypostKey: '', s17Key: '', carriers: {}, firstLookback: 60, trackedStores: [], alerts: {}, invOnCheckin: true, platformFees: {} };
 function blankState() {
-  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], accountGroups: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], notifications: [], acoClients: [], acoCheckouts: [], acoInvoices: [], skuLists: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
+  return { v: 2, categories: [{ id: uid(), name: 'Main' }], profiles: [], orders: [], houses: [], accounts: [], accountGroups: [], emails: [], emailGroups: [], cardGroups: [], cards: [], inventory: [], sales: [], expenses: [], unmatchedScans: [], imapAccounts: [], discordFeeds: [], botCheckouts: [], itemLinks: [], notifications: [], acoClients: [], acoCheckouts: [], acoInvoices: [], skuLists: [], seenIds: [], unparsed: [], syncLog: [], settings: Object.assign({}, DEFAULT_SETTINGS), createdAt: Date.now() };
 }
 function migrate(s) {
   s = s && typeof s === 'object' ? s : {};
@@ -93,7 +93,7 @@ function migrate(s) {
   for (const k of Object.keys(b)) if (s[k] === undefined) s[k] = b[k];
   if (!Array.isArray(s.categories) || !s.categories.length) s.categories = b.categories;
   s.settings = Object.assign({}, DEFAULT_SETTINGS, s.settings || {});
-  for (const k of ['accounts', 'accountGroups', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices', 'skuLists']) if (!Array.isArray(s[k])) s[k] = [];
+  for (const k of ['accounts', 'accountGroups', 'emails', 'emailGroups', 'cardGroups', 'cards', 'inventory', 'sales', 'expenses', 'unmatchedScans', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices', 'skuLists']) if (!Array.isArray(s[k])) s[k] = [];
   s.profiles.forEach(p => { if (!p.id) p.id = uid(); if (p.notes == null) p.notes = ''; if (!p.categoryId || !s.categories.some(c => c.id === p.categoryId)) p.categoryId = s.categories[0].id; });
   s.orders.forEach(o => { o.items = o.items || []; o.tracking = o.tracking || []; o.history = o.history || []; o.messageIds = o.messageIds || []; o.emails = o.emails || []; });
   s.v = 2;
@@ -254,7 +254,7 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 function mergeStates(base, local, remote) {
   const J = x => JSON.stringify(x);
   const out = Object.assign({}, remote);
-  for (const k of ['categories', 'profiles', 'accounts', 'accountGroups', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices', 'skuLists']) {
+  for (const k of ['categories', 'profiles', 'accounts', 'accountGroups', 'emails', 'emailGroups', 'cardGroups', 'cards', 'orders', 'houses', 'imapAccounts', 'inventory', 'sales', 'expenses', 'discordFeeds', 'botCheckouts', 'itemLinks', 'notifications', 'acoClients', 'acoCheckouts', 'acoInvoices', 'skuLists']) {
     const b = base[k] || [], l = local[k] || [], r = remote[k] || [];
     const bm = new Map(b.map(x => [x.id, x])), lm = new Map(l.map(x => [x.id, x])), rm = new Map(r.map(x => [x.id, x]));
     const list = [];

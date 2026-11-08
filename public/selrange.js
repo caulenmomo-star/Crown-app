@@ -7,7 +7,8 @@
 // lists whose selection lives in a Set: the checkbox attribute, the row, the Set, how to redraw, the "all" box
 const SELR = [
   { attr: 'data-cb', row: '#rows tr[data-id]', set: () => selected, draw: () => renderTable(), all: '#selAll', page: 'profiles' },
-  { attr: 'data-acb', row: 'tr[data-acc]', set: () => accSel, draw: () => PAGES.accounts.render(), all: '#acAll', page: 'accounts' },
+  { attr: 'data-acb', row: 'tr[data-acc]', set: () => accSel, draw: () => PAGES.accounts.render(), all: '#acAll', page: 'accounts', on: () => AF.view !== 'emails' },
+  { attr: 'data-ecb', row: 'tr[data-eml]', set: () => emlSel, draw: () => PAGES.accounts.render(), all: '#emAll', page: 'accounts', on: () => AF.view === 'emails' },
   { attr: 'data-ccb', row: 'tr[data-card]', set: () => cardSel, draw: () => PAGES.cards.render(), all: '#cdAll', page: 'cards' },
   { attr: 'data-ocb', row: '.otable tr[data-oid]', set: () => oSelected, draw: () => PAGES.orders.render(), all: '#oAll', page: 'orders' },
   // order cards (no checkbox): selecting works once select mode is on or something is selected
@@ -131,7 +132,7 @@ function wireSelRange() {
   }, true);
   document.addEventListener('keydown', e => {
     if (srDialogOpen() || srTyping(document.activeElement) || typeof route === 'undefined' || !cryptoKey) return;
-    const g = SELR.find(x => x.page === route.page && !x.cards); if (!g) return;
+    const g = SELR.find(x => x.page === route.page && !x.cards && (!x.on || x.on())); if (!g) return;
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a') {
       const ids = route.page === 'orders' && typeof oView === 'function' && oView() === 'cards' ? srIds(SELR.find(x => x.cards)) : srIds(g);
       if (!ids.length) return;

@@ -492,7 +492,7 @@ dialog.scan{width:min(560px,96vw)}
 .mres{max-height:340px;overflow:auto}
 .invlist .qtyb{font-weight:650;font-size:14px}
 .ifo{gap:10px}.ifo input{flex:0 0 auto;width:18px;height:18px}
-.saleline{display:grid;grid-template-columns:44px minmax(0,1fr) 70px 110px 110px 34px;gap:8px;align-items:end;padding:8px 0;border-bottom:1px solid var(--line)}
+.saleline{display:grid;grid-template-columns:44px minmax(0,1fr) 64px 100px 100px auto 34px;gap:8px;align-items:end;padding:8px 0;border-bottom:1px solid var(--line)}
 .saleline .sl-name{align-self:center;min-width:0}
 .saleline .sl-f label{font-size:11px}
 .salesum{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:14px;padding:12px;border-radius:12px;background:var(--panel2)}
@@ -504,7 +504,7 @@ dialog.scan{width:min(560px,96vw)}
 @media (max-width:760px){
   .saleline{grid-template-columns:repeat(3,minmax(0,1fr))}
   .saleline > .thumb{display:none}
-  .saleline .sl-name{grid-column:1 / 3}.saleline [data-rm]{grid-column:3;justify-self:end}
+  .saleline .sl-name{grid-column:1 / 3;grid-row:1}.saleline [data-rm]{grid-column:3;grid-row:1;justify-self:end}.saleline .sl-tot{grid-column:1 / -1;justify-content:flex-end;gap:10px}
   .salesum{grid-template-columns:repeat(2,minmax(0,1fr))}
   .itemtop{flex-direction:column}.itemtop .thumb.lg{width:72px;height:72px;flex-basis:72px}
   .invlist .spark{display:none}
@@ -1157,3 +1157,31 @@ a.btn:hover{background:var(--panel3)}
 .pbcard{display:flex;gap:6px;align-items:center;min-width:0}
 .pbcard{flex-wrap:nowrap;gap:8px}.pbcard .nw{white-space:nowrap;flex:0 0 auto}.pbcard .grow{flex:1 1 auto;min-width:0}
 .pbcard .pbfresh{font-size:11px;color:var(--ok)}
+
+/* edit many at once */
+#meRows{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 14px}
+.megrp{grid-column:1/-1;font-weight:600;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-top:6px;border-bottom:1px solid var(--line);padding-bottom:4px}
+.merow{min-width:0;border-radius:10px;padding:6px 8px;margin:-6px -8px}
+.merow.dirty{background:color-mix(in srgb,var(--accent) 12%,transparent);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 45%,transparent)}
+.merow label{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mechg{font-size:11px;font-weight:600;color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent);padding:1px 6px;border-radius:999px}
+.mectl{display:flex;gap:6px;align-items:flex-start}
+.mectl>input,.mectl>select,.mectl>textarea{flex:1;min-width:0}
+.mectl>button{flex:none}
+.merow:not(.dirty) .mectl>select{color:var(--muted)}
+@media (max-width:760px){#meRows{grid-template-columns:minmax(0,1fr)}}
+.saleline .sl-tot{display:flex;flex-direction:column;align-items:flex-end;gap:2px;white-space:nowrap;align-self:end}
+.saleline .sl-tot button{font-size:11.5px;padding:3px 6px}
+@media (max-width:760px){.saleline .sl-tot{flex-direction:row;align-items:center}}
+/* sales import */
+.sitable th{min-width:130px;vertical-align:top}.sitable th select{font-size:12.5px;padding:5px 6px}
+.siprev{max-height:340px;overflow:auto}
+.siopts{display:flex;flex-direction:column;gap:6px;margin-top:12px}
+#dlgSalesImp .seg{flex-wrap:wrap;max-width:100%}
+.mectl>textarea{min-height:58px;height:58px;resize:vertical}
+.siprev .li{align-items:flex-start}.siprev .mmain{flex:1;min-width:0}
+@media (max-width:760px){
+  .etable .a-email{grid-column:1;grid-row:1}.etable .a-store{grid-column:2;grid-row:1;justify-self:end;font-size:12px}
+  .etable .a-grp{grid-column:1}.etable .a-prof{grid-column:2;justify-self:end;font-size:12px}.etable .e-notes{grid-column:1 / 3;max-width:none!important}.etable .e-notes:empty{display:none}
+  #pg-accounts .toolbar #emQ{flex:1 1 100%}
+}

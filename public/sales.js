@@ -20,6 +20,8 @@ const saleRevenue = s => sum(s.lines || [], l => (Number(l.price) || 0) * (Numbe
 const saleCost = s => sum(s.lines || [], l => l.cost == null ? 0 : Number(l.cost) * (Number(l.qty) || 0));
 const saleProfit = s => saleRevenue(s) - saleCost(s) - (Number(s.fees) || 0) - (Number(s.shipping) || 0);
 const SL = { range: '30', tab: 'overview', q: '' };
+// "2× ETB, Booster Bundle" — the same item on several lines (sold at different prices) counts once
+function saleTitle(s) { const m = new Map(); (s.lines || []).forEach(l => { const k = String(l.name || '').trim() || 'Item'; m.set(k, (m.get(k) || 0) + (Number(l.qty) || 0)); }); return [...m].map(([n, q]) => (q > 1 ? q + '× ' : '') + n).join(', '); }
 
 /* ---------- register (record / edit a sale) ---------- */
 let curSale = null, saleIsNew = false, saleOrig = null;
@@ -31,7 +33,7 @@ function openSale(itemIds, saleId) {
   renderSale(); openDlg('dlgSale');
 }
 function addSaleLine(it, name) {
-  if (it) { const l = curSale.lines.find(x => x.itemId === it.id); if (l) { l.qty++; return; } const mv = unitValue(it); curSale.lines.push({ itemId: it.id, name: it.name, qty: 1, price: mv != null ? r2(mv) : null, cost: it.cost == null ? null : Number(it.cost), image: it.image || (it.market && it.market.image) || '' }); }
+  if (it) { const l = curSale.lines.filter(x => x.itemId === it.id).pop(); if (l) { l.qty++; return; } const mv = unitValue(it); curSale.lines.push({ itemId: it.id, name: it.name, qty: 1, price: mv != null ? r2(mv) : null, cost: it.cost == null ? null : Number(it.cost), image: it.image || (it.market && it.market.image) || '' }); }
   else curSale.lines.push({ itemId: '', name: name || '', qty: 1, price: null, cost: null, image: '' });
 }
 function autoFees() { const f = feeFor(curSale.platform); const rev = saleRevenue(curSale); return rev ? r2(rev * (Number(f.pct) || 0) / 100 + (Number(f.flat) || 0)) : 0; }
@@ -54,12 +56,13 @@ function renderSale() {
   $('#saleBody').innerHTML = `<div class="cols3 tight"><div><label>Date</label><input type="date" id="slDate" value="${esc(s.date)}"></div>
       <div><label>Sold on</label><select id="slPlat">${PLATFORMS.map(p => `<option value="${p.k}" ${s.platform === p.k ? 'selected' : ''}>${p.l}</option>`).join('')}</select></div>
       <div><label>Buyer (optional)</label><input id="slBuyer" value="${esc(s.buyer)}"></div></div>
-    <div class="section">Items</div>
+    <div class="section">Items <span class="faint small" style="font-weight:400">— one sale can have as many items as the deal had, each with its own price</span></div>
     <div id="slLines">${s.lines.length ? s.lines.map((l, i) => { const it = l.itemId && invById(l.itemId); return `<div class="saleline" data-ln="${i}">${thumb(l.image, 'sm')}
         <div class="sl-name">${it ? `<div class="t2">${esc(l.name)}</div><div class="small faint">${esc(it.qty)} in stock</div>` : `<input data-f="name" value="${esc(l.name)}" placeholder="Item name">`}</div>
         <div class="sl-f"><label>Qty</label><input data-f="qty" inputmode="numeric" value="${esc(l.qty)}"></div>
         <div class="sl-f"><label>Sold for, each</label><input data-f="price" inputmode="decimal" value="${l.price ?? ''}" placeholder="$"></div>
         <div class="sl-f"><label>Cost each</label><input data-f="cost" inputmode="decimal" value="${l.cost ?? ''}" placeholder="$"></div>
+        <div class="sl-tot small">${l.price != null ? `<span class="faint">=</span> ${fmtMoney(l.price * l.qty)}` : ''}<button class="ghost sm" data-split="${i}" title="Sold another one of these at a different price">＋ at another price</button></div>
         <button class="ghost sm" data-rm="${i}" title="Remove">✕</button></div>`; }).join('') : '<div class="small muted" style="margin-bottom:8px">Add what you sold from your inventory, scan it, or type it in.</div>'}</div>
     <div class="hstack" style="flex-wrap:wrap;gap:6px;margin-top:6px"><select id="slPick" style="flex:1;min-width:180px"><option value="">＋ Add from inventory…</option>${inv.map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.qty || 0)})</option>`).join('')}</select><button id="slScan">📷 Scan</button><button class="ghost" id="slFree">Type one in</button></div>
     <div class="cols2 tight" style="margin-top:12px"><div><label>Platform fees ($) <span class="faint small">${f.pct || f.flat ? `est. ${f.pct}% + ${fmtMoney(f.flat)}` : ''}</span></label><input id="slFees" inputmode="decimal" value="${s.fees ?? ''}"></div>
@@ -67,13 +70,21 @@ function renderSale() {
     <div style="margin-top:10px"><label>Notes</label><input id="slNotes" value="${esc(s.notes)}" placeholder="Tracking, payment, anything"></div>
     <div class="salesum"><div><span>Sold for</span><b>${fmtMoney(rev)}</b></div><div><span>Cost</span><b>${fmtMoney(cost)}</b></div><div><span>Fees + shipping</span><b>${fmtMoney((Number(s.fees) || 0) + (Number(s.shipping) || 0))}</b></div><div class="${prof >= 0 ? 'pos' : 'neg'}"><span>Profit</span><b>${prof >= 0 ? '' : '−'}${fmtMoney(Math.abs(prof))}</b></div></div>`;
   $('#saleDelete').hidden = saleIsNew;
-  const rer = () => { readSale(); renderSale(); };
+  // redraw after the browser has moved focus, then put the cursor back where you clicked (so going from Qty to Price works)
+  const rer = () => { readSale(); setTimeout(() => {
+    if (!$('#dlgSale').open) return;
+    const a = $('#saleBody').contains(document.activeElement) ? document.activeElement : null, row = a && a.closest && a.closest('[data-ln]'), key = a && (a.id || (a.dataset && a.dataset.f)), ln = row ? row.dataset.ln : null, pos = a && typeof a.selectionStart === 'number' ? a.selectionStart : null;
+    readSale(); renderSale();
+    const el = ln != null ? $(`#slLines [data-ln="${ln}"] [data-f="${key}"]`) : key && document.getElementById(key);
+    if (a && el) { el.focus(); if (pos != null) try { el.setSelectionRange(pos, pos); } catch (_) { } }
+  }, 0); };
   $$('#saleBody input, #saleBody select').forEach(el => { if (el.id === 'slPick') return; el.onchange = rer; });
   $('#slPlat').onchange = () => { readSale(); curSale.feesAuto = true; renderSale(); };
   $('#slFees').oninput = () => { curSale.feesAuto = false; };
   $('#slPick').onchange = e => { readSale(); const it = invById(e.target.value); if (it) addSaleLine(it); renderSale(); };
   $('#slFree').onclick = () => { readSale(); addSaleLine(null, ''); renderSale(); const ins = $$('#slLines [data-f=name]'); if (ins.length) ins[ins.length - 1].focus(); };
   $('#slScan').onclick = () => { readSale(); Scan.open({ title: 'Scan what you sold', sub: 'Scan each product’s barcode.', onCode: c => { const it = findItemFor('', String(c).replace(/\D/g, '')); if (!it) return { ok: false, msg: 'Not in your inventory' }; addSaleLine(it); return { ok: true, msg: '+1 ' + it.name }; }, onClose: () => { if ($('#dlgSale').open) renderSale(); } }); };
+  $$('#slLines [data-split]').forEach(b => b.onclick = () => { readSale(); const l = curSale.lines[+b.dataset.split]; if (!l) return; curSale.lines.splice(+b.dataset.split + 1, 0, { itemId: l.itemId, name: l.name, qty: 1, price: null, cost: l.cost, image: l.image }); renderSale(); const ins = $$('#slLines [data-ln="' + (+b.dataset.split + 1) + '"] [data-f=price]'); if (ins[0]) ins[0].focus(); });
   $$('#slLines [data-rm]').forEach(b => b.onclick = () => { readSale(); curSale.lines.splice(+b.dataset.rm, 1); renderSale(); });
 }
 // Stock changes: a new sale takes units out; editing gives the old ones back first; deleting can put them back.
@@ -84,7 +95,7 @@ function wireSaleDlg() {
     s.lines = s.lines.filter(l => l.itemId || String(l.name || '').trim());
     if (!s.lines.length) { toast('Add at least one item'); return; }
     if (s.lines.some(l => l.price == null)) { toast('Enter what each item sold for'); return; }
-    for (const l of s.lines) { const it = l.itemId && invById(l.itemId); const was = saleOrig ? sum(saleOrig.lines.filter(x => x.itemId === l.itemId), x => x.qty) : 0; if (it && (Number(it.qty) || 0) + was < l.qty) { toast(`Only ${it.qty} of “${it.name}” in stock`); return; } }
+    for (const id of new Set(s.lines.map(l => l.itemId).filter(Boolean))) { const it = invById(id); if (!it) continue; const want = sum(s.lines.filter(x => x.itemId === id), x => x.qty), was = saleOrig ? sum(saleOrig.lines.filter(x => x.itemId === id), x => x.qty) : 0; if ((Number(it.qty) || 0) + was < want) { toast(`Only ${(Number(it.qty) || 0) + was} of “${it.name}” in stock`); return; } }
     snapshot(saleIsNew ? 'record sale' : 'edit sale');
     if (saleOrig) applyStock(saleOrig, -1);
     applyStock(s, 1);
@@ -150,7 +161,7 @@ PAGES.sales = {
     const shownSales = q ? sales.filter(s => [s.buyer, s.notes, platformInfo(s.platform).l, ...s.lines.map(l => l.name)].some(v => String(v || '').toLowerCase().includes(q))) : sales;
     const tabs = [['overview', 'Profit'], ['sales', 'Sales log'], ['expenses', 'Expenses']];
     pg.innerHTML = `<div class="pagehead"><h1>Sales</h1><span class="sub">${esc(rangeLabel(SL.range))}</span><div class="spacer"></div>
-        <button class="primary" id="slNew">＋ Record sale</button><button id="slExp">＋ Expense</button><button class="ghost" id="slCsv">Export</button></div>
+        <button class="primary" id="slNew">＋ Record sale</button><button id="slExp">＋ Expense</button><button class="ghost" id="slImp">Import</button><button class="ghost" id="slCsv">Export ▾</button></div>
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><div class="chips" id="slRange">${SP_RANGES.map(([k, l]) => `<button class="chip ${SL.range === k ? 'on' : ''}" data-sr="${k}">${l}</button>`).join('')}</div></div>
       <div class="kpis">
         <div class="kpi"><div class="l">Net profit</div><div class="v ${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '' : '−'}${fmtMoney(Math.abs(net), true)}</div><div class="d">${rev ? Math.round(net / rev * 100) + '% margin' : '&nbsp;'}</div></div>
@@ -164,15 +175,12 @@ PAGES.sales = {
         <div class="cols2"><div class="card"><h3>By platform</h3>${Object.keys(byPlat).length ? hbars(Object.entries(byPlat).sort((a, b) => b[1].v - a[1].v).map(([k, x]) => ({ name: platformInfo(k).l, v: x.v, n: x.n, p: x.p, c: 'var(--accent)' })), { fmt: r => fmtMoney(r.v) + ' · ' + plural(r.n, 'sale') + ' · ' + fmtMoney(r.p) + ' profit' }) : '<div class="empty sm">—</div>'}</div>
           <div class="card"><h3>Top items</h3>${Object.keys(byItem).length ? `<div class="list">${Object.entries(byItem).sort((a, b) => b[1].p - a[1].p).slice(0, 8).map(([n, x]) => `<div class="li"><div class="mmain"><div class="t2">${esc(n)}</div><div class="small muted">${plural(x.q, 'unit')} · ${fmtMoney(x.v)}</div></div><div class="dright small ${x.p >= 0 ? 'pos' : 'neg'}">${x.p >= 0 ? '+' : '−'}${fmtMoney(Math.abs(x.p))}</div></div>`).join('')}</div>` : '<div class="empty sm">—</div>'}</div></div>`
       : SL.tab === 'sales' ? `<div class="toolbar"><input class="search" data-search id="slQ" placeholder="Search item, buyer, platform…  ( / )" value="${esc(SL.q)}"></div>
-        ${shownSales.length ? `<div class="list">${shownSales.map(s => { const p = saleProfit(s); return `<div class="li click dli" data-sale="${s.id}">${thumb((s.lines.find(l => l.image) || {}).image, 'sm')}<div class="mmain"><div class="t2">${esc(s.lines.map(l => (l.qty > 1 ? l.qty + '× ' : '') + l.name).join(', '))}</div><div class="small muted ellipsis">${esc(fmtDate(s.date))} · ${esc(platformInfo(s.platform).l)}${s.buyer ? ' · ' + esc(s.buyer) : ''}</div></div><div class="dright"><b>${fmtMoney(saleRevenue(s))}</b><div class="small ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '+' : '−'}${fmtMoney(Math.abs(p))}</div></div></div>`; }).join('')}</div>` : `<div class="empty">${(state.sales || []).length ? 'No sales in this range.' : 'No sales yet. Tap <b>Record sale</b> when you sell something — Kingpin takes it out of your inventory and works out your profit after fees and shipping.'}</div>`}`
+        ${shownSales.length ? `<div class="list">${shownSales.map(s => { const p = saleProfit(s); return `<div class="li click dli" data-sale="${s.id}">${thumb((s.lines.find(l => l.image) || {}).image, 'sm')}<div class="mmain"><div class="t2">${esc(saleTitle(s))}</div><div class="small muted ellipsis">${esc(fmtDate(s.date))} · ${esc(platformInfo(s.platform).l)}${s.buyer ? ' · ' + esc(s.buyer) : ''}</div></div><div class="dright"><b>${fmtMoney(saleRevenue(s))}</b><div class="small ${p >= 0 ? 'pos' : 'neg'}">${p >= 0 ? '+' : '−'}${fmtMoney(Math.abs(p))}</div></div></div>`; }).join('')}</div>` : `<div class="empty">${(state.sales || []).length ? 'No sales in this range.' : 'No sales yet. Tap <b>Record sale</b> when you sell something — Kingpin takes it out of your inventory and works out your profit after fees and shipping.'}</div>`}`
       : `${exps.length ? `<div class="list">${exps.map(e => `<div class="li click" data-exp="${e.id}"><div class="mmain"><div class="t2">${esc(e.note || e.category)}</div><div class="small muted">${esc(fmtDate(e.date))} · ${esc(e.category)}</div></div><div class="dright"><b>${fmtMoney(e.amount)}</b></div></div>`).join('')}</div>` : '<div class="empty">No expenses in this range. Add bot renewals, proxies, shipping supplies and other costs so your profit is real.</div>'}`}`;
     $('#slNew').onclick = () => openSale([]);
     $('#slExp').onclick = () => openExpense();
-    $('#slCsv').onclick = () => {
-      const rows = (state.sales || []).slice().sort((a, b) => String(a.date).localeCompare(String(b.date))).flatMap(s => s.lines.map((l, i) => ({ date: s.date, platform: platformInfo(s.platform).l, item: l.name, qty: l.qty, price_each: l.price, cost_each: l.cost ?? '', fees: i ? '' : s.fees ?? '', shipping: i ? '' : s.shipping ?? '', profit: i ? '' : r2(saleProfit(s)), buyer: s.buyer, notes: s.notes })));
-      const ex = (state.expenses || []).map(e => ({ date: e.date, platform: 'EXPENSE', item: e.category + (e.note ? ' — ' + e.note : ''), qty: '', price_each: '', cost_each: '', fees: '', shipping: '', profit: -e.amount, buyer: '', notes: '' }));
-      download(`kingpin-sales-${stamp()}.csv`, toCSV(['date', 'platform', 'item', 'qty', 'price_each', 'cost_each', 'fees', 'shipping', 'profit', 'buyer', 'notes'], rows.concat(ex)), 'text/csv');
-    };
+    $('#slCsv').onclick = e => salesExportMenu(e.currentTarget);
+    $('#slImp').onclick = () => openSalesImport();
     $('#slRange').onclick = e => { const b = e.target.closest('[data-sr]'); if (b) { SL.range = b.dataset.sr; PAGES.sales.render(); } };
     $('#slTabs').onclick = e => { const b = e.target.closest('[data-st]'); if (b) { SL.tab = b.dataset.st; PAGES.sales.render(); } };
     if ($('#slQ')) $('#slQ').oninput = debounce(e => { SL.q = e.target.value; PAGES.sales.render(); const i = $('#slQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 160);

@@ -9,7 +9,7 @@ const ACC_STATUS = [
   { k: 'banned', l: 'Banned', c: 'var(--danger)' },
 ];
 const ACCS = Object.fromEntries(ACC_STATUS.map(s => [s.k, s]));
-const AF = { q: '', store: '', status: 'all', group: 'all', reveal: new Set() };
+const AF = { q: '', store: '', status: 'all', group: 'all', reveal: new Set(), view: 'logins' };
 // groups, e.g. "Target main", "Walmart farm", "Friends & family" — an account sits in one group (or none)
 const accGroupById = id => (state.accountGroups || []).find(g => g.id === id);
 function ensureAccGroup(name) {
@@ -66,13 +66,16 @@ function filteredAccounts() {
 PAGES.accounts = {
   render() {
     _accIx = null;
-    const pg = $('#pg-accounts'); const all = state.accounts || [];
+    const pg = $('#pg-accounts');
+    if (AF.view === 'emails') { emlRender(pg); return; }
+    const all = state.accounts || [];
     const list = filteredAccounts();
     for (const id of [...accSel]) if (!all.some(a => a.id === id)) accSel.delete(id);
     const cnt = k => all.filter(a => a.status === k).length;
     const stores = [...new Map(all.map(a => [a.store === 'custom' ? 'c:' + norm(a.storeName) : a.store, accStoreLabel(a)])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
     pg.innerHTML = `<div class="pagehead"><h1>Accounts</h1><span class="sub">${plural(all.length, 'store account')}${stores.length ? ' · ' + plural(stores.length, 'store') : ''}</span><div class="spacer"></div>
         <button id="acImp">Import</button><button id="acExp" ${all.length ? '' : 'disabled'}>Export</button><button class="primary" id="acAdd">+ Add account</button></div>
+      ${accTabsHtml()}
       ${all.length ? `<div class="kpis">
         <div class="kpi"><div class="l">Working</div><div class="v">${cnt('active')}</div><div class="d">${cnt('new')} not used yet</div></div>
         <div class="kpi"><div class="l">Needs attention</div><div class="v">${cnt('needs')}</div><div class="d">verify, reset, 2FA</div></div>
@@ -83,7 +86,7 @@ PAGES.accounts = {
       <div class="toolbar"><input class="search" data-search id="acQ" placeholder="Search email, store, profile, notes…  ( / )" value="${esc(AF.q)}">
         <select id="acStore"><option value="">All stores</option>${stores.map(([k, l]) => `<option value="${esc(k)}" ${AF.store === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
         <div class="chips" id="acStatus">${[['all', 'All']].concat(ACC_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${AF.status === k ? 'on' : ''}" data-as="${k}">${esc(l)}${k !== 'all' ? `<span class="n">${cnt(k)}</span>` : ''}</button>`).join('')}</div></div>
-      ${accSel.size ? `<div class="selbar"><strong>${accSel.size} selected</strong><select id="acSetStatus" style="width:auto"><option value="">Set status…</option>${ACC_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><select id="acMove" style="width:auto"><option value="">Move to group…</option>${accGroupOptions('').replace('<option value="">No group</option>', '<option value="-">No group</option>')}</select><button class="sm" id="acCopySel">Copy email:password</button><button class="sm danger" id="acDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="acClrSel">Clear</button></div>` : ''}
+      ${accSel.size ? `<div class="selbar"><strong>${accSel.size} selected</strong><button class="sm primary" id="acEditSel">Edit selected</button><select id="acSetStatus" style="width:auto"><option value="">Set status…</option>${ACC_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><select id="acMove" style="width:auto"><option value="">Move to group…</option>${accGroupOptions('').replace('<option value="">No group</option>', '<option value="-">No group</option>')}</select><button class="sm" id="acCopySel">Copy email:password</button><button class="sm danger" id="acDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="acClrSel">Clear</button></div>` : ''}
       ${list.length ? `<div class="tablewrap"><table class="atable"><thead><tr><th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="acAll" ${list.every(a => accSel.has(a.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Store</th><th>Email / username</th><th>Password</th><th>Status</th><th>Group</th><th>Profile</th><th class="right">Orders</th></tr></thead><tbody>
         ${list.map(a => { const os = accOrders(a), st = ACCS[a.status] || ACCS.new, p = accProfile(a), shown = AF.reveal.has(a.id); const t = tally(os);
           return `<tr data-acc="${a.id}" class="${accSel.has(a.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-acb="${a.id}" ${accSel.has(a.id) ? 'checked' : ''} aria-label="Select"></td>
@@ -95,6 +98,7 @@ PAGES.accounts = {
           <td class="a-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
           <td class="right a-n">${os.length ? `${os.length}<span class="small faint"> · ${t.stuck}✓ ${t.dead}✕</span>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
         : `<div class="empty">${all.length ? 'No accounts match.' : 'No accounts yet. Save every store login here — email, password, which profile it goes with and whether it still works. <b>Import</b> takes email:password lists or a spreadsheet. Make groups like “Target main” to keep them sorted.'}</div>`}</div></div>`;
+    wireAccTabs();
     $('#acAdd').onclick = () => openAccount(null, AF.group !== 'all' && AF.group !== 'none' ? { groupId: AF.group } : null);
     $('#agAdd').onclick = async () => { const n = await askText('New account group', '', { placeholder: 'Target main, Walmart farm…', ok: 'Add group' }); if (n && n.trim()) { snapshot('add account group'); AF.group = ensureAccGroup(n); save(); PAGES.accounts.render(); } };
     $('#agList').onclick = async e => {
@@ -111,6 +115,7 @@ PAGES.accounts = {
     $('#acStatus').onclick = e => { const b = e.target.closest('[data-as]'); if (b) { AF.status = b.dataset.as; PAGES.accounts.render(); } };
     if ($('#acAll')) $('#acAll').onchange = e => { list.forEach(a => e.target.checked ? accSel.add(a.id) : accSel.delete(a.id)); PAGES.accounts.render(); };
     if ($('#acClrSel')) $('#acClrSel').onclick = () => { accSel.clear(); PAGES.accounts.render(); };
+    if ($('#acEditSel')) $('#acEditSel').onclick = () => meEditAccounts();
     if ($('#acSetStatus')) $('#acSetStatus').onchange = e => { const v = e.target.value; if (!v) return; snapshot('account status'); state.accounts.forEach(a => { if (accSel.has(a.id)) { a.status = v; a.updatedAt = Date.now(); } }); save(); toast(`Marked ${plural(accSel.size, 'account')} ${ACCS[v].l.toLowerCase()}`, { undo: true }); PAGES.accounts.render(); };
     if ($('#acCopySel')) $('#acCopySel').onclick = () => copyText(state.accounts.filter(a => accSel.has(a.id)).map(a => `${a.email}:${a.password}`).join('\n'), plural(accSel.size, 'login'));
     if ($('#acDelSel')) $('#acDelSel').onclick = async () => { const n = accSel.size; if (!await ask(`Delete ${plural(n, 'account')}?\n\nTheir saved passwords are removed from Kingpin.`)) return; snapshot('delete accounts'); state.accounts = state.accounts.filter(a => !accSel.has(a.id)); accSel.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'account')}`, { undo: true }); };

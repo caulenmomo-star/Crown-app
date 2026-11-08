@@ -1,6 +1,12 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.3', date: '2026-11-08', title: 'Edit many at once, multi-item sales, email list', items: [
+    'Edit selected on Profiles, Accounts, Cards and Orders (selection bar or right-click). Every field starts as “Keep as is”. Only fields you change are saved; use Clear to empty a field.',
+    'Sales: one sale can hold several items, each at its own price. “＋ at another price” sells another of the same item for a different amount.',
+    'Sales export: one row per item, one row per sale, or expenses. Import from a paste, CSV or .xlsx. Kingpin works out the columns, groups rows into sales, matches your inventory and shows a preview first.',
+    'Accounts → Email list: keep iCloud Hide My Email, Outlook and other addresses in groups, see which are used, and build profiles from a group’s unused ones.',
+  ] },
   { v: '0.20.2', date: '2026-11-08', title: 'Profile builder: right count, mixed card groups', items: [
     '“How many” is now the total. Plain profiles (no jig) are part of it, not added on top, and the builder shows the split: plain vs with jigs.',
     'Cards: tick as many card groups as you want, and open any group to pick exactly which cards to use. Shift-click picks a range, and “Only ones not on a profile” skips used cards.',
