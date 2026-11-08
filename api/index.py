@@ -1736,6 +1736,169 @@ def news_status(req=None):
         return {"ok": True, "feeds": list(ex.map(one, cands))}
 
 
+# ---------------------------------------------------------------- Pokémon product catalog (Target's public product sitemap)
+# Target publishes a sitemap of every product page for search engines (listed in its robots.txt). Kingpin reads the
+# Pokémon ones from it once a day: the TCIN, the name in the page address and the product picture. Sets and their
+# release dates come from TCGplayer's public set list (tcgcsv.com). The online server keeps one shared copy, so the
+# sitemap is read once a day in total, not once per person; the Mac/PC app gets the list from the online server.
+PK_TARGET_INDEX = os.environ.get("CROWN_TARGET_SITEMAP") or "https://www.target.com/sitemap_pdp-index.xml.gz"
+PK_REMOTE = (os.environ.get("CROWN_PK_URL") or "https://crowntools.vercel.app/api/pk/catalog").rstrip("/")
+PK_MAX_AGE = 20 * 3600
+_PK_URL = re.compile(r"<loc>https://www\.target\.com/p/([^<]*?)/-/A-(\d{6,12})</loc>(?:\s*<image:image>\s*<image:loc>([^<]+)</image:loc>)?", re.I)
+_PK_POKE = re.compile(r"(?:^|-)pok(?:e|-233-|%c3%a9)mon(?:-|$)", re.I)
+_PK_TCG = re.compile(r"\b(?:tcg|trading card|booster|elite trainer|etb|tin|blister|collection|card game|deck|sleeved|build battle|premium|bundle|box set|binder|portfolio|display|surprise box)\b", re.I)
+_PK_MERCH = re.compile(r"\b(?:plush|figure|shirt|t shirt|hoodie|pajama|sock|hat|cap|backpack|lunch|bottle|mug|cup|towel|blanket|pillow|bedding|sheet|costume|toy|lego|mega construx|squishmallow|nintendo switch|switch 2|video game|game for|amiibo|book|puzzle|keychain|key chain|sticker|watch|lamp|night light|ornament|poster frame|wallet|bag|jacket|shoes|slippers|figurine|battle figure|action figure|clip n go|clip 'n' go|funko)\b", re.I)
+_PK_IMPORT = re.compile(r"\b(?:japanese|japan|korean|chinese|thai|indonesian|simplified|traditional|import|\d+ ?(?:pack|pk)s? lot|lot of|set of \d|bundle of \d|\d+[- ]pack(?! (?:blister|booster))|case of|sealed case|(?:2|3|4|5|6|8|10|12|24|36) ?x)\b", re.I)
+PK_TYPES = [
+    ("Elite Trainer Box", r"elite trainer|\betb\b"),
+    ("Booster Bundle", r"booster bundle"),
+    ("Booster Box", r"booster (?:box|display)|display box|36 pack|36 booster"),
+    ("Premium Collection", r"(?:ultra|super)[- ]premium|premium collection|\bupc\b|\bspc\b"),
+    ("Sleeved Booster", r"sleeved booster"),
+    ("Blister", r"blister|checklane|3 pack booster|3 booster|three booster|2 pack booster"),
+    ("Mini Tin", r"mini tin"),
+    ("Tin", r"\btin\b|\btins\b"),
+    ("Build & Battle", r"build (?:&|and|n)? ?battle|build battle"),
+    ("Deck", r"\bdeck\b|battle academy|league battle|world championships"),
+    ("Binder / Poster", r"binder|portfolio|poster collection|poster box"),
+    ("Surprise Box", r"surprise box|mystery"),
+    ("Booster Pack", r"booster pack|\bbooster\b"),
+    ("Collection Box", r"collection|\bbox\b|chest|bundle|gift set|pin|figure collection"),
+]
+_PK_TYPES = [(n, re.compile(rx, re.I)) for n, rx in PK_TYPES]
+_PK_WORDS = {"pokemon": "Pokémon", "pokémon": "Pokémon", "tcg": "TCG", "etb": "ETB", "ex": "ex", "gx": "GX", "vmax": "VMAX", "vstar": "VSTAR", "v": "V", "sv": "SV",
+             "me": "ME", "upc": "UPC", "spc": "SPC", "go": "GO", "xy": "XY", "sm": "SM", "swsh": "SWSH", "and": "&", "n": "n", "of": "of", "the": "the", "with": "with", "a": "a",
+             "in": "in", "for": "for", "to": "to"}
+
+
+def _pk_words(slug):
+    s = urllib.parse.unquote(slug).lower().replace("-233-", "é").replace("pok-é-mon", "pokémon")
+    return re.sub(r"[-_]+", " ", s).strip()
+
+
+def _pk_name(words):
+    out = []
+    for i, w in enumerate(words.split()):
+        out.append(_PK_WORDS.get(w, w if re.match(r"^\d", w) else w[:1].upper() + w[1:]) if (i == 0 or w not in ("and", "of", "the", "with", "a", "in", "for", "to")) else _PK_WORDS[w])
+    n = " ".join(out)
+    n = re.sub(r"\bPokémon Pokémon\b", "Pokémon", n)
+    return n[:160]
+
+
+def _pk_sets():
+    """English Pokémon TCG sets, newest first: id, name, the words to look for in a product name, release date."""
+    try:
+        groups = _groups("3")
+    except UserError:
+        return []
+    out = []
+    for g in groups:
+        name = re.sub(r"^[A-Z0-9.]{1,8}:\s*", "", g["name"]).strip()
+        if not name or re.search(r"promo|trainer kit|jumbo|prize pack|world championship|deck exclusive|battle academy|code card|miscellaneous|league|alternate art|blister exclusive", name, re.I):
+            continue
+        if g["date"] and g["date"] < "2016":
+            continue  # Target's online list is all recent products; old set names (Jungle, Team Rocket…) only cause wrong matches
+        key = re.sub(r"[^a-z0-9 ]+", " ", name.lower().replace("é", "e").replace("&", " ")).split()
+        key = [w for w in key if w not in ("sword", "shield", "scarlet", "violet", "sun", "moon", "mega", "evolution", "xy") or len(key) <= 2]
+        if not key:
+            continue
+        out.append({"id": str(g["id"]), "name": name, "key": " ".join(key), "date": g["date"]})
+    return out
+
+
+def _pk_classify(words, sets):
+    words = words.replace("é", "e")
+    t = next((n for n, rx in _PK_TYPES if rx.search(words)), "")
+    merch = bool(_PK_MERCH.search(words)) and not re.search(r"elite trainer|booster|\btcg\b|trading card", words)
+    tcg = not merch and bool(_PK_TCG.search(words) or t)
+    s = ""
+    for st in sets:  # newest set first, longest names win ties by checking full phrase
+        if re.search(r"(?:^|\s)" + re.escape(st["key"]) + r"(?:\s|$)", words):
+            s = st["id"]
+            break
+    return {"ty": t if tcg else ("Merch" if merch else "Other"), "s": s, "tcg": tcg, "imp": bool(_PK_IMPORT.search(words))}
+
+
+def pk_scan_target(prev=None):
+    """Reads Target's product sitemap for Pokémon products. Takes about a minute (100+ files read in parallel)."""
+    from concurrent.futures import ThreadPoolExecutor
+    import gzip
+
+    def get(url):
+        rq = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (compatible; Kingpin/%s; daily catalog read of the public sitemap)" % VERSION})
+        with urllib.request.urlopen(rq, timeout=60, context=ssl_context()) as r:
+            data = r.read(80_000_000)
+        return gzip.decompress(data) if data[:2] == b"\x1f\x8b" else data
+    idx = get(PK_TARGET_INDEX).decode("utf-8", "replace")
+    files = re.findall(r"<loc>\s*([^<\s]+)\s*</loc>", idx)
+    if not files:
+        raise UserError("Target's product list was empty.")
+
+    def scan(u):
+        try:
+            t = get(u).decode("utf-8", "replace")
+        except Exception:
+            return None
+        return [(m.group(1), m.group(2), m.group(3) or "") for m in _PK_URL.finditer(t) if _PK_POKE.search(m.group(1))]
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        parts = list(ex.map(scan, files))
+    failed = sum(1 for p in parts if p is None)
+    if failed > len(files) // 4:
+        raise UserError("Couldn't read enough of Target's product list (%d of %d parts failed)." % (failed, len(files)))
+    sets = _pk_sets()
+    old = {x["t"]: x for x in ((prev or {}).get("items") or [])}
+    now_ms = int(time.time() * 1000)
+    first_scan = not old
+    items, seen = [], set()
+    for p in parts:
+        for slug, tcin, img in p or []:
+            if tcin in seen:
+                continue
+            seen.add(tcin)
+            w = _pk_words(slug)
+            c = _pk_classify(w, sets)
+            o = old.get(tcin) or {}
+            im = img.rsplit("/", 1)[-1] if img.startswith("https://target.scene7.com/is/image/Target/") else ""
+            items.append({"t": tcin, "n": _pk_name(w), "s": c["s"], "ty": c["ty"], "tcg": c["tcg"], "imp": c["imp"], "img": im,
+                          "f": o.get("f") if "f" in o else (0 if first_scan else now_ms)})
+    # products no longer on Target's list are kept for a while, marked gone (so they still show up in your history)
+    for t, o in old.items():
+        if t not in seen and now_ms - (o.get("gone") or now_ms) < 60 * 86400000:
+            o = dict(o); o.setdefault("gone", now_ms); items.append(o)
+    items.sort(key=lambda x: -int(x["t"]))
+    return {"at": now_ms, "items": items, "sets": [{"id": s["id"], "name": s["name"], "date": s["date"]} for s in sets],
+            "files": len(files), "failed": failed, "src": "Target product sitemap"}
+
+
+def pk_catalog(req=None):
+    """The Mac/PC app: the shared list from Kingpin Online (or a local read when testing)."""
+    req = req or {}
+    if os.environ.get("CROWN_PK_LOCAL"):
+        hit = _NEWSCACHE.get("pk:local")
+        if hit and hit[0] > time.time() and not req.get("fresh"):
+            return hit[1]
+        out = dict(pk_scan_target(hit[1] if hit else None), ok=True)
+        _NEWSCACHE["pk:local"] = (time.time() + PK_MAX_AGE, out)
+        return out
+    hit = _NEWSCACHE.get("pk:remote")
+    if hit and hit[0] > time.time() and not req.get("fresh"):
+        return hit[1]
+    rq = urllib.request.Request(PK_REMOTE + ("?fresh=1" if req.get("fresh") else ""), headers={"Accept": "application/json", "X-Crown": "1", "User-Agent": "Kingpin/%s" % VERSION})
+    try:
+        with urllib.request.urlopen(rq, timeout=280, context=ssl_context()) as r:
+            out = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if hit:
+            return hit[1]
+        raise UserError("Couldn't get the product list from Kingpin Online (%s)." % e.code)
+    except (urllib.error.URLError, OSError) as e:
+        if hit:
+            return hit[1]
+        raise UserError("Couldn't reach Kingpin Online for the product list (%s)." % getattr(e, "reason", e))
+    _NEWSCACHE["pk:remote"] = (time.time() + 3 * 3600, out)
+    return out
+
+
 # ---------------------------------------------------------------- market prices (TCGplayer data via tcgcsv.com)
 TCG_BASE = os.environ.get("CROWN_TCGCSV_URL", "https://tcgcsv.com/tcgplayer")
 _MCACHE = {}
@@ -2521,6 +2684,7 @@ class _LocalHandler(BaseHTTPRequestHandler):
             "/api/skuinfo": sku_info,
             "/api/news": news_fetch,
             "/api/news/status": news_status,
+            "/api/pk/catalog": pk_catalog,
             "/api/s17test": s17_test,
             "/api/discord": discord_send,
             "/api/discord/check": discord_check,
@@ -3383,6 +3547,26 @@ class handler(BaseHTTPRequestHandler):
                 hits = [m.group(0) for m in re.finditer(pat, t)][:int(q.get("n") or 40)] if pat else []
                 return {"ok": True, "len": len(t), "head": t[:int(q.get("head") or 1500)], "hits": hits, "nhits": len(re.findall(pat, t)) if pat else 0}
             return self._run(probe)
+        if r in ("/pk/catalog", "/pk/cron"):  # the shared Pokémon product list (public; read by the app and the Mac/PC app)
+            def pkcat():
+                q = self._query()
+                if r == "/pk/cron" and "vercel-cron" not in (h.get("User-Agent") or "").lower():
+                    rate_limit("pkcron", client_ip(h), 4, 3600)
+                elif r == "/pk/catalog":
+                    rate_limit("pkcat", client_ip(h), 120, 3600)
+                cur = kv_json("pk:catalog")
+                age = time.time() - (cur["at"] / 1000.0) if cur else 1e9
+                want = age > PK_MAX_AGE or (q.get("fresh") and age > 1800) or (r == "/pk/cron" and age > 6 * 3600)
+                if want and kv("SET", "pk:lock", "1", "NX", "EX", "290"):
+                    try:
+                        cur = pk_scan_target(cur)
+                        kv_set_json("pk:catalog", cur)
+                    finally:
+                        kv("DEL", "pk:lock")
+                elif not cur:
+                    raise UserError("The product list is being put together right now. Try again in a minute.")
+                return dict(cur, ok=True, updating=bool(want) and age > PK_MAX_AGE)
+            return self._run(pkcat)
         if r == "/news/status":  # public health check of the news feeds (rate-limited)
             def nstatus():
                 rate_limit("nstat", client_ip(h), 20, 3600)
