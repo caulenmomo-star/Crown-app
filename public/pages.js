@@ -603,6 +603,7 @@ PAGES.settings = {
           <div class="chips"><button class="chip ${S.checkinSince ? 'on' : ''}" id="stCiOn">${S.checkinSince ? 'Check-in on' : 'Check-in off'}</button><button class="chip ${S.invOnCheckin ? 'on' : ''}" id="stInvCi">Add items to inventory when checked in</button></div>
           <div class="section">Selling fees (estimates — match them to your accounts)</div>
           <div class="feegrid">${PLATFORMS.filter(p => p.pct || p.flat || (S.platformFees || {})[p.k]).map(p => { const f = feeFor(p.k); return `<div class="feerow"><span>${esc(p.l)}</span><input data-fee="${p.k}" data-ff="pct" inputmode="decimal" value="${esc(f.pct)}"><span class="faint">% +</span><input data-fee="${p.k}" data-ff="flat" inputmode="decimal" value="${esc(f.flat)}"><span class="faint">$</span></div>`; }).join('')}</div></div>
+        ${typeof upSettingsHtml === 'function' ? upSettingsHtml() : ''}
         <div class="card"><h3>Backups</h3>
           <div class="small muted" style="margin-bottom:10px">${CLOUD ? 'Kingpin Online saves every change instantly and keeps automatic backups (one every 15 minutes while you work, last 20 kept). Everything is encrypted with your password before it leaves this device.' : SERVER ? 'Kingpin saves your encrypted data to its <b>data</b> folder and keeps automatic backups (one every 15 minutes while you work, last 60 kept).' : 'Open Kingpin with Start Kingpin to get automatic backups on disk.'} You can also download a backup file anytime — it stays encrypted with your password.</div>
           <div class="hstack"><button id="stBackup">Download backup</button><button id="stRestore">Restore from file…</button></div>
@@ -617,6 +618,7 @@ PAGES.settings = {
       </div>
       <div class="small faint" style="margin-top:16px">Kingpin v${VERSION}${CLOUD ? ' · Kingpin Online' : ''}</div>`;
     if (typeof wireInstallCard === 'function') wireInstallCard();
+    if (typeof wireUpSettings === 'function') wireUpSettings();
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();

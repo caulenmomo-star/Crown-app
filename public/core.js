@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.3'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.4'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -329,7 +329,7 @@ function toast(msg, opts) {
   const b = $('#toastBtn'), act = opts && opts.action && opts.onAction;
   b.hidden = !(act || (opts && opts.undo && lastUndo)); b.textContent = act ? opts.action : 'Undo';
   b.onclick = () => { t.classList.remove('show'); if (act) opts.onAction(); else undo(); };
-  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), opts && (opts.undo || act) ? 7000 : 2800);
+  t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), opts && opts.ms ? opts.ms : opts && (opts.undo || act) ? 7000 : 2800);
 }
 function download(name, text, type) { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1500); }
 

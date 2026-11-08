@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.4', date: '2026-11-08', title: 'The Mac and Windows apps update themselves', items: [
+    'Kingpin for Mac and Windows downloads new versions in the background and checks every file before using it.',
+    'On the lock screen it switches right away. While you’re working it offers “Restart now” (it saves first), or uses the new version next time it opens.',
+    'Settings → Updates shows your version and has Check now. Rarely, a version needs a new download from the website, and Kingpin will say so.',
+  ] },
   { v: '0.20.3', date: '2026-11-08', title: 'Edit many at once, multi-item sales, email list', items: [
     'Edit selected on Profiles, Accounts, Cards and Orders (selection bar or right-click). Every field starts as “Keep as is”. Only fields you change are saved; use Clear to empty a field.',
     'Sales: one sale can hold several items, each at its own price. “＋ at another price” sells another of the same item for a different amount.',

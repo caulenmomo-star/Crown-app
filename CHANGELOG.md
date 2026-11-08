@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.4 — The Mac and Windows apps update themselves (2026-11-08)
+
+- Kingpin for Mac and Windows downloads new versions in the background and checks every file before using it.
+- On the lock screen it switches right away. While you’re working it offers “Restart now” (it saves first), or uses the new version next time it opens.
+- Settings → Updates shows your version and has Check now. Rarely, a version needs a new download from the website, and Kingpin will say so.
+
 ## v0.20.3 — Edit many at once, multi-item sales, email list (2026-11-08)
 
 - Edit selected on Profiles, Accounts, Cards and Orders (selection bar or right-click). Every field starts as “Keep as is”. Only fields you change are saved; use Clear to empty a field.

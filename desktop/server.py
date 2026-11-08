@@ -37,11 +37,12 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.20.3"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.20.4"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(ROOT, "app")
+SERVE_DIR = APP_DIR  # the screens being shown: the ones that came with this copy, or a newer downloaded set (see updates)
 
 
 def default_data_dir():
@@ -2630,6 +2631,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._run(lambda: {"ok": True, "vault": read_vault()})
             if path == "/api/backups":
                 return self._run(lambda: {"ok": True, "backups": list_backups()})
+            if path == "/api/update":
+                return self._run(lambda: dict(update_status(), ok=True))
             if path.startswith("/api/backups/"):
                 name = path[len("/api/backups/"):]
                 return self._run(lambda: {"ok": True, "vault": read_backup(name)})
@@ -2637,8 +2640,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self._host_ok():
             return self._send(403, "Forbidden", "text/plain")
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
-        full = os.path.realpath(os.path.join(APP_DIR, rel))
-        if not full.startswith(os.path.realpath(APP_DIR) + os.sep) or not os.path.isfile(full):
+        root = SERVE_DIR
+        full = os.path.realpath(os.path.join(root, rel))
+        if not full.startswith(os.path.realpath(root) + os.sep) or not os.path.isfile(full):
             return self._send(404, "Not found", "text/plain")
         with open(full, "rb") as f:
             data = f.read()
@@ -2681,6 +2685,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self._api_guard():
             return
+        if self.path == "/api/update/check":
+            return self._run(lambda: dict(check_update(), ok=True, **{k: v for k, v in update_status().items() if k not in UPD}))
+        if self.path == "/api/update/apply":
+            return self._run(lambda: {"ok": True, "active": use_newest_screens()})
         if self.path == "/api/shutdown":
             self._send(200, {"ok": True})
             threading.Thread(target=lambda: (time.sleep(0.3), os._exit(0)), daemon=True).start()
@@ -2762,6 +2770,188 @@ def already_running(port):
     return running_version(port) is not None
 
 
+
+# ---------------------------------------------------------------- updates
+# The screens (everything in app/) update themselves: Kingpin downloads the newest set from the website into the data
+# folder, checks every file against the website's list of fingerprints, and shows it from the next start (or right
+# away when you say so). This part - the engine - only changes with a new download, so a set of screens is only used
+# when everything it can ask the engine for is here (the engine's /api routes, and ENGINE for changes in how they work).
+ENGINE = 1  # bump when the screens need an existing /api route to work differently
+UPDATE_BASE = (os.environ.get("CROWN_UPDATE_URL") or "https://crowntools.vercel.app/").rstrip("/") + "/"
+UPDATE_DIR = os.path.join(DATA_DIR, "app-updates")
+RELEASES_URL = "https://github.com/caulenmomo-star/Crown-app/releases/latest"
+UPD = {"state": "idle", "checked": 0, "latest": "", "ready": "", "error": "", "needsDownload": "", "active": VERSION}
+_upd_lock = threading.Lock()
+
+
+def engine_routes(src=None):
+    """The /api routes this engine answers (read from its own code, so it can't drift)."""
+    if src is None:
+        try:
+            with open(os.path.abspath(__file__), encoding="utf-8") as f:
+                src = f.read()
+        except Exception:
+            return set()
+    return set(re.findall(r'"(/api/[a-z0-9/_\-]+)"', src))
+
+
+_MY_ROUTES = None
+
+
+def _vt(v):
+    return tuple(int(x) for x in re.findall(r"\d+", str(v or ""))[:4]) or (0,)
+
+
+def _fits_engine(m):
+    global _MY_ROUTES
+    if _MY_ROUTES is None:
+        _MY_ROUTES = engine_routes()
+    try:
+        need = int(m.get("engine", 1))
+    except Exception:
+        return False
+    return need <= ENGINE and set(m.get("routes") or []) <= _MY_ROUTES
+
+
+def _sha_file(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _upd_valid(d):
+    """A finished download (its list is written last) that this engine can run, with every file present."""
+    try:
+        with open(os.path.join(d, "app-manifest.json"), encoding="utf-8") as f:
+            m = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(m.get("files"), dict) or not _fits_engine(m):
+        return None
+    for rel in m["files"]:
+        if not os.path.isfile(os.path.join(d, *rel.split("/"))):
+            return None
+    return m
+
+
+def newest_update():
+    best = None
+    try:
+        names = os.listdir(UPDATE_DIR)
+    except Exception:
+        return None
+    for n in names:
+        if n.startswith("."):
+            continue
+        d = os.path.join(UPDATE_DIR, n)
+        m = _upd_valid(d)
+        if m and _vt(m.get("version")) > _vt(VERSION) and (best is None or _vt(m["version"]) > _vt(best[1]["version"])):
+            best = (d, m)
+    return best
+
+
+def use_newest_screens():
+    """Show the newest downloaded screens (from the next page load)."""
+    global SERVE_DIR
+    b = newest_update()
+    SERVE_DIR = b[0] if b else APP_DIR
+    UPD["active"] = b[1]["version"] if b else VERSION
+    if UPD["ready"] and _vt(UPD["ready"]) <= _vt(UPD["active"]):
+        UPD["ready"] = ""
+    return UPD["active"]
+
+
+def _upd_get(url, timeout=30):
+    rq = urllib.request.Request(url, headers={"User-Agent": "Kingpin/%s" % VERSION, "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(rq, timeout=timeout, context=ssl_context()) as r:
+        return r.read()
+
+
+_SAFE_REL = re.compile(r"[A-Za-z0-9_\-][A-Za-z0-9_.\-]*(/[A-Za-z0-9_\-][A-Za-z0-9_.\-]*)*")
+
+
+def check_update():
+    """Look for newer screens on the website and download them (only files that changed)."""
+    if os.environ.get("CROWN_NO_UPDATE"):
+        UPD["state"] = "off"
+        return dict(UPD)
+    if not _upd_lock.acquire(blocking=False):
+        return dict(UPD)
+    stage = None
+    try:
+        UPD.update(state="checking", error="")
+        m = json.loads(_upd_get(UPDATE_BASE + "app-manifest.json?t=%d" % int(time.time()), 20).decode("utf-8"))
+        ver, files = str(m.get("version") or ""), m.get("files")
+        if not ver or not isinstance(files, dict) or not files:
+            raise ValueError("the website's update list looks wrong")
+        UPD["latest"] = ver
+        have = max(_vt(UPD["active"]), _vt(UPD["ready"]))
+        if _vt(ver) <= have:
+            UPD.update(state="current", needsDownload="")
+            return dict(UPD)
+        if not _fits_engine(m):
+            UPD.update(state="download", needsDownload=ver)
+            return dict(UPD)
+        target = os.path.join(UPDATE_DIR, ver)
+        if not _upd_valid(target):
+            stage = os.path.join(UPDATE_DIR, ".dl-" + ver)
+            shutil.rmtree(stage, ignore_errors=True)
+            os.makedirs(stage, exist_ok=True)
+            UPD["state"] = "downloading"
+            for rel, info in files.items():
+                want = str((info or {}).get("sha256") or "")
+                if not _SAFE_REL.fullmatch(rel) or ".." in rel.split("/") or len(want) != 64:
+                    raise ValueError("unexpected file in the update: %s" % rel[:80])
+                dst = os.path.join(stage, *rel.split("/"))
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                src = None
+                for base in (SERVE_DIR, APP_DIR):  # an identical file we already have doesn't need downloading
+                    p = os.path.join(base, *rel.split("/"))
+                    if os.path.isfile(p) and _sha_file(p) == want:
+                        src = p
+                        break
+                if src:
+                    shutil.copyfile(src, dst)
+                    continue
+                data = _upd_get(UPDATE_BASE + urllib.parse.quote(rel) + "?v=" + urllib.parse.quote(ver), 60)
+                if hashlib.sha256(data).hexdigest() != want:
+                    raise ValueError("%s didn't download correctly - will try again later" % rel)
+                with open(dst, "wb") as f:
+                    f.write(data)
+            with open(os.path.join(stage, "app-manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(m, f)
+            shutil.rmtree(target, ignore_errors=True)
+            os.replace(stage, target)
+            stage = None
+        UPD.update(state="ready", ready=ver, needsDownload="")
+        # keep only the set being shown and the new one
+        keep = {os.path.basename(target), os.path.basename(SERVE_DIR)}
+        for n in os.listdir(UPDATE_DIR):
+            if n not in keep:
+                shutil.rmtree(os.path.join(UPDATE_DIR, n), ignore_errors=True)
+    except Exception as e:
+        UPD.update(state="error", error=str(e)[:200])
+    finally:
+        if stage:
+            shutil.rmtree(stage, ignore_errors=True)
+        UPD["checked"] = time.time()
+        _upd_lock.release()
+    return dict(UPD)
+
+
+def update_status():
+    return dict(UPD, engine=ENGINE, bundled=VERSION, releases=RELEASES_URL, auto=not os.environ.get("CROWN_NO_UPDATE"))
+
+
+def update_loop():
+    time.sleep(2)
+    while True:
+        check_update()
+        time.sleep(6 * 3600)
+
+
 def main():
     global PORT
     if os.name == "nt":
@@ -2809,9 +2999,11 @@ def main():
         sys.exit(1)
     httpd.daemon_threads = True
     threading.Thread(target=pool_sweeper, daemon=True).start()
+    use_newest_screens()
+    threading.Thread(target=update_loop, daemon=True).start()
     url = "http://%s:%d/" % (HOST, PORT)
     print("")
-    print("  Kingpin %s is running at %s" % (VERSION, url))
+    print("  Kingpin %s is running at %s" % (UPD["active"], url))
     print("  Your data folder: %s" % DATA_DIR)
     print("  Keep this window open while you use Kingpin. Close it (or press Ctrl+C) to stop.")
     print("")

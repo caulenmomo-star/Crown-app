@@ -37,6 +37,7 @@ async function doInstall() {
   refreshInstallBits(); return true;
 }
 function installCardHtml() {
+  if (/Electron/i.test(navigator.userAgent)) return '';   // already the Mac / Windows app
   const dev = deviceKind(), br = browserKind(), steps = installSteps(dev, br);
   if (isInstalled()) return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Kingpin app</h3><div class="small muted">You’re using the installed app on this device. To add it to another one, open <b>${esc(location.host)}</b> there and follow the steps in Settings, or visit <a href="install.html" target="_blank" rel="noopener">${esc(location.host)}/install.html</a>.</div></div>`;
   return `<div class="card getapp" id="getApp" style="margin-bottom:14px"><h3>📲 Get the app<span class="spacer"></span>${INSTALL.prompt ? '<button class="primary sm" id="getAppGo">Install Kingpin</button>' : ''}</h3>

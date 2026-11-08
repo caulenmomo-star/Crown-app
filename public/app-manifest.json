@@ -1,0 +1,317 @@
+{
+ "engine": 1,
+ "files": {
+  "account.js": {
+   "sha256": "a02122047eed315042a8ffde13b50aff5ac73988eeaf85079d192aa8fc61ef54",
+   "size": 21160
+  },
+  "accounts.js": {
+   "sha256": "76d4a602ba2586bf69f65ded4067ab18240c54e3dcabbfeabff5357c2351af41",
+   "size": 29522
+  },
+  "aco.js": {
+   "sha256": "20542615e9230e36ef33aa2546c17323a7d2598fd510a91e18fa9a1b7b8b149b",
+   "size": 54609
+  },
+  "addresses.js": {
+   "sha256": "0b40c272b692467d9075dffcb54d85c4aaddde737853f6f3b5f0ff026949b2ae",
+   "size": 6436
+  },
+  "boot.js": {
+   "sha256": "54a634aebfa21399a64b9cad982e278af0f0e6c3ca64c9129a189e5218c08151",
+   "size": 1219
+  },
+  "botfeed.js": {
+   "sha256": "913be5c3a414995200a0569865a2bdb109cb250bf1bf3b032b84e7516b0147a4",
+   "size": 16651
+  },
+  "botformats.js": {
+   "sha256": "019165bac8729fec90460d7526c81e558c88e60e197c66642861b4dd323a5ed2",
+   "size": 16404
+  },
+  "builder.js": {
+   "sha256": "59d91e0b4fba315819a95bfa6d81900ca84683e1028e827644186d3aebe5cde7",
+   "size": 37132
+  },
+  "cards.js": {
+   "sha256": "5bfea573b66c5b65dbc75959887a3caf78bb9aaa46534c8cf1817cf17b367564",
+   "size": 38078
+  },
+  "cardscan.js": {
+   "sha256": "3ddc368a247bfefd47a4b3a4013497e8d202536d6d55c7ca707858815d4bbcda",
+   "size": 29726
+  },
+  "catdrop.js": {
+   "sha256": "59a87cb409e5ef5587978e9cee27984ff905176fa30393f8417228af8a631400",
+   "size": 2160
+  },
+  "changelog.js": {
+   "sha256": "107af989d1339a1241d22f1c056e08d917daf1702097973125c037ae89a3c6d0",
+   "size": 33318
+  },
+  "checkin.js": {
+   "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
+   "size": 14480
+  },
+  "colresize.js": {
+   "sha256": "ec400d611124f4e90437877799a35de48d3b11db0d4ae287deba877bc1689e76",
+   "size": 6418
+  },
+  "core.js": {
+   "sha256": "6725614821edfaf1c728aec0f7df410f61a4f14196908f105f35e60420f8fcad",
+   "size": 52582
+  },
+  "ct-icon-180.png": {
+   "sha256": "d58821d5e97b52c66a03893641c793df7f35e65ed7523bb63af4ffa5f4bf0186",
+   "size": 3268
+  },
+  "ct-icon-192.png": {
+   "sha256": "059814714513d0254a102b44002e92202350d8180ca0bd21b1e14dd88d582fe7",
+   "size": 5203
+  },
+  "ct-icon-512-mask.png": {
+   "sha256": "424719051793f00003e598bb65be49eae1c34ea5ccf51cbc82876799a0849b40",
+   "size": 8124
+  },
+  "ct-icon-512.png": {
+   "sha256": "67c27a161447fe9b7aa5424802a9c18f30e5c5efe284c611beb5a149efcf4a56",
+   "size": 15240
+  },
+  "ctxmenu.js": {
+   "sha256": "d6a537c68f64bce273dbbb4885b66d44b3f9f187beb95ad97967e000ba1b837c",
+   "size": 11996
+  },
+  "doctor.js": {
+   "sha256": "ab92639c3f2cc8b562d343cdd46e337732267c3a367e0ad0a7a27f1f94b53c54",
+   "size": 21072
+  },
+  "emails.js": {
+   "sha256": "6365e8d2ed22acdef3bae3b0ccf944bc697a6cb71b2a8222791f092f668a1fc3",
+   "size": 17563
+  },
+  "index.html": {
+   "sha256": "d41610223330a03ff8bd94973157c50b9a8cb4aedf5064270ba194daad699f4e",
+   "size": 33029
+  },
+  "install.css": {
+   "sha256": "f0f1e17e621604747b95349dbdd9764ecc77e21e4d614df317c88b35e73b44ca",
+   "size": 1878
+  },
+  "install.html": {
+   "sha256": "22d5307acd86375b8feb0905f320d8490339798b7e62f18bc364d42dd2209db0",
+   "size": 2630
+  },
+  "install.js": {
+   "sha256": "ca884253e00b8f0cb62dfa201769eb75e56c9919e696e40f67adfe11eb2e78cb",
+   "size": 6205
+  },
+  "installpage.js": {
+   "sha256": "661d510d696d3be2a5c0bffebc72fb1ef01ab824bac33897ee279b8a06a77cfc",
+   "size": 2797
+  },
+  "inventory.js": {
+   "sha256": "6cea94c491da38ff1cb5454e0c93fbb92fd746eb0159854521f2593f71982fdd",
+   "size": 34898
+  },
+  "invoice.css": {
+   "sha256": "38eb48d2dd0eeed40258914a13d3567a35644137e752b912b8564b2cb6575f32",
+   "size": 3123
+  },
+  "invoice.html": {
+   "sha256": "5bbaf0e364df866a727572c02f18628341264144755befe84171af6737d8cdc0",
+   "size": 422
+  },
+  "invoice.js": {
+   "sha256": "4008f81c9cb44bcc8120f7e8b7ff30848710b17256b455c07b820cc0fce49e5b",
+   "size": 4285
+  },
+  "itemvalue.js": {
+   "sha256": "239775562084ba347341a96fcbf9e16ab48d26ccad56a859575db7b7db51f99c",
+   "size": 24358
+  },
+  "legal.css": {
+   "sha256": "345247542aaa9e50e0e5314c8b0335a6f8f75ee7fb36d5f55d0f94d6c4a07588",
+   "size": 589
+  },
+  "manifest.webmanifest": {
+   "sha256": "d80ba98a65d9365ef4196fcf97f3d422d4d1c26752f57b67b54bbd5ac0872afc",
+   "size": 533
+  },
+  "massedit.js": {
+   "sha256": "6533962309da21d1088b4f86945c15ac2568c754a55bd1516365a4e4dfc2185b",
+   "size": 13147
+  },
+  "news.js": {
+   "sha256": "1992c57dffaaa6b8008d4a25cbd59eb7711ebc1b192bc1d47f9116873be37095",
+   "size": 23132
+  },
+  "noautofill.js": {
+   "sha256": "37e1fc32d0b649d3faa2b155dce65eb49385199fa2b5e7350f1240ad06d4fa37",
+   "size": 4061
+  },
+  "notify.js": {
+   "sha256": "abbc7baf6cd0421929526ff2979230fa26fb0ec18a0b06a32ff3f447a18ae753",
+   "size": 13383
+  },
+  "orders.js": {
+   "sha256": "49e0e0f5d40c7d8bfe0a9d56d12d05c15d4231358adb5e907dd08d0d431ecb8c",
+   "size": 103013
+  },
+  "packages.js": {
+   "sha256": "8c5e10ec335fcbb8bdb43c697358097ae79182f696a5d64b397621cad7f7313c",
+   "size": 21156
+  },
+  "pages.js": {
+   "sha256": "80a425b66515840611edf6d2a95fa8abe76d90351a58429dcda2e3f529d66591",
+   "size": 93335
+  },
+  "parser.js": {
+   "sha256": "00600959ae6c18f132dca42a0806fb6edfa59eded6735e1a64055bc67d89aee3",
+   "size": 65595
+  },
+  "phonefit.js": {
+   "sha256": "f960aaea892844f5336a0abfb67870e192c1fdd11d701a6c98e2466ee1acfb88",
+   "size": 5365
+  },
+  "pkdata.js": {
+   "sha256": "ad94c598583b007ec2d870deec3fe452582eeac019bdbf671e53cfa41337fe74",
+   "size": 19564
+  },
+  "preorders.js": {
+   "sha256": "e1a966dd26966fe48e271913c0c63478912f13f01cc04a15a96e5f8f61015f7e",
+   "size": 14274
+  },
+  "privacy.html": {
+   "sha256": "683534da9732f632daceb735947bc058e38474c4362fe9cdb36946dd99523e3b",
+   "size": 3310
+  },
+  "profiles.js": {
+   "sha256": "00f6e1b594c43903b59e8a1efc76f91ba0a3dbb11e166a0d8b8847899ca9f737",
+   "size": 55181
+  },
+  "refund.html": {
+   "sha256": "2d0b2f8818f6f0c1b0957b5ee287b7499b1235a8fe979e72aaf7b27a3d5c9593",
+   "size": 1223
+  },
+  "sales.js": {
+   "sha256": "24c4849563c75de30d57808e09c660e4cfbcf01f75ad417f95dc7d4bbd86384f",
+   "size": 22585
+  },
+  "salesio.js": {
+   "sha256": "9d479bd7cd8876a43f282450416d8328398ac8c9ac735be97c6a79610fa8ccf2",
+   "size": 33580
+  },
+  "scanner.js": {
+   "sha256": "8785ce5db9ef14ed1a142e6ec81cfa06352ce39f53d018d522b6b9eedc8417e8",
+   "size": 8601
+  },
+  "selrange.js": {
+   "sha256": "2f33b7737a138b8d80e42c1066de5f27dbacdcbcdf6c298204d7675b67c50071",
+   "size": 10947
+  },
+  "skus.js": {
+   "sha256": "d2fb410acdbacbdda6d7f4ce92be15b5c52428a941764488f8cc9d0b64ce13cc",
+   "size": 21107
+  },
+  "styles.css": {
+   "sha256": "d0864e1c5cdd280406617f89a9eb9afbef486c3c0efff5fb3680d8cd77015104",
+   "size": 91424
+  },
+  "sw.js": {
+   "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
+   "size": 2039
+  },
+  "sync.js": {
+   "sha256": "bc3b7595ede00ec004bc6e740864fced8a16d810426b71acf3f4dee229d4d31b",
+   "size": 31189
+  },
+  "terms.html": {
+   "sha256": "d135d9ffe5ca127d01bc854d304dd87bcc689a1e3f56bec5e15a96a4a87d1713",
+   "size": 3506
+  },
+  "update.js": {
+   "sha256": "2043aa51edf7475e4adc3d7c74f01f85074496b5d2e695fc7d01deba0b0310ff",
+   "size": 4662
+  },
+  "vendor/html5-qrcode-LICENSE.txt": {
+   "sha256": "306bc450da41244fefb92fec6fba30f27afb9d9b0eaa72b96372c23e2338c612",
+   "size": 11361
+  },
+  "vendor/html5-qrcode.min.js": {
+   "sha256": "660b12437b1d747e3e68b8be0685c08cb728140110ad213f167b14b66f8b1d8e",
+   "size": 375364
+  },
+  "vendor/ocr/TESSDATA-LICENSE.txt": {
+   "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+   "size": 11358
+  },
+  "vendor/ocr/TESSERACT-LICENSE.txt": {
+   "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+   "size": 11358
+  },
+  "vendor/ocr/eng.traineddata": {
+   "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+   "size": 4113088
+  },
+  "vendor/ocr/ocr-worker.js": {
+   "sha256": "c50aff8a92b3d8d0a796ed9c6628e7f124c3a32a9cba0299c98e2190eccff1c0",
+   "size": 2146
+  },
+  "vendor/ocr/tesseract-core-lstm.js": {
+   "sha256": "6510efc4e8b45c5465df30679b9911ffe0071cd2ee982fa064e6f5136ef2de85",
+   "size": 89261
+  },
+  "vendor/ocr/tesseract-core-lstm.wasm": {
+   "sha256": "66b17df6e20c5329a17ffa9c202a47eaa3e32500b253d4c7f38e7f2bc01457c3",
+   "size": 2855361
+  },
+  "vendor/ocr/tesseract-core-simd-lstm.js": {
+   "sha256": "e48e2f02ddae3716c8dd24bf41cd290d4efa96892d689cdc4013c2545d63f469",
+   "size": 89271
+  },
+  "vendor/ocr/tesseract-core-simd-lstm.wasm": {
+   "sha256": "34e8d50cac216427d86bf397d610fdd9f49492539bbcdfbfccc4eda20c810bea",
+   "size": 2857601
+  }
+ },
+ "routes": [
+  "/api/aco/stripe/check",
+  "/api/aco/stripe/link",
+  "/api/aco/stripe/test",
+  "/api/backups",
+  "/api/backups/",
+  "/api/carriertest",
+  "/api/discord",
+  "/api/discord/check",
+  "/api/discord/read",
+  "/api/imap/bodies",
+  "/api/imap/folders",
+  "/api/imap/scan",
+  "/api/imap/test",
+  "/api/img",
+  "/api/market/categories",
+  "/api/market/groups",
+  "/api/market/prices",
+  "/api/market/search",
+  "/api/news",
+  "/api/news/status",
+  "/api/ping",
+  "/api/pk/catalog",
+  "/api/s17test",
+  "/api/shutdown",
+  "/api/skuinfo",
+  "/api/stockx/callback",
+  "/api/stockx/login",
+  "/api/stockx/prices",
+  "/api/stockx/search",
+  "/api/stockx/status",
+  "/api/track",
+  "/api/track17",
+  "/api/upc",
+  "/api/update",
+  "/api/update/apply",
+  "/api/update/check",
+  "/api/vault"
+ ],
+ "version": "0.20.4"
+}
