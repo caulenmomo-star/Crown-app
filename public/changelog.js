@@ -1,6 +1,12 @@
 /* Crown Tools - release notes. Crown Tools is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.18.2', date: '2026-11-07', title: 'Select lots at once', items: [
+    'Shift-click a checkbox or a row to select everything between it and the last one you clicked. This works on Profiles, Accounts, Cards, Orders and the lists in windows.',
+    'Cmd/Ctrl-click a row to select it without opening it. Cmd/Ctrl+A selects everything shown, and Esc clears the selection.',
+    'Selected profiles: Edit fields and Export are right in the selection bar.',
+    'Selected cards: Copy them, or put just those cards on profiles.',
+  ] },
   { v: '0.18.1', date: '2026-11-06', title: 'Card photos you can trust', items: [
     '“2 pictures per card” now always pairs pictures 1+2, 3+4 and so on, with either side first in each pair.',
     'A card number is only trusted when separate readings of the photo agree. Otherwise Crown Tools asks you to check it against the photo first.',

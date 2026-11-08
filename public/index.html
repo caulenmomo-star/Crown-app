@@ -76,6 +76,8 @@
           <div class="selbar" id="selbar" hidden>
             <strong id="selCount"></strong>
             <select id="moveSel"></select>
+            <button id="selEditBtn" class="sm">Edit fields</button>
+            <button id="selExportBtn" class="sm">Export</button>
             <button id="dupBtn" class="sm">Duplicate</button>
             <button id="delBtn" class="sm danger">Delete</button>
             <div class="spacer"></div>
@@ -83,7 +85,7 @@
           </div>
           <div class="tablewrap" id="pTableWrap"><table class="ptable">
             <thead><tr>
-              <th class="cb"><input type="checkbox" id="selAll" aria-label="Select all"></th>
+              <th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="selAll" aria-label="Select all"></th>
               <th class="sort" data-sort="name">Profile</th><th class="sort" data-sort="health">Health</th><th class="sort" data-sort="email">Email</th><th class="sort" data-sort="ship">Ship to</th><th class="sort" data-sort="city">City</th><th class="sort" data-sort="state">State</th><th>Card</th><th>Exp</th><th class="sort right" data-sort="orders">Orders</th><th class="sort right" data-sort="spent">Spent</th><th id="catCol">Category</th>
             </tr></thead>
             <tbody id="rows"></tbody>
@@ -409,6 +411,7 @@
 <script src="accounts.js"></script>
 <script src="cards.js"></script>
 <script src="cardscan.js"></script>
+<script src="selrange.js"></script>
 <script src="skus.js"></script>
 <script src="addresses.js"></script>
 <script src="builder.js"></script>

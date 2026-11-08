@@ -207,8 +207,8 @@ PAGES.cards = {
         <label class="small muted hstack" style="gap:6px;margin-bottom:10px;width:auto"><input type="checkbox" id="cdSync" ${state.settings.cardSync === false ? '' : 'checked'} style="width:auto"> Add the cards on my profiles here automatically, in a group named after each profile group</label>
         <div class="toolbar"><input class="search" data-search id="cdQ" placeholder="Search last 4, name, notes…  ( / )" value="${esc(CF.q)}">
           <div class="chips" id="cdStatus">${[['all', 'All']].concat(CARD_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${CF.status === k ? 'on' : ''}" data-cf="${k}">${esc(l)}</button>`).join('')}</div></div>
-        ${cardSel.size ? `<div class="selbar"><strong>${cardSel.size} selected</strong><select id="cdMove" style="width:auto"><option value="">Move to group…</option>${state.cardGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><select id="cdSetStatus" style="width:auto"><option value="">Set status…</option>${CARD_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><button class="sm danger" id="cdDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="cdClr">Clear</button></div>` : ''}
-        ${list.length ? `<div class="tablewrap"><table class="atable ctable"><thead><tr><th class="cb"><input type="checkbox" id="cdAll" ${list.every(c => cardSel.has(c.id)) ? 'checked' : ''}></th><th>Card</th><th>Exp</th><th>CVV</th><th>Group · profile</th><th>Health</th><th class="right">Orders</th></tr></thead><tbody>
+        ${cardSel.size ? `<div class="selbar"><strong>${cardSel.size} selected</strong><select id="cdMove" style="width:auto"><option value="">Move to group…</option>${state.cardGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select><select id="cdSetStatus" style="width:auto"><option value="">Set status…</option>${CARD_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><button class="sm" id="cdAssignSel">Put on profiles</button><button class="sm" id="cdCopySel" title="number|MM|YYYY|CVV|name, one per line">Copy</button><button class="sm danger" id="cdDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="cdClr">Clear</button></div>` : ''}
+        ${list.length ? `<div class="tablewrap"><table class="atable ctable"><thead><tr><th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="cdAll" ${list.every(c => cardSel.has(c.id)) ? 'checked' : ''}></th><th>Card</th><th>Exp</th><th>CVV</th><th>Group · profile</th><th>Health</th><th class="right">Orders</th></tr></thead><tbody>
           ${(() => { CPX = cardProfileIndex(); return ''; })()}${list.map(c => { const v = cardVerdict(c), shown = CF.reveal.has(c.id), t = cardOrderTally(cardDigits(c.number).slice(-4)), g = cardGroupById(c.groupId); return `<tr data-card="${c.id}" class="${cardSel.has(c.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-ccb="${c.id}" ${cardSel.has(c.id) ? 'checked' : ''}></td>
             <td class="c-num"><div class="cellflex"><span class="faint small">${esc(cardBrand(c.number))}</span> <span class="mono">${shown ? esc(c.number.replace(/(.{4})/g, '$1 ').trim()) : '•••• ' + esc(c.number.slice(-4))}</span><button class="ghost sm icopy" data-creveal="${c.id}">${shown ? 'Hide' : 'Show'}</button><button class="ghost sm icopy" data-ccopy="${c.id}" title="Copy number">⧉</button></div></td>
             <td class="c-exp ${cardExpired(c) ? 'bad' : ''}">${esc(cardExp(c)) || '<span class="faint">—</span>'}</td><td class="mono">${shown ? esc(c.cvv) : (c.cvv ? '•••' : '')}</td>
@@ -242,6 +242,8 @@ PAGES.cards = {
     if ($('#cdClr')) $('#cdClr').onclick = () => { cardSel.clear(); PAGES.cards.render(); };
     if ($('#cdMove')) $('#cdMove').onchange = e => { if (!e.target.value) return; snapshot('move cards'); state.cards.forEach(c => { if (cardSel.has(c.id)) c.groupId = e.target.value; }); save(); toast(`Moved ${plural(cardSel.size, 'card')}`, { undo: true }); PAGES.cards.render(); };
     if ($('#cdSetStatus')) $('#cdSetStatus').onchange = e => { if (!e.target.value) return; snapshot('card status'); state.cards.forEach(c => { if (cardSel.has(c.id)) c.status = e.target.value; }); save(); PAGES.cards.render(); };
+    if ($('#cdCopySel')) $('#cdCopySel').onclick = () => copyText(state.cards.filter(x => cardSel.has(x.id)).map(x => [cardDigits(x.number), x.month, x.year, x.cvv, x.name].join('|')).join('\n'), plural(cardSel.size, 'card'));
+    if ($('#cdAssignSel')) $('#cdAssignSel').onclick = () => { const first = state.cards.find(x => cardSel.has(x.id)); openCardAssign(first ? first.groupId : '', true); };
     if ($('#cdDel')) $('#cdDel').onclick = async () => { const n = cardSel.size; if (!await ask(`Delete ${plural(n, 'card')}?`)) return; snapshot('delete cards'); state.cards = state.cards.filter(c => !cardSel.has(c.id)); cardSel.clear(); save(); refresh(); toast(`Deleted ${plural(n, 'card')}`, { undo: true }); };
     pg.querySelector('tbody') && pg.querySelector('tbody').addEventListener('click', e => {
       const cb = e.target.dataset.ccb; if (cb) { e.target.checked ? cardSel.add(cb) : cardSel.delete(cb); PAGES.cards.render(); return; }
@@ -315,7 +317,7 @@ function wireCardAdd() {
 
 /* ---------- assign a group to profiles ---------- */
 let cardAssign = { group: '', scope: 'all', per: 1 };
-function cardsForAssign() { return (state.cards || []).filter(c => c.groupId === cardAssign.group && !cardExpired(c) && c.status !== 'dead').sort((a, b) => (a.status === 'unused' ? 0 : 1) - (b.status === 'unused' ? 0 : 1)); }
+function cardsForAssign() { return (state.cards || []).filter(c => (cardAssign.onlySel ? cardSel.has(c.id) : c.groupId === cardAssign.group) && !cardExpired(c) && c.status !== 'dead').sort((a, b) => (a.status === 'unused' ? 0 : 1) - (b.status === 'unused' ? 0 : 1)); }
 function assignTargets() {
   const list = state.profiles;
   if (cardAssign.scope === 'selected' && typeof selected !== 'undefined' && selected.size) return list.filter(p => selected.has(p.id));
@@ -323,10 +325,10 @@ function assignTargets() {
   if (/^cat:/.test(cardAssign.scope)) return list.filter(p => p.categoryId === cardAssign.scope.slice(4));
   return list;
 }
-function openCardAssign(groupId) {
+function openCardAssign(groupId, onlySel) {
   const g0 = cardGroupById(groupId || (state.cardGroups[0] || {}).id || ''); pairProfileGroup(g0);
   const paired = g0 && g0.categoryId && state.profiles.some(p => p.categoryId === g0.categoryId) ? 'cat:' + g0.categoryId : 'all';
-  cardAssign = { group: g0 ? g0.id : '', scope: (typeof selected !== 'undefined' && selected.size) ? 'selected' : paired, per: 1 };
+  cardAssign = { group: g0 ? g0.id : '', scope: (typeof selected !== 'undefined' && selected.size) ? 'selected' : paired, per: 1, onlySel: !!(onlySel && cardSel.size) };
   renderCardAssign(); openDlg('dlgCardAssign');
 }
 function renderCardAssign() {
@@ -335,14 +337,15 @@ function renderCardAssign() {
   if (typeof selected !== 'undefined' && selected.size) scopes.unshift(['selected', `Selected profiles (${selected.size})`]);
   scopes.push(['nocard', `Profiles with no card (${state.profiles.filter(p => !cardDigits(p.cardNumber)).length})`]);
   state.categories.forEach(c => scopes.push(['cat:' + c.id, `Group: ${c.name} (${state.profiles.filter(p => p.categoryId === c.id).length})`]));
-  $('#caaBody').innerHTML = `<div class="fgrid"><div class="s2"><label>Card group</label><select id="caaGroup">${state.cardGroups.map(g => `<option value="${g.id}" ${cardAssign.group === g.id ? 'selected' : ''}>${esc(g.name)} (${(state.cards || []).filter(c => c.groupId === g.id).length})</option>`).join('')}</select></div>
+  $('#caaBody').innerHTML = `<div class="fgrid">${cardAssign.onlySel ? `<div class="s4 note small">Using the ${plural(cardSel.size, 'card')} you selected. <button class="linkbtn" id="caaAllGroup">Use a whole group instead</button></div>` : ''}<div class="s2" ${cardAssign.onlySel ? 'hidden' : ''}><label>Card group</label><select id="caaGroup">${state.cardGroups.map(g => `<option value="${g.id}" ${cardAssign.group === g.id ? 'selected' : ''}>${esc(g.name)} (${(state.cards || []).filter(c => c.groupId === g.id).length})</option>`).join('')}</select></div>
       <div class="s2"><label>Put onto</label><select id="caaScope">${scopes.map(([v, l]) => `<option value="${v}" ${cardAssign.scope === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div>
       <div><label>Profiles per card</label><input id="caaPer" inputmode="numeric" value="${esc(cardAssign.per)}"></div></div>
-    <div class="note ${cards.length >= need ? '' : 'warn'} small" style="margin-top:12px">${targets.length} profiles · ${plural(cards.length, 'usable card')} in the group · ${cardAssign.per} per card.${cards.length < need ? ` Not enough cards — need ${need}. Add cards or raise profiles per card.` : ' Cards are spread evenly; each profile’s old card is replaced.'}</div>`;
+    <div class="note ${cards.length >= need ? '' : 'warn'} small" style="margin-top:12px">${targets.length} profiles · ${plural(cards.length, 'usable card')} ${cardAssign.onlySel ? 'selected' : 'in the group'} · ${cardAssign.per} per card.${cards.length < need ? ` Not enough cards — need ${need}. Add cards or raise profiles per card.` : ' Cards are spread evenly; each profile’s old card is replaced.'}</div>`;
   $('#caaGo').disabled = !cards.length || !targets.length || cards.length < need;
   $('#caaGo').textContent = targets.length ? `Put cards on ${plural(targets.length, 'profile')}` : 'Assign';
   $('#caaGroup').onchange = e => { cardAssign.group = e.target.value; const g = cardGroupById(e.target.value); if (g && g.categoryId && cardAssign.scope !== 'selected' && state.profiles.some(p => p.categoryId === g.categoryId)) cardAssign.scope = 'cat:' + g.categoryId; renderCardAssign(); };
   $('#caaScope').onchange = e => { cardAssign.scope = e.target.value; renderCardAssign(); };
+  if ($('#caaAllGroup')) $('#caaAllGroup').onclick = () => { cardAssign.onlySel = false; renderCardAssign(); };
   $('#caaPer').oninput = e => { cardAssign.per = Math.max(1, Math.round(+e.target.value || 1)); const c = cardsForAssign(), t = assignTargets(), nd = Math.ceil(t.length / Math.max(1, cardAssign.per)); $('#caaGo').disabled = !c.length || !t.length || c.length < nd; };
 }
 function wireCardAssign() {

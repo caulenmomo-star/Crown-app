@@ -210,6 +210,8 @@ $('#docBanner').addEventListener('click', e => {
 $('#clearSel').onclick = () => { selected.clear(); renderTable(); };
 $$('#pg-profiles th.sort').forEach(th => th.onclick = () => { const k = th.dataset.sort; if (psort.key === k) { if (psort.dir === -1) psort = { key: '', dir: 1 }; else psort.dir = -1; } else psort = { key: k, dir: ['orders', 'spent'].includes(k) ? -1 : 1 }; renderTable(); });
 $('#moveSel').onchange = e => { const to = e.target.value; if (!to) return; snapshot('move profiles'); const n = selected.size; state.profiles.forEach(p => { if (selected.has(p.id)) p.categoryId = to; }); save(); refresh(); toast(`Moved ${plural(n, 'profile')} to ${catName(to)}`, { undo: true }); };
+$('#selEditBtn').onclick = () => $('#bulkBtn').click();
+$('#selExportBtn').onclick = () => $('#exportBtn').click();
 $('#dupBtn').onclick = () => { snapshot('duplicate'); const copies = state.profiles.filter(p => selected.has(p.id)).map(p => Object.assign({}, p, { id: uid(), name: (p.name || 'Profile') + ' copy', createdAt: Date.now() })); state.profiles.push(...copies); selected = new Set(copies.map(c => c.id)); save(); refresh(); toast(`Duplicated ${plural(copies.length, 'profile')}`, { undo: true }); };
 $('#delBtn').onclick = async () => {
   const n = selected.size; if (!await ask(`Delete ${plural(n, 'profile')}?`)) return;
