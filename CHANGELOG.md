@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.7 — Stats per inbox, cancelled orders out of the way (2026-11-09)
+
+- Dashboard: “Stats for” lets you pick All inboxes, one inbox or several at once (plus orders added by hand). Totals, charts, activity and the checkout card all follow it, and it’s remembered on every device.
+- Each order now remembers which inbox its emails came to. Older orders are matched up automatically the next time Kingpin opens.
+- Cancelled orders are hidden from the All tab on Orders and from the dashboard’s Recent activity. Untick “Hide cancelled” to see them again; the Cancelled tab always lists them.
+
 ## v0.20.6 — Pick which stores each inbox syncs (2026-11-09)
 
 - When you add an inbox, choose the stores it reads. Its first sync and every automatic sync only read emails from those stores.

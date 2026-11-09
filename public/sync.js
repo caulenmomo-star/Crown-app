@@ -1,6 +1,6 @@
 /* Kingpin - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 9; // 5: cancellation reasons, 6-8: pre-order payments (declined / updated, linked to the original order), 9: Menards
+const READER_VER = 10; // 5: cancellation reasons, 6-8: pre-order payments (declined / updated, linked to the original order), 9: Menards, 10: which inbox each order came to
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -77,7 +77,7 @@ async function syncAccount(a, totals, opts) {
     if (!p) return;
     res.found++;
     if (tracked && !tracked.has(p.store) && !(String(p.store).startsWith('shop:') && tracked.has('__shopify'))) return;
-    const out = applyEmail(p, label, { reapply: !!opts.reapply });
+    const out = applyEmail(p, label, { reapply: !!opts.reapply, inbox: a.id });
     if (out.ignored) { res.found--; return; }
     if (out.skipped) { addUnparsed(m, out.skipped, p.store); return; }
     if (out.created) { res.created++; totals.created++; }

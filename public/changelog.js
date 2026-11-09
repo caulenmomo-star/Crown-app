@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.7', date: '2026-11-09', title: 'Stats per inbox, cancelled orders out of the way', items: [
+    'Dashboard: “Stats for” lets you pick All inboxes, one inbox or several at once (plus orders added by hand). Totals, charts, activity and the checkout card all follow it, and it’s remembered on every device.',
+    'Each order now remembers which inbox its emails came to. Older orders are matched up automatically the next time Kingpin opens.',
+    'Cancelled orders are hidden from the All tab on Orders and from the dashboard’s Recent activity. Untick “Hide cancelled” to see them again; the Cancelled tab always lists them.',
+  ] },
   { v: '0.20.6', date: '2026-11-09', title: 'Pick which stores each inbox syncs', items: [
     'When you add an inbox, choose the stores it reads. Its first sync and every automatic sync only read emails from those stores.',
     '“Sync now” asks which stores to sync each time, starting from that inbox’s saved stores. Tick “Also use these for automatic syncs” to change what’s saved.',

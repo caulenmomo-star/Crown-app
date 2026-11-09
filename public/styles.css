@@ -1221,3 +1221,4 @@ a.btn.primary{background:var(--accent);color:var(--onAccent);border-color:transp
 .ocard.orow .oprog.dead i{background:var(--panel3)}.ocard.orow .oprog.dead i.on{background:var(--danger)}
 .ocard.orow .oprog i.on{background:var(--sc)}
 .stmore{margin-top:8px}.stmore summary{cursor:pointer;padding:4px 0}
+.dibpick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px}

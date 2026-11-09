@@ -95,6 +95,7 @@ function mergeOrderInto(keep, o) {
   if (keep.payEvents) keep.payEvents.sort((x, y) => String(x.date).localeCompare(String(y.date)));
   if (o.payFixedAt && (!keep.payFixedAt || o.payFixedAt > keep.payFixedAt)) keep.payFixedAt = o.payFixedAt;
   if (o.source === 'email' || keep.source === 'email') keep.source = 'email';
+  if ((o.inboxIds || []).length) keep.inboxIds = [...new Set([...(keep.inboxIds || []), ...o.inboxIds])];
   keep.updatedAt = Date.now();
   state.orders = state.orders.filter(x => x.id !== o.id);
 }
@@ -349,6 +350,8 @@ function applyEmail(r, accountLabel, opts) {
     if (r.status === 'delivered') o.deliveredAt = r.date;
     state.orders.push(o); created = true;
   }
+  // which inbox(es) this order's emails came to (the dashboard can show one inbox or several)
+  if (opts.inbox) { o.inboxIds = o.inboxIds || []; if (!o.inboxIds.includes(opts.inbox)) o.inboxIds.push(opts.inbox); }
   const seenBefore = !!r.messageId && o.messageIds.includes(r.messageId);
   if (seenBefore && !opts.reapply) return { order: o, created: false, changed: false };
   const before = o.status, beforeEta = o.eta;
@@ -552,8 +555,11 @@ PAGES.orders = {
     const base = filteredOrders(true);
     const list = sortOrders(base.filter(o => statusTabMatch(o, OF.status)));
     for (const id of [...oSelected]) if (!state.orders.some(o => o.id === id)) oSelected.delete(id);
-    const PER = 100, pages = Math.max(1, Math.ceil(list.length / PER)); OF.page = clamp(OF.page, 0, pages - 1);
-    const shown = list.slice(OF.page * PER, OF.page * PER + PER);
+    // "All" leaves cancelled orders out unless you ask for them (they're one tap away, and in the Cancelled tab)
+    const hideDead = state.settings.hideDead !== false && OF.status === 'all', deadN = hideDead ? list.filter(isDead).length : 0;
+    const rows = hideDead ? list.filter(o => !isDead(o)) : list;
+    const PER = 100, pages = Math.max(1, Math.ceil(rows.length / PER)); OF.page = clamp(OF.page, 0, pages - 1);
+    const shown = rows.slice(OF.page * PER, OF.page * PER + PER);
     const stores = Array.from(new Set(state.orders.map(o => o.store))).sort();
     const usedHouses = state.houses.filter(h => houseOrders(h.id).length);
     const cols = [['date', 'Date'], ['store', 'Store'], ['no', 'Order #', 'c-no'], ['item', 'Items'], ['total', 'Total', 'right'], ['status', 'Status'], ['profile', 'Profile'], ['house', 'House'], ['eta', 'Arrives']];
@@ -570,6 +576,7 @@ PAGES.orders = {
         <select id="oStore"><option value="">All stores</option>${stores.map(s => `<option value="${esc(s)}" ${OF.store === s ? 'selected' : ''}>${esc(Parser.storeInfo(s).label)}</option>`).join('')}</select>
         <select id="oProf"><option value="">All profiles</option><option value="__none" ${OF.profile === '__none' ? 'selected' : ''}>Not linked (${unlinked})</option>${state.profiles.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), undefined, { numeric: true })).map(p => `<option value="${p.id}" ${OF.profile === p.id ? 'selected' : ''}>${esc(p.name || 'Untitled')}</option>`).join('')}</select>
         <select id="oHouse"><option value="">All houses</option><option value="__none" ${OF.house === '__none' ? 'selected' : ''}>No address</option>${usedHouses.map(h => `<option value="${h.id}" ${OF.house === h.id ? 'selected' : ''}>${esc(houseLabel(h))}</option>`).join('')}</select>
+        ${OF.status === 'all' ? `<label class="check hidedead"><input type="checkbox" id="oHideDead" ${state.settings.hideDead !== false ? 'checked' : ''}> Hide cancelled${hideDead && deadN ? ` <span class="faint">(${deadN})</span>` : ''}</label>` : ''}
         ${OF.q || OF.store || OF.profile || OF.house || OF.range !== 'all' || OF.status !== 'all' ? '<button class="ghost sm" id="oReset">Reset filters</button>' : ''}
       </div>
       ${activeFilterText().length ? `<div class="note warn" style="margin:0 0 10px;display:flex;align-items:center;gap:10px"><span style="flex:1">Showing only: <b>${esc(activeFilterText().join(' · '))}</b> — ${list.length} of ${state.orders.length} orders</span><button class="sm" id="oReset2">Show all orders</button></div>` : ''}
@@ -579,7 +586,7 @@ PAGES.orders = {
         <button class="sm danger" id="oDel">Delete</button><div class="spacer"></div><button class="sm ghost" id="oClear">Clear selection</button></div>
       <div class="hstack" style="margin:0 0 10px;justify-content:space-between"><div class="seg" id="oView"><button data-ov="cards" class="${oView() === 'cards' ? 'on' : ''}">Cards</button><button data-ov="table" class="${oView() === 'table' ? 'on' : ''}">Table</button><button data-ov="calendar">Calendar</button><button data-ov="houses">Houses</button></div>
         <select id="oSort" style="width:auto">${[['date', 'Newest first'], ['eta', 'Arriving soonest'], ['total', 'Biggest total'], ['status', 'Status'], ['store', 'Store']].map(([k, l]) => `<option value="${k}" ${OF.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      ${oView() === 'cards' ? `<div class="olist ${oSelMode || oSelected.size ? 'selmode' : ''}">${shown.map(orderCardHtml).join('')}</div>${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}` : ''}
+      ${oView() === 'cards' ? `<div class="olist ${oSelMode || oSelected.size ? 'selmode' : ''}">${shown.map(orderCardHtml).join('')}</div>${rows.length ? '' : list.length ? `<div class="empty">${plural(list.length, 'order')} here, all cancelled. <button class="sm" data-showdead>Show cancelled</button></div>` : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}` : ''}
       <div class="tablewrap ${oSelMode || oSelected.size ? 'selmode' : ''}" ${oView() === 'cards' ? 'hidden' : ''}><table class="otable"><thead><tr><th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="oAll" ${shown.length && shown.every(o => oSelected.has(o.id)) ? 'checked' : ''} aria-label="Select all"></th>${cols.map(([k, l, c]) => `<th class="sort ${c || ''}" data-sort="${k}">${l}${OF.sort === k ? `<span class="arr">${OF.dir > 0 ? '▲' : '▼'}</span>` : ''}</th>`).join('')}<th class="c-trk">Tracking</th></tr></thead>
       <tbody>${shown.map(o => { const p = profileById(o.profileId), h = houseById(o.houseId); return `<tr data-oid="${o.id}" class="${oSelected.has(o.id) ? 'sel' : ''}">
         <td class="cb"><input type="checkbox" data-ocb="${o.id}" ${oSelected.has(o.id) ? 'checked' : ''} aria-label="Select"></td>
@@ -590,13 +597,15 @@ PAGES.orders = {
         <td class="ellipsis c-house" style="max-width:180px">${h ? esc(houseLabel(h)) : '<span class="faint dash">—</span>'}</td>
         <td class="c-eta ${!o.eta && o.status !== 'delivered' ? 'est' : ''}">${o.status === 'delivered' ? `<span style="color:var(--ok)">${fmtDate(o.deliveredAt || o.eta)}</span>` : isDead(o) ? '<span class="faint dash">—</span>' : o.eta ? (o.eta < todayKey() ? `<span style="color:var(--warn)" title="Past the expected date and no delivery email yet">${fmtDate(o.eta)} · late</span>` : `${fmtDate(o.eta)} <span class="faint small">${relDay(o.eta)}</span>`) : o.estEta ? `<span class="faint small" title="Not shipped yet — the order confirmation estimated this">not shipped · est. ${fmtDate(o.estEta)}</span>` : '<span class="faint dash">—</span>'}</td>
         <td class="c-trk">${(o.tracking || []).slice(0, 1).map(t => `<a href="${esc(t.live && t.live.publicUrl || Parser.trackingUrl(t.number, t.carrier))}" target="_blank" rel="noopener" class="small">${esc(t.carrier || 'Track')}</a>`).join('')}${o.tracking.length > 1 ? ` <span class="faint small">+${o.tracking.length - 1}</span>` : ''}</td></tr>`; }).join('')}</tbody></table>
-      ${list.length ? '' : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
+      ${rows.length ? '' : list.length ? `<div class="empty">${plural(list.length, 'order')} here, all cancelled. <button class="sm" data-showdead>Show cancelled</button></div>` : `<div class="empty">${state.orders.length ? 'No orders match these filters.' : 'No orders yet. Connect an inbox on the <a href="#inboxes">Inboxes</a> page and Kingpin will pull them in automatically, or add / import / paste them here.'}</div>`}</div>
       ${pages > 1 ? `<div class="pager">Page ${OF.page + 1} of ${pages}<button class="sm" id="oPrev" ${OF.page ? '' : 'disabled'}>‹ Prev</button><button class="sm" id="oNext" ${OF.page < pages - 1 ? '' : 'disabled'}>Next ›</button></div>` : ''}`;
     const rr = () => PAGES.orders.render();
     $('#oQ').oninput = debounce(e => { OF.q = e.target.value; OF.page = 0; rr(); setTimeout(() => { const i = $('#oQ'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } }); }, 160);
     $('#oRange').onclick = e => { const b = e.target.closest('[data-rg]'); if (b) { OF.range = b.dataset.rg; OF.page = 0; rr(); } };
     $('#oStatusTabs').onclick = e => { const b = e.target.closest('[data-st]'); if (b) { OF.status = b.dataset.st; OF.page = 0; rr(); } };
     $('#oStore').onchange = e => { OF.store = e.target.value; OF.page = 0; rr(); };
+    if ($('#oHideDead')) $('#oHideDead').onchange = e => { state.settings.hideDead = e.target.checked; save(); OF.page = 0; rr(); };
+    $$('#pg-orders [data-showdead]').forEach(b => b.onclick = () => { state.settings.hideDead = false; save(); rr(); });
     $('#oProf').onchange = e => { OF.profile = e.target.value; OF.page = 0; rr(); };
     $('#oHouse').onchange = e => { OF.house = e.target.value; OF.page = 0; rr(); };
     if ($('#oReset')) $('#oReset').onclick = () => { resetPageFilters('orders'); rr(); };

@@ -34,6 +34,44 @@ function hbars(rows, opts) {
 function greet() { const h = new Date().getHours(); return h < 5 ? 'Up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; }
 
 /* ================= dashboard ================= */
+// Which inbox's orders the dashboard counts: all of them, or the inboxes you pick (saved, so every device shows the same)
+function orderInboxIds(o) {
+  if ((o.inboxIds || []).length) return o.inboxIds;
+  const accs = state.imapAccounts || [];
+  if (o.source !== 'email') return [];
+  if (accs.length === 1) return [accs[0].id];
+  const r = String(o.recipientEmail || '').toLowerCase().trim(), a = r && accs.find(x => String(x.user || '').toLowerCase().trim() === r);
+  return a ? [a.id] : [];
+}
+function dashInboxSel() {
+  const ids = new Set((state.imapAccounts || []).map(a => a.id));
+  const sel = (state.settings.dashInboxes || []).filter(id => ids.has(id) || id === '__hand');
+  return sel.length ? sel : null;
+}
+function dashOrders() {
+  const sel = dashInboxSel(); if (!sel) return state.orders;
+  const S = new Set(sel);
+  return state.orders.filter(o => { const ib = orderInboxIds(o); return ib.length ? ib.some(i => S.has(i)) : o.source !== 'email' ? S.has('__hand') : false; });
+}
+function dashInboxPicker() {
+  const accs = state.imapAccounts || []; if (accs.length < 2) return '';
+  const sel = dashInboxSel(), hand = state.orders.some(o => o.source !== 'email');
+  const chip = (id, label, title) => `<button type="button" class="chip ${sel && sel.includes(id) ? 'on' : ''}" data-dib="${esc(id)}" title="${esc(title || label)}">${esc(label)}</button>`;
+  return `<div class="dibpick" id="dashInbox" aria-label="Show stats for"><span class="small muted">Stats for</span><button type="button" class="chip ${sel ? '' : 'on'}" data-dib="__all">All inboxes</button>${accs.map(a => chip(a.id, a.label || a.user, a.user)).join('')}${hand ? chip('__hand', 'Added by hand') : ''}</div>`;
+}
+function wireDashInbox() {
+  const box = $('#dashInbox'); if (!box) return;
+  box.onclick = e => {
+    const b = e.target.closest('[data-dib]'); if (!b) return;
+    const id = b.dataset.dib; let sel = dashInboxSel() || [];
+    if (id === '__all') sel = [];
+    else sel = sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id];
+    // every inbox picked = all of them
+    const accs = (state.imapAccounts || []).map(a => a.id);
+    if (accs.every(x => sel.includes(x)) && (!state.orders.some(o => o.source !== 'email') || sel.includes('__hand'))) sel = [];
+    state.settings.dashInboxes = sel; save(); PAGES.dashboard.render();
+  };
+}
 const DASH = (() => { try { return Object.assign({ days: 30, from: '', to: '' }, JSON.parse(localStorage.getItem('crown.dash') || '{}')); } catch (_) { return { days: 30, from: '', to: '' }; } })();
 PAGES.dashboard = {
   render() {
@@ -41,27 +79,29 @@ PAGES.dashboard = {
     const mStart = new Date(now.getFullYear(), now.getMonth(), 1), lmStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const inM = o => { const d = toDate(o.orderDate); return d && d >= mStart; };
     const inLM = o => { const d = toDate(o.orderDate); return d && d >= lmStart && d < mStart && d.getDate() <= now.getDate(); };
-    const thisM = state.orders.filter(inM), lastM = state.orders.filter(inLM);
+    const ORD = dashOrders();
+    const thisM = ORD.filter(inM), lastM = ORD.filter(inLM);
     const spentM = sum(thisM, orderSpend), spentLM = sum(lastM, orderSpend);
-    const transit = state.orders.filter(inTransit);
-    const d30 = state.orders.filter(o => inRange(o.orderDate, '30'));
+    const transit = ORD.filter(inTransit);
+    const d30 = ORD.filter(o => inRange(o.orderDate, '30'));
     const si30 = stickInfo(d30), stick = si30.rate;
-    const soon = state.orders.filter(o => isActive(o) && o.eta && o.eta <= dayKey(new Date(Date.now() + 1 * 864e5)) && o.eta >= tk);
-    const upcoming = state.orders.filter(o => isActive(o) && o.eta && o.eta >= tk).sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 8);
-    const overdue = state.orders.filter(o => isActive(o) && o.eta && o.eta < tk && (inTransit(o) || o.status === 'confirmed'));
-    const events = state.orders.flatMap(o => (o.history || []).map(h => ({ o, h }))).sort((a, b) => String(b.h.date).localeCompare(String(a.h.date))).slice(0, 9);
+    const soon = ORD.filter(o => isActive(o) && o.eta && o.eta <= dayKey(new Date(Date.now() + 1 * 864e5)) && o.eta >= tk);
+    const upcoming = ORD.filter(o => isActive(o) && o.eta && o.eta >= tk).sort((a, b) => a.eta.localeCompare(b.eta)).slice(0, 8);
+    const overdue = ORD.filter(o => isActive(o) && o.eta && o.eta < tk && (inTransit(o) || o.status === 'confirmed'));
+    const hideDead = state.settings.hideDead !== false;
+    const events = ORD.filter(o => !hideDead || !isDead(o)).flatMap(o => (o.history || []).filter(h => !hideDead || !/cancel/.test(h.status)).map(h => ({ o, h }))).sort((a, b) => String(b.h.date).localeCompare(String(a.h.date))).slice(0, 9);
     // spending chart: any number of days, or a custom From–To
     let dFrom, dTo;
     if (DASH.from || DASH.to) { dFrom = parseDay(DASH.from) || parseDay(DASH.to); dTo = parseDay(DASH.to) || new Date(now.getFullYear(), now.getMonth(), now.getDate()); if (dFrom > dTo) [dFrom, dTo] = [dTo, dFrom]; }
     else { dTo = new Date(now.getFullYear(), now.getMonth(), now.getDate()); dFrom = new Date(dTo.getFullYear(), dTo.getMonth(), dTo.getDate() - (DASH.days - 1)); }
     const days = []; for (let d = new Date(dFrom); d <= dTo && days.length < 400; d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) days.push({ k: dayKey(d), label: (d.getMonth() + 1) + '/' + d.getDate(), value: 0, n: 0 });
     const dIdx = Object.fromEntries(days.map((d, i) => [d.k, i]));
-    state.orders.forEach(o => { const d = toDate(o.orderDate); if (!d) return; const i = dIdx[dayKey(d)]; if (i != null) { days[i].value += orderSpend(o); if (!isDead(o)) days[i].n++; } });
+    ORD.forEach(o => { const d = toDate(o.orderDate); if (!d) return; const i = dIdx[dayKey(d)]; if (i != null) { days[i].value += orderSpend(o); if (!isDead(o)) days[i].n++; } });
     days.forEach(d => d.title = `${d.label}: ${fmtMoney(d.value)} · ${plural(d.n, 'order')}`);
     let bars = days; if (days.length > 120) { bars = []; for (let i = 0; i < days.length; i += 7) { const w = days.slice(i, i + 7); bars.push({ label: w[0].label, value: sum(w, d => d.value), n: sum(w, d => d.n), title: `Week of ${w[0].label}: ${fmtMoney(sum(w, d => d.value))} · ${plural(sum(w, d => d.n), 'order')}` }); } }
     const dLabel = DASH.from || DASH.to ? `${fmtDate(dayKey(dFrom))} – ${fmtDate(dayKey(dTo))}` : DASH.days === 1 ? 'Today' : `Last ${DASH.days} days`;
     const dOrders = sum(days, d => d.n);
-    const inSel = state.orders.filter(o => { const d = toDate(o.orderDate); return d && dIdx[dayKey(d)] != null; });
+    const inSel = ORD.filter(o => { const d = toDate(o.orderDate); return d && dIdx[dayKey(d)] != null; });
     const dDead = inSel.filter(isDead).length, dItems = sum(inSel.filter(o => !isDead(o)), itemCount);
     const unlinked = state.orders.filter(o => !o.profileId && !isDead(o)).length;
     const noAddr = state.orders.filter(o => !o.houseId && !isDead(o)).length;
@@ -86,6 +126,7 @@ PAGES.dashboard = {
     pg.innerHTML = `<div class="pagehead"><h1>${greet()} 👑</h1><span class="sub">${now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span><div class="spacer"></div>
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Kingpin reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
+      ${dashInboxPicker()}
       <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
 <button class="chip ${DASH.from || DASH.to || DASH.custom ? 'on' : ''}" id="dCustom">Custom</button>
         <span class="hstack rangeins" style="gap:6px" ${DASH.from || DASH.to || DASH.custom ? '' : 'hidden'}><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
@@ -108,7 +149,7 @@ PAGES.dashboard = {
       <div class="cols2" style="margin-bottom:14px">
         <div class="card"><h3>Upcoming deliveries<span class="spacer"></span><button class="ghost sm" data-nav="calendar">Calendar ›</button></h3>
           ${upcoming.length ? `<div class="list">${upcoming.map(o => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><b>${fmtDate(o.eta, { weekday: true })}</b><div class="small faint">${statusDot(o.status)}${relDay(o.eta)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">Nothing on the way with a delivery date.</div>'}</div>
-        <div class="card"><h3>Recent activity</h3>
+        <div class="card"><h3>Recent activity<span class="spacer"></span><button class="ghost sm" id="dDead" title="Cancelled orders are ${hideDead ? 'hidden' : 'shown'} here and on Orders">${hideDead ? 'Show cancelled' : 'Hide cancelled'}</button></h3>
           ${events.length ? `<div class="list">${events.map(({ o, h }) => `<div class="li click dli" data-order="${o.id}">${thumb(orderImage(o), 'sm')}<div class="mmain"><div class="t2" title="${esc(orderTitle(o))}">${esc(shortTitle(o)) || '#' + esc(o.orderNumber)}</div><div class="small ellipsis" style="color:${histColor(h)}">${esc(histLabel(h))}</div><div class="small muted ellipsis">${dashSub(o)}</div></div><div class="dright"><div class="small faint nowrap">${fmtDT(h.date)}</div></div></div>`).join('')}</div>` : '<div class="empty sm">No activity yet.</div>'}</div>
       </div>
       <div class="cols2">
@@ -117,6 +158,8 @@ PAGES.dashboard = {
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
     if ($('#dSync')) $('#dSync').onclick = () => syncAll(true, null, { ask: true });
+    wireDashInbox();
+    if ($('#dDead')) $('#dDead').onclick = () => { state.settings.hideDead = !hideDead; save(); PAGES.dashboard.render(); };
     $('#dShare').onclick = openShare; $('#dProfit').onclick = openShare;
     $('#dCustom').onclick = () => { DASH.custom = !(DASH.custom || DASH.from || DASH.to); if (!DASH.custom) DASH.from = DASH.to = ''; PAGES.dashboard.render(); };
     IV.onUpdate = () => { if (!cryptoKey) return; if ($('#dlgShare').open) renderShare(); else if ($('#dlgPrices').open) renderPriceReview(); else if (route.page === 'dashboard' && !document.querySelector('dialog[open]')) PAGES.dashboard.render(); };
@@ -293,7 +336,8 @@ const recapSpec = () => SHARE.range === 'page' ? dashSpec() : SHARE.range;
 const recapName = n => String(n || '').replace(/^(?:\s*pok[eé]mon\s+(?:trading\s+card\s+game|tcg)\s*[:\-–—]?\s*)+/i, '').replace(/^(?:scarlet\s*&\s*violet|sword\s*&\s*shield|mega\s+evolution)\s*[—–:]\s*/i, '').replace(/\s+/g, ' ').trim();
 const fmtSigned = v => (v >= 0 ? '+' : '−') + fmtMoney(Math.abs(v), Math.abs(v) >= 10000);
 function recapData() {
-  const spec = recapSpec(), list = ordersInRange(spec), cs = spStats(list), pf = profitOf(list);
+  const D = dashInboxSel() ? new Set(dashOrders()) : null;   // the inbox(es) picked on the dashboard
+  const spec = recapSpec(), list = ordersInRange(spec).filter(o => !D || D.has(o)), cs = spStats(list), pf = profitOf(list);
   return { spec, list, cs, pf, label: rangeLabel(spec) };
 }
 function recapCardHtml() {

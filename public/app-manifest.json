@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "6374df913df123b0185eb99f0e0066e7aaab848972b57b6e2024ef63f70a586c",
-   "size": 34662
+   "sha256": "44b751f523d9b73f0786a5051203def9daf418c5def3e982616b6199d1f54fc2",
+   "size": 35319
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,7 +58,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "1a353b64974bde4fd8c63604792a77e2f8c00ecbc6b426175073962216e010bd",
+   "sha256": "d1956a01a4ca3d0ae5031363afd32613ee7370d7dfe768f52f92214df7cb1cb1",
    "size": 53047
   },
   "ct-icon-180.png": {
@@ -154,16 +154,16 @@
    "size": 13383
   },
   "orders.js": {
-   "sha256": "d19c3d4ce667d5d813c1b70f08345ddd72c9956c27f0f57e5ceb32cf77745ac7",
-   "size": 104500
+   "sha256": "087f7bddff8b0efa0e552613ffd2d7aceb6e2f3f873c9bc6ff7303d2fbab91a0",
+   "size": 105944
   },
   "packages.js": {
    "sha256": "8c5e10ec335fcbb8bdb43c697358097ae79182f696a5d64b397621cad7f7313c",
    "size": 21156
   },
   "pages.js": {
-   "sha256": "b4e08020a686e2d35537c7284edbf9ed7d43f9735ea4594cb67ec7a66dd2b59a",
-   "size": 94138
+   "sha256": "a81dbcdcf43c47564b5bc53440a618824580136343416598b305a7e1485fa930",
+   "size": 97065
   },
   "parser.js": {
    "sha256": "e086ec20e76cad72f1f3a949019c8b49d34d892635e9db82b471e5ff44c6f2cf",
@@ -222,16 +222,16 @@
    "size": 21107
   },
   "styles.css": {
-   "sha256": "51c390475c9408c7821eb2ef081448c3e805d2268c098898219583d9be27e5eb",
-   "size": 94088
+   "sha256": "cc784f23c072210d8424a9ee679e6d849559d79028e0fe84c4a263933461ab9d",
+   "size": 94172
   },
   "sw.js": {
    "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
    "size": 2039
   },
   "sync.js": {
-   "sha256": "0b02763c022df929c404509c41a89ff32545da7bad9831e875783ca8c61f131b",
-   "size": 38236
+   "sha256": "0c3f9522e4bbfc2848facf0ceaccc6a46d01cd0543f6ffd51d7cd869af4a686b",
+   "size": 38286
   },
   "terms.html": {
    "sha256": "d135d9ffe5ca127d01bc854d304dd87bcc689a1e3f56bec5e15a96a4a87d1713",
@@ -321,5 +321,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.6"
+ "version": "0.20.7"
 }
