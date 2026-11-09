@@ -472,7 +472,22 @@ function orderWhen(o) {
   if (o.status === 'shipped') return late ? { cls: 's-late', step: 3, t: 'Running late · was due ' + rel(o.eta) } : { cls: 's-transit', step: 3, t: 'In transit' + (o.eta ? ' · arrives ' + rel(o.eta) : '') };
   return { cls: 's-confirmed', step: 1, t: (o.status === 'confirmed' ? 'Confirmed' : 'Placed') + (o.eta && !late ? ' · arrives ' + rel(o.eta) : ' · waiting to ship') };
 }
+// phones: one slim row per order (picture · name · store and date · progress | price · status), so a screen shows ~8
+const oPhone = () => window.matchMedia('(max-width:760px)').matches;
+function orderRowHtml(o) {
+  const w = orderWhen(o), img = orderImage(o), n = itemCount(o), tot = orderSpend(o) || Number(o.total) || 0;
+  const sc = isDead(o) ? 'var(--danger)' : w.cls === 's-delivered' ? 'var(--ok)' : w.cls === 's-late' ? 'var(--warn)' : (STATUS[o.status] || STATUS.placed).c;
+  const short = w.t.split(' · ')[0];
+  const pre = typeof preChip === 'function' ? preChip(o) : '';
+  return `<div class="ocard orow ${w.cls} ${oSelected.has(o.id) ? 'sel' : ''}" data-oid="${o.id}" style="--sc:${sc}"><span class="ocheck"></span>
+    <div class="opic${img ? '' : ' none'}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : '📦'}</div>
+    <div class="omain"><div class="otitle">${esc(shortTitle(o)) || 'Order #' + esc(o.orderNumber || '—')}</div>
+      <div class="ometa">${storeBadge(o.store)}<span>· ${esc(fmtDate(o.orderDate))}</span></div>
+      <div class="oprog ${isDead(o) ? 'dead' : w.step === 4 ? 'done' : ''}">${[0, 1, 2, 3].map(i => `<i class="${isDead(o) ? (i === 0 ? 'on' : '') : i < w.step ? 'on' : ''}"></i>`).join('')}</div></div>
+    <div class="oside"><div class="oprice">${fmtMoney(tot)}</div><div class="ostat2" title="${esc(w.t)}"><i></i>${esc(short)}</div>${pre}</div></div>`;
+}
 function orderCardHtml(o) {
+  if (oPhone()) return orderRowHtml(o);
   const w = orderWhen(o), img = orderImage(o), n = itemCount(o), tot = orderSpend(o) || Number(o.total) || 0, h = houseById(o.houseId), p = profileById(o.profileId);
   const first = (o.items || [])[0], each = n === 1 && first && first.price != null ? null : (o.items || []).length === 1 && first && first.price != null ? Number(first.price) : null;
   const steps = ['Ordered', 'Shipped', 'In transit', 'Delivered'];

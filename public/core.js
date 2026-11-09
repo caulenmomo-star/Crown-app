@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.4'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.5'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -116,12 +116,14 @@ async function api(path, body, method) {
   let res;
   const headers = { 'X-Crown': '1', 'X-Crown-App': VERSION };
   if (body) headers['Content-Type'] = 'application/json';
-  if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; }
+  if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; const dt = typeof devToken === 'function' ? devToken(acctEmail) : ''; if (dt) headers['X-Crown-Device'] = dt; }
   try {
     res = await fetch(path, { method: method || (body ? 'POST' : 'GET'), headers, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   } catch (e) { throw new Error(CLOUD ? 'Can’t reach Kingpin Online — check your internet connection.' : 'Kingpin’s helper isn’t running. Open Kingpin with “Start Kingpin”.'); }
   let j = null; try { j = await res.json(); } catch (_) { }
   if (j && j.outdated) showOutdated();
+  // two-step sign-in: this device needs a code once, then the request carries on
+  if (j && j.needCode && CLOUD && authKey && typeof tfaApprove === 'function' && path !== '/api/auth/device') { if (await tfaApprove()) return api(path, body, method); const err = new Error('Sign-in needs the code from your authenticator app.'); err.data = j; throw err; }
   if (j && j.noAccess && cryptoKey && typeof Account !== 'undefined') Account.lostAccess(j.reason);
   if (!res.ok || !j || j.ok === false) { const err = new Error((j && j.error) || ('Request failed (' + res.status + ')')); err.data = j || {}; throw err; }
   return j;

@@ -243,5 +243,5 @@ const Account = (() => {
       catch (e) { toast(e.message); }
     };
   }
-  return { boot, show, setPanel, lostAccess, card, wireCard, get acct() { return acct; }, signOut };
+  return { boot, show, setPanel, lostAccess, card, wireCard, get acct() { return acct; }, signOut, info: () => acct, async reload() { acct = (await api('/api/account')).account; return acct; } };
 })();

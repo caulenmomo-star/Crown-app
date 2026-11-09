@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.20.4"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.20.5"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -3096,6 +3096,11 @@ class TooMany(Exception):
     pass
 
 
+class NeedCode(Exception):
+    """Two-step sign-in is on and this device hasn't been approved with a code yet."""
+    pass
+
+
 class NoAccess(Exception):
     def __init__(self, status):
         Exception.__init__(self, "no access")
@@ -3287,14 +3292,80 @@ def public_account(u, s=None):
             "comp": {"until": comp.get("until") or None, "note": comp.get("note") or ""},
             "price": {"cents": int(s["priceCents"]), "currency": s["currency"], "trialDays": int(s.get("trialDays") or 0)},
             "graceDays": int(s.get("graceDays") or 0), "trialUsed": bool(u.get("trialUsed")),
-            "billingReady": billing_ready(), "mailReady": mail_ready(), "announcement": s.get("announcement") or ""}
+            "billingReady": billing_ready(), "mailReady": mail_ready(), "announcement": s.get("announcement") or "",
+            "tfa": tfa_on(u), "recoveryLeft": len((u.get("tfa") or {}).get("recovery") or []), "devices": len(u.get("devices") or {})}
 
 
 def client_ip(headers):
     return (headers.get("X-Forwarded-For") or headers.get("X-Real-Ip") or "").split(",")[0].strip() or "?"
 
 
-def require_user(headers, need_access=True):
+# ---------------------------------------------------------------- two-step sign-in (authenticator app)
+# With it on, the password alone isn't enough: each new phone / computer / browser also needs a 6-digit code from an
+# authenticator app (or a one-time recovery code) once. That device is then remembered until it's removed in Settings
+# or goes 60 days without being used.
+DEVICE_IDLE_DAYS = 60
+MAX_DEVICES = 25
+
+
+def _dev_id(tok):
+    return sha("dev:" + str(tok or ""))[:32]
+
+
+def tfa_on(u):
+    return bool((u.get("tfa") or {}).get("on"))
+
+
+def device_of(u, headers):
+    tok = headers.get("X-Crown-Device") or ""
+    if not tok:
+        return None
+    did = _dev_id(tok)
+    d = (u.get("devices") or {}).get(did)
+    if not d or float(d.get("lastSeen") or d.get("at") or 0) < now() - DEVICE_IDLE_DAYS * DAY:
+        return None
+    return did
+
+
+def _recovery_codes():
+    codes = ["%s-%s" % (_secrets.token_hex(2), _secrets.token_hex(2)) for _ in range(8)]
+    return codes, [sha("rc:" + c) for c in codes]
+
+
+def tfa_check(u, code):
+    """A current authenticator code, or an unused recovery code (used up). Counts wrong tries."""
+    t = u.get("tfa") or {}
+    rate_limit("tfa", u["id"], 10, 900)
+    raw = str(code or "").strip().lower()
+    if re.fullmatch(r"[0-9a-f]{4}-?[0-9a-f]{4}", raw):
+        h_ = sha("rc:" + raw[:4] + "-" + raw[-4:])
+        if h_ in (t.get("recovery") or []):
+            t["recovery"] = [x for x in t["recovery"] if x != h_]
+            u["tfa"] = t
+            clear_limit("tfa", u["id"])
+            return "recovery"
+    step = totp_ok(t.get("secret") or "", raw, t.get("lastStep"))
+    if step:
+        t["lastStep"] = step
+        u["tfa"] = t
+        clear_limit("tfa", u["id"])  # a right code resets the wrong-tries count
+        return "code"
+    time.sleep(0.4)
+    raise UserError("That code didn’t work. Use the newest 6-digit code from your authenticator app.")
+
+
+def add_device(u, name, headers):
+    tok = _secrets.token_urlsafe(32)
+    devs = u.get("devices") or {}
+    devs[_dev_id(tok)] = {"name": str(name or "A device")[:60], "at": now(), "lastSeen": now(), "ip": client_ip(headers)[:64]}
+    if len(devs) > MAX_DEVICES:
+        for k in sorted(devs, key=lambda k: devs[k].get("lastSeen") or 0)[:len(devs) - MAX_DEVICES]:
+            devs.pop(k, None)
+    u["devices"] = devs
+    return tok
+
+
+def require_user(headers, need_access=True, need_device=True):
     email = norm_email(headers.get("X-Crown-Email"))
     key = headers.get("X-Crown-Auth") or ""
     ip = client_ip(headers)
@@ -3310,6 +3381,14 @@ def require_user(headers, need_access=True):
         rate_limit("lfi", ip, 1000, 900)
         time.sleep(0.3)
         raise PermissionError("Wrong email or password.")
+    if need_device and tfa_on(u):
+        did = device_of(u, headers)
+        if not did:
+            raise NeedCode()
+        d = u["devices"][did]
+        if now() - float(d.get("lastSeen") or 0) > 6 * 3600:
+            d["lastSeen"] = now()
+            put_user(u)
     if need_access:
         ok, reason = access_of(u)
         if not ok:
@@ -3609,6 +3688,7 @@ def admin_user_row(u, s, t):
     sub = u.get("sub") or {}
     comp = u.get("comp") or {}
     return {"id": u["id"], "email": u["email"], "createdAt": u.get("createdAt"), "lastSeen": u.get("lastSeen"), "verified": bool(u.get("verified")),
+            "tfa": tfa_on(u), "devices": len(u.get("devices") or {}),
             "access": ok, "reason": reason, "subStatus": sub.get("status") or "", "periodEnd": sub.get("periodEnd") or 0, "cancelAtPeriodEnd": bool(sub.get("cancelAtPeriodEnd")),
             "compUntil": comp.get("until"), "compNote": comp.get("note") or "", "suspended": bool(u.get("suspended")), "note": u.get("adminNote") or "",
             "customerId": u.get("customerId") or "", "vaultSize": u.get("vaultSize") or 0}
@@ -3710,6 +3790,8 @@ class handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": False, "conflict": True, "rev": c.rev, "error": "Kingpin was changed on another device."})
         except TooMany:
             self._send(200, {"ok": False, "error": "Too many tries. Wait 15 minutes and try again."})
+        except NeedCode:
+            self._send(200, {"ok": False, "needCode": True, "error": "Enter the 6-digit code from your authenticator app to sign in on this device."})
         except NoAccess as e:
             self._send(200, {"ok": False, "noAccess": True, "reason": e.status, "error": "Your Kingpin subscription isn't active."})
         except PermissionError as e:
@@ -3882,6 +3964,97 @@ class handler(BaseHTTPRequestHandler):
             return self._admin_post(r)
         ip = client_ip(h)
 
+        if r == "/auth/device":  # approve this device with a code (only needed when two-step sign-in is on)
+            def approve():
+                b = self._body()
+                u = require_user(h, need_access=False, need_device=False)
+                if not tfa_on(u):
+                    return {"ok": True, "token": ""}
+                how = tfa_check(u, b.get("code"))
+                tok = add_device(u, b.get("name"), h)
+                put_user(u)
+                audit(u["email"], "approved a device", u["id"], detail=("%s · %s" % (str(b.get("name") or "")[:60], client_ip(h)[:64])) + (" · recovery code" if how == "recovery" else ""))
+                try:
+                    send_mail(u["email"], "Kingpin: a new device signed in",
+                              "Your Kingpin account was just opened on a new device: %s.\n\nIf that wasn't you or someone you trust, change your password right away and remove the device in Settings → Security." % (str(b.get("name") or "A device")[:60]))
+                except Exception:
+                    pass
+                return {"ok": True, "token": tok, "recoveryLeft": len(u["tfa"].get("recovery") or []), "usedRecovery": how == "recovery"}
+            return self._run(approve)
+        if r == "/auth/tfa/start":
+            def start():
+                u = require_user(h, need_access=False)
+                if tfa_on(u):
+                    raise UserError("Two-step sign-in is already on.")
+                t = u.get("tfa") or {}
+                t["pending"] = b32secret()
+                u["tfa"] = t
+                put_user(u)
+                return {"ok": True, "secret": t["pending"], "uri": "otpauth://totp/Kingpin:%s?secret=%s&issuer=Kingpin" % (_urlencode({"": u["email"]})[1:], t["pending"])}
+            return self._run(start)
+        if r == "/auth/tfa/enable":
+            def enable():
+                b = self._body()
+                u = require_user(h, need_access=False)
+                t = u.get("tfa") or {}
+                if tfa_on(u) or not t.get("pending"):
+                    raise UserError("Start setting it up again.")
+                rate_limit("tfa", u["id"], 10, 900)
+                step = totp_ok(t["pending"], b.get("code"))
+                if not step:
+                    raise UserError("That code didn’t work. Check your phone’s time is set automatically, and use the newest code.")
+                clear_limit("tfa", u["id"])
+                codes, hashes = _recovery_codes()
+                u["tfa"] = {"on": True, "secret": t["pending"], "lastStep": step, "recovery": hashes, "since": now()}
+                u["devices"] = {}
+                tok = add_device(u, b.get("name"), h)
+                put_user(u)
+                audit(u["email"], "turned on two-step sign-in", u["id"])
+                return {"ok": True, "token": tok, "recovery": codes}
+            return self._run(enable)
+        if r == "/auth/tfa/disable":
+            def disable():
+                b = self._body()
+                u = require_user(h, need_access=False)
+                if not tfa_on(u):
+                    return {"ok": True}
+                tfa_check(u, b.get("code"))
+                u.pop("tfa", None)
+                u.pop("devices", None)
+                put_user(u)
+                audit(u["email"], "turned off two-step sign-in", u["id"])
+                return {"ok": True}
+            return self._run(disable)
+        if r == "/auth/tfa/recovery":  # a fresh set of recovery codes (the old ones stop working)
+            def recovery():
+                b = self._body()
+                u = require_user(h, need_access=False)
+                if not tfa_on(u):
+                    raise UserError("Turn on two-step sign-in first.")
+                tfa_check(u, b.get("code"))
+                codes, hashes = _recovery_codes()
+                u["tfa"]["recovery"] = hashes
+                put_user(u)
+                audit(u["email"], "made new recovery codes", u["id"])
+                return {"ok": True, "recovery": codes}
+            return self._run(recovery)
+        if r == "/auth/devices":
+            def devices():
+                b = self._body()
+                u = require_user(h, need_access=False)
+                me = device_of(u, h)
+                devs = u.get("devices") or {}
+                rm = str(b.get("remove") or "")
+                if rm:
+                    for k in list(devs):
+                        if (rm == "others" and k != me) or k == rm:
+                            devs.pop(k, None)
+                    u["devices"] = devs
+                    put_user(u)
+                    audit(u["email"], "removed devices", u["id"], detail=rm[:40])
+                return {"ok": True, "devices": sorted([{"id": k, "name": d.get("name") or "A device", "at": d.get("at"), "lastSeen": d.get("lastSeen"), "me": k == me}
+                                                       for k, d in devs.items()], key=lambda x: (not x["me"], -(x["lastSeen"] or 0)))}
+            return self._run(devices)
         if r == "/auth/salt":
             def salt():
                 b = self._body()
@@ -4027,6 +4200,7 @@ class handler(BaseHTTPRequestHandler):
                 u["authHash"] = hash_key(b["authKey"])
                 u["salt"] = b["vault"]["salt"]
                 u["verified"] = True
+                u.pop("devices", None)  # every device signs in again (and still needs a code if two-step is on)
                 put_user(u)
                 save_vault(uid, b["vault"], "force")
                 audit(u["email"], "reset password", uid)
@@ -4288,7 +4462,7 @@ class handler(BaseHTTPRequestHandler):
                 audit(who, "changed settings", detail=", ".join(changes))
                 return {"ok": True, "settings": {k: v for k, v in settings().items() if not k.startswith("stripe")}}
             return act(save_settings)
-        m = re.fullmatch(r"/admin/user/([a-f0-9]{24})/(grant|revoke|suspend|unsuspend|verify|note|delete|resend|sync)", r)
+        m = re.fullmatch(r"/admin/user/([a-f0-9]{24})/(grant|revoke|suspend|unsuspend|verify|note|delete|resend|sync|tfaoff)", r)
         if m:
             uid, what = m.group(1), m.group(2)
 
@@ -4326,6 +4500,9 @@ class handler(BaseHTTPRequestHandler):
                     if not mail_ready():
                         raise UserError("Email isn't set up on the server yet.")
                     send_verify(u, h)
+                elif what == "tfaoff":  # lost their phone and recovery codes
+                    u.pop("tfa", None)
+                    u.pop("devices", None)
                 elif what == "sync":
                     sync_from_stripe(u)
                     u = get_user(uid)

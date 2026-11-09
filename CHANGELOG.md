@@ -2,6 +2,13 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.5 — Two-step sign-in, slimmer orders on phones (2026-11-08)
+
+- Kingpin Online: turn on two-step sign-in in Settings → Security. Each new phone or computer then needs a 6-digit code from an authenticator app, once.
+- Recovery codes in case you lose your phone. You can see your signed-in devices, remove one, or sign out all the others.
+- Orders on a phone are now slim rows: picture, name, store and date, a progress bar, price and status. About twice as many fit on the screen.
+- The Windows app opens in about a second, and the downloads are much smaller.
+
 ## v0.20.4 — The Mac and Windows apps update themselves (2026-11-08)
 
 - Kingpin for Mac and Windows downloads new versions in the background and checks every file before using it.

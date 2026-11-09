@@ -561,7 +561,8 @@ PAGES.settings = {
         <div class="card"><h3>Security</h3>
           <div class="small muted" style="margin-bottom:8px">Lock automatically after</div>
           <div class="chips" id="stLock">${[[0, 'Never'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([v, l]) => `<button class="chip ${S.autoLockMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
-          <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div></div>
+          <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div>
+          ${typeof tfaCardHtml === 'function' ? tfaCardHtml() : ''}</div>
         ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
           <div class="small muted" style="margin-bottom:10px">Kingpin looks up every package: every scan, the arrival date, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page; orders and the calendar update on their own. Keys stay encrypted inside your Kingpin data.</div>
@@ -619,6 +620,7 @@ PAGES.settings = {
       <div class="small faint" style="margin-top:16px">Kingpin v${VERSION}${CLOUD ? ' · Kingpin Online' : ''}</div>`;
     if (typeof wireInstallCard === 'function') wireInstallCard();
     if (typeof wireUpSettings === 'function') wireUpSettings();
+    if (typeof wireTfaCard === 'function') wireTfaCard();
     $('#stLock').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; S.autoLockMin = +b.dataset.v; save(); PAGES.settings.render(); };
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();

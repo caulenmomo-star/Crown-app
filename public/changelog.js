@@ -1,6 +1,12 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.5', date: '2026-11-08', title: 'Two-step sign-in, slimmer orders on phones', items: [
+    'Kingpin Online: turn on two-step sign-in in Settings → Security. Each new phone or computer then needs a 6-digit code from an authenticator app, once.',
+    'Recovery codes in case you lose your phone. You can see your signed-in devices, remove one, or sign out all the others.',
+    'Orders on a phone are now slim rows: picture, name, store and date, a progress bar, price and status. About twice as many fit on the screen.',
+    'The Windows app opens in about a second, and the downloads are much smaller.',
+  ] },
   { v: '0.20.4', date: '2026-11-08', title: 'The Mac and Windows apps update themselves', items: [
     'Kingpin for Mac and Windows downloads new versions in the background and checks every file before using it.',
     'On the lock screen it switches right away. While you’re working it offers “Restart now” (it saves first), or uses the new version next time it opens.',

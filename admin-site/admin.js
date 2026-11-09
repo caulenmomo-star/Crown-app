@@ -185,6 +185,7 @@ async function openUser(id) {
       <div class="k">Email confirmed</div><div>${u.verified ? 'Yes' : 'No'}</div>
       <div class="k">Joined</div><div>${dtime(u.createdAt)} · agreed to ${money(u.agreedPrice)}/mo</div>
       <div class="k">Last used</div><div>${dtime(u.lastSeen)}</div>
+      <div class="k">Two-step sign-in</div><div>${u.tfa ? `On · ${u.devices} device${u.devices === 1 ? '' : 's'} approved` : 'Off'}</div>
       <div class="k">Data</div><div>${Math.round((u.vaultSize || 0) / 1024)} KB encrypted · ${u.backups} backups</div></div>
     <div class="sec">Free access (skip payment)</div>
     <div class="chips">${[[7, '7 days'], [30, '30 days'], [90, '90 days'], [365, '1 year']].map(([v, l]) => `<button class="chip" data-g="${v}">${l}</button>`).join('')}<button class="chip" data-g="forever">No end date</button></div>
@@ -192,7 +193,7 @@ async function openUser(id) {
     <label style="display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="gExtend" checked> Add to any free time they already have</label>
     <div class="actions"><button class="primary" id="grantGo" style="width:auto">Give free access</button>${u.compUntil ? '<button id="gRevoke">Remove free access</button>' : ''}</div>
     <div class="sec">Account</div>
-    <div class="actions">${u.suspended ? '<button id="aUnsus">Unsuspend</button>' : '<button class="danger" id="aSus">Suspend</button>'}${u.verified ? '' : '<button id="aVer">Mark email confirmed</button><button id="aRes">Resend confirmation</button>'}${u.customerId ? '<button id="aSync">Refresh from Stripe</button>' : ''}</div>
+    <div class="actions">${u.suspended ? '<button id="aUnsus">Unsuspend</button>' : '<button class="danger" id="aSus">Suspend</button>'}${u.tfa ? '<button id="aTfa">Turn off two-step sign-in</button>' : ''}${u.verified ? '' : '<button id="aVer">Mark email confirmed</button><button id="aRes">Resend confirmation</button>'}${u.customerId ? '<button id="aSync">Refresh from Stripe</button>' : ''}</div>
     <label>Private note</label><div class="row"><input id="aNote" value="${esc(u.note)}"><button id="aNoteGo" style="flex:0 0 auto">Save note</button></div>
     <div class="sec">History</div><div class="log">${u.history.map(x => `<div><span class="faint">${dtime(x.at)}</span> · ${esc(x.actor)} ${esc(x.action)} <span class="muted">${det(x.detail)}</span></div>`).join('') || '<div class="muted">—</div>'}</div>
     <div class="sec">Danger zone</div><div class="actions"><button class="danger" id="aDel">Delete account…</button></div>
@@ -204,6 +205,7 @@ async function openUser(id) {
   if ($('#gRevoke')) $('#gRevoke').onclick = () => act('revoke', {}, 'Free access removed');
   if ($('#aSus')) $('#aSus').onclick = () => act('suspend', { note: $('#aNote').value }, 'Suspended');
   if ($('#aUnsus')) $('#aUnsus').onclick = () => act('unsuspend', {}, 'Unsuspended');
+  if ($('#aTfa')) $('#aTfa').onclick = () => { if (confirm('Turn off two-step sign-in for this account? Only do this when you know it’s really them (lost phone and recovery codes). Their password still protects the data.')) act('tfaoff', {}, 'Two-step sign-in turned off'); };
   if ($('#aVer')) $('#aVer').onclick = () => act('verify', {}, 'Marked confirmed');
   if ($('#aRes')) $('#aRes').onclick = () => act('resend', {}, 'Confirmation sent');
   if ($('#aSync')) $('#aSync').onclick = () => act('sync', {}, 'Refreshed');
