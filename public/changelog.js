@@ -1,6 +1,12 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.6', date: '2026-11-09', title: 'Pick which stores each inbox syncs', items: [
+    'When you add an inbox, choose the stores it reads. Its first sync and every automatic sync only read emails from those stores.',
+    '“Sync now” asks which stores to sync each time, starting from that inbox’s saved stores. Tick “Also use these for automatic syncs” to change what’s saved.',
+    'A store left out of a sync is caught up the next time it’s included, so nothing is missed. Emails from other stores aren’t downloaded at all.',
+    'Menards orders are read properly now: order number (MCOM…), items with quantity and price, delivery address, and status updates like “On the way”.',
+  ] },
   { v: '0.20.5', date: '2026-11-08', title: 'Two-step sign-in, slimmer orders on phones', items: [
     'Kingpin Online: turn on two-step sign-in in Settings → Security. Each new phone or computer then needs a 6-digit code from an authenticator app, once.',
     'Recovery codes in case you lose your phone. You can see your signed-in devices, remove one, or sign out all the others.',

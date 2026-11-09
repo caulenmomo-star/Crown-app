@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "604ecd39cb4e55bc31e15e7761c63c3e0c7a564586186d3c43abfd129c676203",
-   "size": 33943
+   "sha256": "6374df913df123b0185eb99f0e0066e7aaab848972b57b6e2024ef63f70a586c",
+   "size": 34662
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,7 +58,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "5c6130420cef6e6b72aefb07261be4cab5a669ad06bd102ef905bbfe1019816a",
+   "sha256": "1a353b64974bde4fd8c63604792a77e2f8c00ecbc6b426175073962216e010bd",
    "size": 53047
   },
   "ct-icon-180.png": {
@@ -162,12 +162,12 @@
    "size": 21156
   },
   "pages.js": {
-   "sha256": "d91f1784f8b5bd3250efe588dfd2ffe829c8e0e805b9b88515b001c9d6f4612f",
-   "size": 93461
+   "sha256": "b4e08020a686e2d35537c7284edbf9ed7d43f9735ea4594cb67ec7a66dd2b59a",
+   "size": 94138
   },
   "parser.js": {
-   "sha256": "00600959ae6c18f132dca42a0806fb6edfa59eded6735e1a64055bc67d89aee3",
-   "size": 65595
+   "sha256": "e086ec20e76cad72f1f3a949019c8b49d34d892635e9db82b471e5ff44c6f2cf",
+   "size": 68099
   },
   "phonefit.js": {
    "sha256": "f960aaea892844f5336a0abfb67870e192c1fdd11d701a6c98e2466ee1acfb88",
@@ -222,16 +222,16 @@
    "size": 21107
   },
   "styles.css": {
-   "sha256": "ec2db298ee5e1936d75d4419fb9db17e0cba409a45544d07abbd625b2e295c2f",
-   "size": 94019
+   "sha256": "51c390475c9408c7821eb2ef081448c3e805d2268c098898219583d9be27e5eb",
+   "size": 94088
   },
   "sw.js": {
    "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
    "size": 2039
   },
   "sync.js": {
-   "sha256": "bc3b7595ede00ec004bc6e740864fced8a16d810426b71acf3f4dee229d4d31b",
-   "size": 31189
+   "sha256": "0b02763c022df929c404509c41a89ff32545da7bad9831e875783ca8c61f131b",
+   "size": 38236
   },
   "terms.html": {
    "sha256": "d135d9ffe5ca127d01bc854d304dd87bcc689a1e3f56bec5e15a96a4a87d1713",
@@ -321,5 +321,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.5"
+ "version": "0.20.6"
 }

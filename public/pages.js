@@ -116,7 +116,7 @@ PAGES.dashboard = {
           ${svgBars(bars)}</div>
         <div class="card"><h3>Needs attention</h3>${attention.length ? `<div class="list">${attention.map((a, i) => `<div class="li click" data-att="${i}"><span class="warnicon">⚠</span><div style="flex:1">${esc(a[0])}</div><span class="faint">›</span></div>`).join('')}</div>` : '<div class="empty sm">All clear. 👑</div>'}</div>
       </div>`;
-    if ($('#dSync')) $('#dSync').onclick = () => syncAll(true);
+    if ($('#dSync')) $('#dSync').onclick = () => syncAll(true, null, { ask: true });
     $('#dShare').onclick = openShare; $('#dProfit').onclick = openShare;
     $('#dCustom').onclick = () => { DASH.custom = !(DASH.custom || DASH.from || DASH.to); if (!DASH.custom) DASH.from = DASH.to = ''; PAGES.dashboard.render(); };
     IV.onUpdate = () => { if (!cryptoKey) return; if ($('#dlgShare').open) renderShare(); else if ($('#dlgPrices').open) renderPriceReview(); else if (route.page === 'dashboard' && !document.querySelector('dialog[open]')) PAGES.dashboard.render(); };
@@ -468,17 +468,21 @@ function renderInboxDlg() {
       <div class="s2"><label>Nickname (optional)</label><input id="ibLabel" value="${esc(a.label)}" placeholder="e.g. Catch-all, Main Gmail"></div>
       <div class="s2"><label>Folder to read ${inboxFolders ? '' : '<span class="faint">— test the connection to list all folders</span>'}</label><select id="ibFolder">${folders.map(f => `<option ${f === a.folder ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></div>
     </div>
+    <div class="section">Stores to sync</div><div class="small muted" style="margin:-4px 0 8px">Only order emails from these stores are read — on the first sync and every automatic sync after. “Sync now” lets you pick each time.</div>${storeChipsHtml('ibStores', a.stores)}
     <div class="section">On the first sync, look back</div><div class="chips" id="ibLook">${LOOKBACKS.map(d => `<button class="chip ${a.lookback === d ? 'on' : ''}" data-d="${d}">${d} days</button>`).join('')}</div>
     <details style="margin-top:14px" ${a.provider === 'other' ? 'open' : ''}><summary class="small muted" style="cursor:pointer">Server settings</summary>
       <div class="fgrid" style="margin-top:10px"><div class="s2"><label>IMAP server</label><input id="ibHost" value="${esc(a.host)}" placeholder="imap.example.com"></div><div><label>Port</label><input id="ibPort" inputmode="numeric" value="${esc(a.port)}"></div><div><label>&nbsp;</label><label class="check"><input type="checkbox" id="ibSsl" ${a.ssl !== false ? 'checked' : ''}> Use SSL</label></div></div></details>
     <div class="small faint" style="margin-top:12px">Kingpin only reads mail (it never marks anything read, moves or deletes it). Your password is stored encrypted with the rest of your data and is only ever sent to your mail provider.</div>`;
   $('#ibProv').onclick = e => { const b = e.target.closest('[data-p]'); if (!b) return; collectInbox(); const p = PROVIDERS[b.dataset.p]; Object.assign(inboxEdit, { provider: b.dataset.p, host: p.host || inboxEdit.host, port: p.port, ssl: true, folder: p.folder }); inboxFolders = null; renderInboxDlg(); };
+  wireStoreChips($('#ibStores'), sel => { inboxEdit.stores = sel || []; });
   $('#ibLook').onclick = e => { const b = e.target.closest('[data-d]'); if (!b) return; collectInbox(); inboxEdit.lookback = +b.dataset.d; renderInboxDlg(); };
 }
 function collectInbox() {
   const a = inboxEdit; if (!$('#ibUser')) return a;
   a.user = $('#ibUser').value.trim(); a.pass = $('#ibPass').value.replace(/\s+/g, a.provider === 'gmail' ? '' : ' ').trim(); a.label = $('#ibLabel').value.trim(); a.folder = $('#ibFolder').value;
-  a.host = $('#ibHost').value.trim(); a.port = Number($('#ibPort').value) || 993; a.ssl = $('#ibSsl').checked; return a;
+  a.host = $('#ibHost').value.trim(); a.port = Number($('#ibPort').value) || 993; a.ssl = $('#ibSsl').checked;
+  if ($('#ibStores')) a.stores = readStoreChips($('#ibStores')) || [];
+  return a;
 }
 const accPayload = a => ({ host: a.host, port: a.port, ssl: a.ssl !== false, user: a.user, pass: a.pass, folder: a.folder || 'INBOX', gmail: a.provider === 'gmail' });
 $('#inboxTest').onclick = async () => {
@@ -503,7 +507,7 @@ $('#inboxSave').onclick = () => {
   const isNew = !!a._new; delete a._new;
   const i = state.imapAccounts.findIndex(x => x.id === a.id);
   if (i >= 0) { const old = state.imapAccounts[i]; if (old.user !== a.user || old.folder !== a.folder || old.host !== a.host) { a.lastSync = 0; a.lastUid = 0; a.uidValidity = ''; } state.imapAccounts[i] = a; } else state.imapAccounts.push(a);
-  closeDlg('dlgInbox'); save(); refresh(); toast(isNew ? 'Inbox added — syncing now' : 'Inbox saved');
+  closeDlg('dlgInbox'); save(); refresh(); toast(isNew ? `Inbox added — syncing ${(a.stores || []).length ? storesText(a.stores) : 'all stores'} now` : 'Inbox saved');
   if (isNew && SERVER) syncAll(true, [a.id]);
 };
 PAGES.inboxes = {
@@ -516,6 +520,7 @@ PAGES.inboxes = {
       ${state.imapAccounts.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(340px,1fr));margin-bottom:14px">${state.imapAccounts.map(a => { const r = a.lastResult; const busy = syncingIds.has(a.id); const P = PROVIDERS[a.provider] || PROVIDERS.other; return `<div class="card">
         <h3><span class="dot ${busy ? 'busy' : a.enabled === false ? '' : r && r.error ? 'bad' : a.lastSync ? 'ok' : 'warn'}"></span><span class="ellipsis">${esc(a.label || a.user)}</span><span class="spacer"></span><span class="badge">${esc(P.name)}</span></h3>
         <div class="small muted">${esc(a.user)} · ${esc(a.folder || 'INBOX')}</div>
+        <div class="small" style="margin-top:4px"><span class="muted">Stores:</span> ${esc(storesText(inboxStores(a)))}</div>
         <div class="small" style="margin-top:8px">${busy ? '<span style="color:var(--info)">Syncing…' + (syncProgress[a.id] ? ' ' + esc(syncProgress[a.id]) : '') + '</span>' : a.enabled === false ? '<span class="faint">Paused</span>' : r && r.error ? `<span style="color:var(--danger)">${esc(r.error)}</span>` : a.lastSync ? `Last sync ${ago(a.lastSync)} · ${plural(r.found || 0, 'order email')} read · ${r.created || 0} new · ${r.updated || 0} updated` : '<span class="faint">Not synced yet</span>'}</div>
         <div class="hstack" style="margin-top:12px"><button class="sm" data-ia="sync" data-id="${a.id}" ${busy || !SERVER ? 'disabled' : ''}>Sync now</button><select class="sm" data-ia="rescan" data-id="${a.id}" style="width:auto;padding:4px 8px;font-size:12px" ${busy || !SERVER ? 'disabled' : ''}><option value="">Rescan…</option>${LOOKBACKS.map(d => `<option value="${d}">Last ${d} days</option>`).join('')}</select><button class="sm" data-ia="edit" data-id="${a.id}">Edit</button><button class="sm" data-ia="toggle" data-id="${a.id}">${a.enabled === false ? 'Resume' : 'Pause'}</button><button class="sm danger" data-ia="del" data-id="${a.id}">Remove</button></div></div>`; }).join('')}</div>`
         : `<div class="card" style="margin-bottom:14px"><div class="empty">No inboxes yet. Add the inbox your order emails go to — Gmail, iCloud (including Hide My Email), Yahoo, catch-all domains and more.</div></div>`}
@@ -527,7 +532,7 @@ PAGES.inboxes = {
       </div>`;
     $('#ibAdd').onclick = () => openInbox(null);
     wireDiscordCard();
-    if ($('#ibSyncAll')) $('#ibSyncAll').onclick = () => syncAll(true);
+    if ($('#ibSyncAll')) $('#ibSyncAll').onclick = () => syncAll(true, null, { ask: true });
     if ($('#ibReread')) $('#ibReread').onclick = async () => { if (await ask('Re-read every order email from your inboxes?\n\nThis refills totals, items, pictures, addresses and houses for all your orders. It can take a few minutes.')) { rereadAll(false); setTimeout(() => PAGES.inboxes.render(), 300); } };
     $('#ibAuto').onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; state.settings.autoSyncMin = +b.dataset.v; save(); scheduleSync(); PAGES.inboxes.render(); };
     if ($('#ibClearUn')) $('#ibClearUn').onclick = () => { state.unparsed = []; save(); refresh(); };
@@ -537,7 +542,7 @@ PAGES.inboxes = {
       const id = el.dataset.id, a = state.imapAccounts.find(x => x.id === id);
       if (el.dataset.ia === 'rescan') { el.onchange = () => { const d = +el.value; if (!d) return; rescan(id, d); }; return; }
       el.onclick = async () => {
-        if (el.dataset.ia === 'sync') syncAll(true, [id]);
+        if (el.dataset.ia === 'sync') syncAll(true, [id], { ask: true });
         else if (el.dataset.ia === 'edit') openInbox(id);
         else if (el.dataset.ia === 'toggle') { a.enabled = a.enabled === false; save(); refresh(); }
         else if (el.dataset.ia === 'del') { if (!await ask(`Remove ${a.label || a.user}? Orders already found stay in Kingpin.`)) return; state.imapAccounts = state.imapAccounts.filter(x => x.id !== id); save(); refresh(); }

@@ -1220,3 +1220,4 @@ a.btn.primary{background:var(--accent);color:var(--onAccent);border-color:transp
 @media (max-width:760px){.olist{gap:8px}}
 .ocard.orow .oprog.dead i{background:var(--panel3)}.ocard.orow .oprog.dead i.on{background:var(--danger)}
 .ocard.orow .oprog i.on{background:var(--sc)}
+.stmore{margin-top:8px}.stmore summary{cursor:pointer;padding:4px 0}

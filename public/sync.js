@@ -1,6 +1,6 @@
 /* Kingpin - email sync engine, auto-sync, notifications, live tracking. */
 'use strict';
-const READER_VER = 8; // 5: cancellation reasons, 6-8: pre-order payments (declined / updated, linked to the original order)
+const READER_VER = 9; // 5: cancellation reasons, 6-8: pre-order payments (declined / updated, linked to the original order), 9: Menards
 let syncing = false, syncTimer = null, syncNextAt = 0;
 const syncingIds = new Set(), syncProgress = {};
 const MAX_SEEN = 40000;
@@ -45,18 +45,35 @@ setInterval(() => { if (cryptoKey) setSyncStat(); }, 30000);
 let progressTimer = 0;
 function showProgress() { if (progressTimer) return; progressTimer = setTimeout(() => { progressTimer = 0; if (route.page === 'inboxes' && cryptoKey) PAGES.inboxes.render(); }, 250); }
 
+/* Which stores an inbox reads. a.stores: [] or missing = every store. A sync can also be for just some stores (the
+   manual "Sync now" asks). Each store remembers how far through the inbox it has been read (a.storeUid; a.allUid for
+   "every store"), so a store left out of one sync is caught up the next time it's included - nothing is missed. */
+const inboxStores = a => (a.stores && a.stores.length ? a.stores.slice() : null);
+const storeWanted = (sel, key) => !sel || sel.includes(key) || (String(key).startsWith('shop:') && sel.includes('__shopify')) || (key === 'other' && sel.includes('__other'));
+function storeLabel(k) { if (k === '__shopify') return 'Any Shopify store'; if (k === '__other') return 'Other stores'; const s = Parser.STORES.find(x => x.key === k); return s ? s.label : k; }
+function storesText(sel) { return !sel ? 'All stores' : sel.map(storeLabel).join(', '); }
+function storeUidFor(a, sel) {
+  if (a.allUid === undefined && a.storeUid === undefined && a.lastUid) a.allUid = a.lastUid;   // inboxes from before per-store syncing read everything
+  const all = a.allUid || 0;
+  if (!sel) return all;
+  return Math.min(...sel.map(k => Math.max(all, (a.storeUid || {})[k] || 0)));
+}
 async function syncAccount(a, totals, opts) {
   opts = opts || {};
+  const sel = opts.stores !== undefined ? opts.stores : inboxStores(a);
+  const fromUid = storeUidFor(a, sel);
   syncingIds.add(a.id); syncProgress[a.id] = 'looking for order emails…'; showProgress();
   const res = { found: 0, created: 0, updated: 0, error: '' };
-  const since = opts.days ? new Date(Date.now() - opts.days * 864e5) : a.lastSync ? new Date(a.lastSync - 3 * 864e5) : new Date(Date.now() - (a.lookback || 60) * 864e5);
+  // a store this inbox hasn't read yet goes back as far as the first sync did
+  const since = opts.days ? new Date(Date.now() - opts.days * 864e5) : a.lastSync && fromUid ? new Date(a.lastSync - 3 * 864e5) : new Date(Date.now() - (a.lookback || 60) * 864e5);
   const tracked = state.settings.trackedStores && state.settings.trackedStores.length ? new Set(state.settings.trackedStores) : null;
   const label = a.label || a.user;
   const acc = accPayload(a);
   const process = m => {
-    markSeen(m.messageId);
     let p = null;
-    try { p = Parser.parseOrderEmail(m); } catch (e) { console.error('parse failed', e); addUnparsed(m, 'reader error'); return; }
+    try { p = Parser.parseOrderEmail(m); } catch (e) { markSeen(m.messageId); console.error('parse failed', e); addUnparsed(m, 'reader error'); return; }
+    if (p && !storeWanted(sel, p.store)) return;   // another store: left unread for the sync that includes it
+    markSeen(m.messageId);
     if (!p) return;
     res.found++;
     if (tracked && !tracked.has(p.store) && !(String(p.store).startsWith('shop:') && tracked.has('__shopify'))) return;
@@ -70,8 +87,8 @@ async function syncAccount(a, totals, opts) {
     }
   };
   try {
-    const incremental = !opts.days && a.lastUid && a.uidValidity && a.folderSynced === (a.folder || 'INBOX');
-    const scan = await api('/api/imap/scan', { account: acc, since: dayKey(since), afterUid: incremental ? a.lastUid : 0, uidValidity: incremental ? a.uidValidity : '', keywords: Parser.SUBJECT_KEYWORDS, patterns: Parser.SUBJECT_PATTERNS });
+    const incremental = !opts.days && fromUid && a.uidValidity && a.folderSynced === (a.folder || 'INBOX');
+    const scan = await api('/api/imap/scan', { account: acc, since: dayKey(since), afterUid: incremental ? fromUid : 0, uidValidity: incremental ? a.uidValidity : '', keywords: Parser.SUBJECT_KEYWORDS, patterns: Parser.SUBJECT_PATTERNS });
     if (!cryptoKey) return res;
     const skip = opts.fresh ? new Set() : seen();
     // When re-reading, only re-download emails for orders that are still on their way (to fix dates / statuses).
@@ -79,6 +96,8 @@ async function syncAccount(a, totals, opts) {
     const seenAll = seen();
     // Decide from the subject + sender alone whether an email is worth downloading at all.
     const todo = scan.candidates.filter(c => {
+      // the sender usually says which store it is - skip other stores without downloading them
+      if (sel) { const g = Parser.detectStore(c.from, c.subject, ''); if (g !== 'other' && !storeWanted(sel, g)) return false; }
       if (activeMids.has(c.mid)) return true;
       if (!opts.full && (skip.has(c.mid) || (opts.reapply && seenAll.has(c.mid)))) return false;
       const junk = !Parser.classifyStatus(c.subject) || (c.from && isIgnoredSender(c.from)) || (c.from && !state.settings.trackUnknown && Parser.isNonStoreSender(c.from, c.subject));
@@ -106,13 +125,17 @@ async function syncAccount(a, totals, opts) {
     };
     await Promise.all(Array.from({ length: Math.min(parallel(), chunks.length) }, worker));
     if (!cryptoKey) return res;
-    a.uidValidity = scan.uidValidity || '';
+    const newValidity = scan.uidValidity || '';
     a.folderSynced = a.folder || 'INBOX';
-    if (failedMin < Infinity) {
-      // retry the ones that failed next time (and anything after them)
-      a.lastUid = Math.max(incremental ? a.lastUid : 0, failedMin - 1);
-      res.error = `Couldn’t download some emails (${failMsg}). They’ll be retried next sync.`;
-    } else a.lastUid = Math.max(incremental ? a.lastUid : 0, scan.maxUid || 0);
+    // retry ones that failed next time (and anything after them)
+    const upTo = failedMin < Infinity ? failedMin - 1 : scan.maxUid || 0;
+    if (failedMin < Infinity) res.error = `Couldn’t download some emails (${failMsg}). They’ll be retried next sync.`;
+    if (a.uidValidity && newValidity && a.uidValidity !== newValidity && !incremental) { a.storeUid = {}; a.allUid = 0; }
+    a.uidValidity = newValidity;
+    if (!sel) { a.allUid = Math.max(incremental ? a.allUid || 0 : 0, upTo); a.storeUid = {}; }
+    else { a.storeUid = a.storeUid || {}; sel.forEach(k => { a.storeUid[k] = Math.max(incremental ? storeUidFor(a, [k]) : 0, upTo); }); }
+    a.lastUid = Math.max(a.allUid || 0, ...Object.values(a.storeUid || {}), 0);
+    a.lastStores = sel;
     a.lastSync = Date.now(); a.lastResult = Object.assign({ at: Date.now(), mode: scan.mode, scanned: scan.scanned }, res);
   } catch (e) {
     res.error = e.message; a.lastResult = Object.assign({ at: Date.now() }, res);
@@ -129,6 +152,14 @@ async function syncAll(manual, ids, opts) {
   if (syncing) { if (manual) toast('Already syncing…'); return; }
   const accs = state.imapAccounts.filter(a => ids ? ids.includes(a.id) : a.enabled !== false);
   if (!accs.length) { if (manual) toast(state.imapAccounts.length ? 'All inboxes are paused' : 'Add an inbox first'); return; }
+  // "Sync now": pick the stores for this sync (automatic syncs use each inbox's saved stores)
+  if (opts && opts.ask) {
+    const pick = await pickSyncStores(accs);
+    if (!pick || !cryptoKey) return;
+    opts = Object.assign({}, opts, { stores: pick.stores });
+    if (pick.remember) { accs.forEach(a => { a.stores = pick.stores ? pick.stores.slice() : []; }); save(); }
+  }
+  if (syncing) { if (manual) toast('Already syncing…'); return; }
   syncing = true; clearTimeout(syncTimer); setSyncStat(); softRefresh();
   const totals = { created: 0, updated: 0, shipped: 0, delivered: 0, cancelled: 0 };
   const before = accs.map(a => JSON.stringify([a.lastResult && a.lastResult.error, a.uidValidity, a.lastSync ? 1 : 0])).join();
@@ -247,7 +278,7 @@ async function rereadAll(auto) {
 function onLocked() { clearTimeout(syncTimer); syncNextAt = 0; seenSet = null; }
 // catch up right away when you come back to Kingpin
 document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'visible' || !cryptoKey || syncing || rereading || !SERVER) return; const m = state.settings.autoSyncMin; const accs = state.imapAccounts.filter(a => a.enabled !== false); if (accs.length && accs.some(a => Date.now() - (a.lastSync || 0) > 60000)) syncAll(false); if (typeof refreshPrices === 'function') refreshPrices(false, true); });
-$('#syncNowNav').onclick = () => syncAll(true);
+$('#syncNowNav').onclick = () => syncAll(true, null, { ask: true });
 $('#scanNav').onclick = () => openUniversalScanner();
 Scan.wire(); wireNotifs(); wireAco(); wirePriceReview(); wireItemDlg(); wireSaleDlg(); wireExpDlg(); wireFix(); wireAccDlg(); wireAccImport(); wireCardDlg(); wireCardAdd(); wireCardScan(); wireSelRange(); wireNoAutofill(); wireCtxMenu(); wireNews(); wirePhoneFit(); wireCardAssign(); wireBuilder(); $('#buildBtn').onclick = openBuilder; $('#addrBtn').onclick = () => openAddresses(view !== 'all' ? view : state.categories[0].id); wireUpdates();
 
@@ -404,4 +435,54 @@ async function refreshAllTracking() {
   const ok = await refreshStaleTracking(true) || 0;
   softRefresh(); const errs = state.orders.flatMap(o => o.tracking).filter(t => t.liveError && Date.now() - t.liveError.at < 120000);
   toast(`Updated ${plural(ok, 'package')}${errs.length ? ' · ' + errs.length + ' failed: ' + errs[0].liveError.msg : ''}`);
+}
+
+/* ---------- "Sync now": which stores? ---------- */
+function storeChoices() {
+  return Parser.STORES.filter(s => s.key !== 'other').slice().sort((a, b) => a.label.localeCompare(b.label)).map(s => [s.key, s.label]).concat([['__shopify', 'Any Shopify store'], ['__other', 'Other stores']]);
+}
+// your stores first (the ones your orders come from, most used first), the rest folded away
+function storeChipsHtml(id, sel) {
+  const all = !sel || !sel.length, ch = storeChoices();
+  const cnt = {}; (state.orders || []).forEach(o => { const k = String(o.store || '').startsWith('shop:') ? '__shopify' : o.store; cnt[k] = (cnt[k] || 0) + 1; });
+  const mine = new Set([...(sel || []), ...Object.keys(cnt)]);
+  if (mine.size < 3) ['target', 'walmart', 'pokemoncenter', 'bestbuy', 'amazon', 'gamestop', 'costco', 'samsclub'].forEach(k => mine.add(k));
+  const top = ch.filter(([k]) => mine.has(k)).sort((a, b) => (cnt[b[0]] || 0) - (cnt[a[0]] || 0)), rest = ch.filter(([k]) => !mine.has(k));
+  const chip = ([k, l]) => `<button type="button" class="chip ${!all && sel.includes(k) ? 'on' : ''}" data-st="${k}">${esc(l)}</button>`;
+  return `<div class="stchips" id="${id}"><div class="chips wrap"><button type="button" class="chip ${all ? 'on' : ''}" data-st="__all">All stores</button>${top.map(chip).join('')}</div>
+    ${rest.length ? `<details class="stmore"><summary class="small muted">More stores (${rest.length})</summary><div class="chips wrap" style="margin-top:8px">${rest.map(chip).join('')}</div></details>` : ''}</div>`;
+}
+// chips: "All stores" or any mix; returns the picker's current choice (null = all)
+function wireStoreChips(box, onChange) {
+  box.onclick = e => {
+    const b = e.target.closest('[data-st]'); if (!b) return;
+    const allB = box.querySelector('[data-st="__all"]');
+    if (b === allB) { box.querySelectorAll('[data-st]').forEach(x => x.classList.toggle('on', x === allB)); }
+    else { b.classList.toggle('on'); const any = box.querySelector('[data-st]:not([data-st="__all"]).on'); allB.classList.toggle('on', !any); }
+    if (onChange) onChange(readStoreChips(box));
+  };
+}
+function readStoreChips(box) { if (box.querySelector('[data-st="__all"].on')) return null; const v = [...box.querySelectorAll('[data-st].on')].map(b => b.dataset.st).filter(k => k !== '__all'); return v.length ? v : null; }
+function pickSyncStores(accs) {
+  return new Promise(resolve => {
+    if (!document.getElementById('dlgSyncStores')) document.body.insertAdjacentHTML('beforeend', `<dialog id="dlgSyncStores"><div class="dhead"><span id="ssTitle">Sync which stores?</span><button class="ghost sm x" data-close>✕</button></div>
+      <div class="dbody"><div class="small muted" id="ssSub" style="margin-bottom:10px"></div><div id="ssChips"></div>
+        <label class="check" style="margin-top:12px"><input type="checkbox" id="ssRemember"> <span id="ssRemLbl"></span></label></div>
+      <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="ssGo">Sync</button></div></dialog>`);
+    const d = document.getElementById('dlgSyncStores');
+    const saved = accs.map(inboxStores), anyAll = saved.some(x => !x);
+    const pre = anyAll ? null : [...new Set(saved.flat())];
+    $('#ssTitle').textContent = accs.length === 1 ? `Sync ${accs[0].label || accs[0].user}` : `Sync ${plural(accs.length, 'inbox', 'inboxes')}`;
+    $('#ssSub').textContent = accs.length === 1 ? `Saved for this inbox (used by automatic syncs): ${storesText(saved[0])}. Pick the stores for this sync.` : 'Pick the stores for this sync. Automatic syncs keep using each inbox’s saved stores.';
+    $('#ssChips').innerHTML = storeChipsHtml('ssPick', pre);
+    $('#ssRemLbl').textContent = accs.length === 1 ? 'Also use these for automatic syncs' : 'Save these for all of these inboxes';
+    $('#ssRemember').checked = false;
+    const upd = sel => { $('#ssGo').textContent = sel ? `Sync ${sel.length === 1 ? storeLabel(sel[0]) : plural(sel.length, 'store')}` : 'Sync all stores'; };
+    wireStoreChips($('#ssPick'), upd); upd(pre);
+    let done = false;
+    const finish = v => { if (done) return; done = true; resolve(v); };
+    $('#ssGo').onclick = () => { const v = { stores: readStoreChips($('#ssPick')), remember: $('#ssRemember').checked }; finish(v); closeDlg('dlgSyncStores'); };
+    d.addEventListener('close', () => finish(null), { once: true });
+    openDlg('dlgSyncStores');
+  });
 }

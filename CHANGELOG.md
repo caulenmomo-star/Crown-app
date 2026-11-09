@@ -2,6 +2,13 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.6 — Pick which stores each inbox syncs (2026-11-09)
+
+- When you add an inbox, choose the stores it reads. Its first sync and every automatic sync only read emails from those stores.
+- “Sync now” asks which stores to sync each time, starting from that inbox’s saved stores. Tick “Also use these for automatic syncs” to change what’s saved.
+- A store left out of a sync is caught up the next time it’s included, so nothing is missed. Emails from other stores aren’t downloaded at all.
+- Menards orders are read properly now: order number (MCOM…), items with quantity and price, delivery address, and status updates like “On the way”.
+
 ## v0.20.5 — Two-step sign-in, slimmer orders on phones (2026-11-08)
 
 - Kingpin Online: turn on two-step sign-in in Settings → Security. Each new phone or computer then needs a 6-digit code from an authenticator app, once.

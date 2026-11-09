@@ -154,7 +154,7 @@
   }
   const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, OUT, SHIPPED, CONFIRMED, PAY_KEYWORDS)));
   // Python-compatible regexes (the helper filters subjects with these too).
-  const SUBJECT_PATTERNS = ['thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}'];
+  const SUBJECT_PATTERNS = ['\\border has an update\\b', 'thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}'];
   const SUBJECT_RES = SUBJECT_PATTERNS.map(p => new RegExp(p, 'i'));
   const has = (s, list) => list.some(k => s.includes(k));
 
@@ -172,6 +172,7 @@
     if (has(s, OUT)) return 'out';
     if (has(s, SHIPPED)) return 'shipped';
     if (has(s, CONFIRMED) || /thanks for your [a-z ]{0,20}order/.test(s)) return 'confirmed';
+    if (/\border has an update\b/.test(s)) return 'confirmed';   // the email says what changed (bodyStatus)
     if (/\border\s*#\s*:?\s*[a-z]{0,4}-?\d{4,}/.test(s) || /order\s*(?:number|no\.?)?\s*#?\s*:?\s*\d{6,}/.test(s) || /#\s*:?\s*\d{9,}/.test(s) || /\border (?:was |has been |is )?(?:received|placed|confirmed)\b/.test(s)) return 'confirmed';
     return null;
   }
@@ -256,6 +257,7 @@
   // ---------------------------------------------------------------- fields
   function extractOrderNumber(subject, text) {
     const pats = [
+      /\b(MCOM\d{6,12})\b/,                                                           // Menards
       /\b(\d{3}-\d{7}-\d{7})\b/,                                                      // Amazon
       /\b(BBY01-\d{9,14})\b/i,                                                        // Best Buy
       /\border\s*(?:number|no\.?|#|id)?[\s:#]*(\d{7}-\d{8})(?!\d)/i,                    // Walmart
@@ -385,7 +387,7 @@
     return items.map(i => { const o = { name: i.name, qty: i.qty, price: i.price }; if (i.image) o.image = i.image; return o; });
   }
 
-  const ADDR_LABEL = /(?:delivers?\s*to|deliver(?:ing|ed)?\s*to|ship(?:ping|ped|s)?\s*to|shipping address|delivery address|ship-to|sending to|your order will be delivered to)\s*:?\s*/i;
+  const ADDR_LABEL = /(?:parcel delivery\s*:\s*(?:[A-Z]{2,5}\d{5,}\s*)?|delivers?\s*to|deliver(?:ing|ed)?\s*to|ship(?:ping|ped|s)?\s*to|shipping address|delivery address|ship-to|sending to|your order will be delivered to)\s*:?\s*/i;
   const ST_ZIP = ',\\s*[A-Z]{2},?\\s+\\d{5}(?:-\\d{4})?(?![\\d])';
   const HQ_ZIPS = /\b(98004|55423|98109|55403|72716|94043|98052|95014|10001)\b/; // store head offices in email footers
   const okAddr = cap => /[a-z]/i.test(cap) && /\s/.test(cap) && cap.includes(',') && /\d/.test(cap.split(',').slice(0, -1).join(','));
@@ -671,9 +673,41 @@
     if (/out of stock|no longer (in stock|available)|sold out|ran out|high demand|(insufficient|limited|not enough) (inventory|stock|quantity)|inventory (issue|shortage)|unable to (fulfill|fill)|couldn't (fulfill|fill)|could not (fulfill|fill)|not able to fulfill|item(s)? (is |are )?unavailable|unavailable item|backorder/.test(t)) return 'demand';
     return '';
   }
+  // "Your order status has been updated to: ON THE WAY" (Menards and others that say it in the email, not the subject)
+  function bodyStatus(text) {
+    const m = String(text || '').match(/\b(?:order\s+)?status\s+(?:has\s+been\s+|was\s+)?(?:updated|changed)\s+to\s*:?\s*([A-Za-z][A-Za-z \-]{2,40})/i);
+    if (!m) return '';
+    const v = m[1].toLowerCase();
+    if (/cancel/.test(v)) return 'cancelled';
+    if (/refund/.test(v)) return 'refunded';
+    if (/deliver(?!y)|delivered/.test(v) && !/out for/.test(v)) return 'delivered';
+    if (/out for delivery/.test(v)) return 'out';
+    if (/carrier/.test(v)) return 'confirmed';                       // "ready for carrier pick up" = packed, not shipped yet
+    if (/ready for (?:store |in-store )?pick ?up|ready for pickup/.test(v)) return 'ready';
+    if (/on the way|shipped|in transit|on its way/.test(v)) return 'shipped';
+    return '';
+  }
+  // Item tables that list "SKU: 123" under each name, then quantity, price each and line total (Menards)
+  function extractSkuItems(H, imgs) {
+    const L = String(H || '').split('\n').map(l => l.trim()).filter(Boolean), out = [];
+    for (let i = 1; i < L.length; i++) {
+      if (!/^sku\s*[:#]\s*\d{4,}$/i.test(L[i])) continue;
+      const name = L[i - 1]; if (!name || IMG_MARK.test(name) || /^\$|^\d+$/.test(name)) continue;
+      const im = i >= 2 && L[i - 2].match(/⟦img:(\d+)⟧/);
+      let j = i + 1, qty = null, price = null;
+      for (; j < Math.min(L.length, i + 7); j++) {
+        if (qty == null && /^\d{1,4}$/.test(L[j])) { qty = +L[j]; continue; }
+        const pm = L[j].match(/^\$\s?([\d,]+\.\d{2})$/);
+        if (qty != null && pm) { price = +pm[1].replace(/,/g, ''); break; }
+      }
+      if (qty == null) continue;
+      out.push({ name, qty, price, each: true, image: im ? (imgs[+im[1]] || '') : '', sku: L[i].replace(/\D/g, '') });
+    }
+    return out;
+  }
   function parseOrderEmail(m) {
     const subject = String(m.subject || '');
-    const status = classifyStatus(subject);
+    let status = classifyStatus(subject);
     if (!status) return null;
     const imgs = [];
     const H = m.html ? htmlToText(m.html, imgs) : '';            // keeps ⟦img:N⟧ markers for item pictures
@@ -688,7 +722,10 @@
     const short = rawAddr ? null : first(extractShortRecipient);
     if (short) Object.assign(addr, { name: short.name, city: short.city, state: short.state });
     const text = sources.join('\n');
+    // the email itself says the new status ("…updated to: ON THE WAY")
+    if (/\border has an update\b/i.test(subject) || /\bstatus\b/i.test(subject)) { const bs = first(bodyStatus); if (bs) status = bs; }
     let items = H ? extractItems(cutRecs(H), imgs) : [];
+    if (H) { const sk = extractSkuItems(H, imgs); if (sk.length && (!items.length || sk.length >= items.length)) items = sk; }
     if (P) { const alt = extractItems(cutRecs(P), []); if (alt.length > items.length) items = alt; }
     // Amazon: 'Shipped 2 items: Party Supplies' / 'Ordered: "Name..." and 2 more items'
     if (!items.length) {
