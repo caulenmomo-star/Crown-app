@@ -66,4 +66,6 @@ function wireUpdates() {
   // the first check runs a moment after the engine starts; look again soon, then every 30 minutes
   [4000, 15000, 45000].forEach(ms => setTimeout(() => upCheck(false), ms));
   clearInterval(UP.timer); UP.timer = setInterval(() => upCheck(false), 30 * 60000);
+  // and ask the website directly every couple of hours, so a fix reaches a Kingpin that stays open all day
+  clearInterval(UP.timer2); UP.timer2 = setInterval(() => upCheck(true), 2 * 3600e3);
 }

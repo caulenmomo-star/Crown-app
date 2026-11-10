@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.7'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.8'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -101,6 +101,8 @@ function migrate(s) {
 }
 let state = blankState();
 let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
+// the Mac/Windows engine's own version: the screens update themselves, so they can be newer than the engine they talk to
+let ENGINE_VER = '';
 let CLOUD = false, cloudInfo = {}, authKey = null, acctEmail = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
@@ -114,7 +116,7 @@ function showOutdated() {
 }
 async function api(path, body, method) {
   let res;
-  const headers = { 'X-Crown': '1', 'X-Crown-App': VERSION };
+  const headers = { 'X-Crown': '1', 'X-Crown-App': ENGINE_VER || VERSION };
   if (body) headers['Content-Type'] = 'application/json';
   if (CLOUD && authKey) { headers['X-Crown-Auth'] = authKey; if (acctEmail) headers['X-Crown-Email'] = acctEmail; const dt = typeof devToken === 'function' ? devToken(acctEmail) : ''; if (dt) headers['X-Crown-Device'] = dt; }
   try {
@@ -610,7 +612,7 @@ const Crown = {
   async boot() {
     $('#verLbl').textContent = 'v' + VERSION; $('#verLbl').title = 'What’s new'; $('#verLbl').style.cursor = 'pointer'; $('#verLbl').onclick = e => { e.stopPropagation(); openChangelog(); };
     if (location.protocol.startsWith('http')) {
-      try { const p = await api('/api/ping'); SERVER = true; CLOUD = !!p.cloud; cloudInfo = p; } catch (_) { SERVER = false; }
+      try { const p = await api('/api/ping'); SERVER = true; CLOUD = !!p.cloud; cloudInfo = p; if (!CLOUD && p.version) ENGINE_VER = p.version; } catch (_) { SERVER = false; }
     }
     document.documentElement.classList.toggle('cloud', CLOUD);
     $('#lockBtn').onclick = doUnlock;

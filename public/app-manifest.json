@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "44b751f523d9b73f0786a5051203def9daf418c5def3e982616b6199d1f54fc2",
-   "size": 35319
+   "sha256": "a7f9df5f6872c6501a92ab15604e14d421fe25f3e4ca8bcdda9665653215abc6",
+   "size": 35741
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,8 +58,8 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "d1956a01a4ca3d0ae5031363afd32613ee7370d7dfe768f52f92214df7cb1cb1",
-   "size": 53047
+   "sha256": "f596be33507df851728cee5b1d72eb1da979a7c684e505e11d73c9697be55c69",
+   "size": 53253
   },
   "ct-icon-180.png": {
    "sha256": "d58821d5e97b52c66a03893641c793df7f35e65ed7523bb63af4ffa5f4bf0186",
@@ -238,8 +238,8 @@
    "size": 3506
   },
   "update.js": {
-   "sha256": "2043aa51edf7475e4adc3d7c74f01f85074496b5d2e695fc7d01deba0b0310ff",
-   "size": 4662
+   "sha256": "c7ca3715b38acf1bdbd1bff21e71fb20dfe84230a40b7f12afe7a30ad9ca0f69",
+   "size": 4856
   },
   "vendor/html5-qrcode-LICENSE.txt": {
    "sha256": "306bc450da41244fefb92fec6fba30f27afb9d9b0eaa72b96372c23e2338c612",
@@ -321,5 +321,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.7"
+ "version": "0.20.8"
 }

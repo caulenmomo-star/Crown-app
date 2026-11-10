@@ -2,6 +2,11 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.8 — Fix: Mac/Windows app saving after updating itself (2026-11-09)
+
+- After the Mac and Windows apps updated themselves, saving to disk stopped (“Not saved to disk”). Fixed. Anything you did meanwhile was kept on this computer and is saved to disk again the next time Kingpin opens.
+- The apps also check the website for updates every couple of hours while open.
+
 ## v0.20.7 — Stats per inbox, cancelled orders out of the way (2026-11-09)
 
 - Dashboard: “Stats for” lets you pick All inboxes, one inbox or several at once (plus orders added by hand). Totals, charts, activity and the checkout card all follow it, and it’s remembered on every device.

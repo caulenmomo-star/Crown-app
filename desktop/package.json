@@ -1,7 +1,7 @@
 {
   "name": "kingpin",
   "productName": "Kingpin",
-  "version": "0.20.7",
+  "version": "0.20.8",
   "description": "Kingpin for Mac and Windows",
   "main": "main.js",
   "author": "Kingpin",

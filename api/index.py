@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.20.7"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.20.8"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -2673,7 +2673,9 @@ class _LocalHandler(BaseHTTPRequestHandler):
         if not self._api_guard():
             return
         if self.path == "/api/vault":
-            if self.headers.get("X-Crown-App") != VERSION:
+            # screens from before this engine (an old tab) mustn't overwrite newer data; the ones it's serving (maybe a
+            # newer self-updated set) are fine
+            if self.headers.get("X-Crown-App") not in (VERSION, UPD.get("active")):
                 return self._send(200, {"ok": False, "outdated": True, "error": "Kingpin was updated. Reload this tab to keep going."})
 
             def fn():
