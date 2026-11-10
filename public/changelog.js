@@ -1,6 +1,10 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.9', date: '2026-11-10', title: 'Stats per inbox works with Hide My Email', items: [
+    'Dashboard “Stats for” now places every order under the inbox it came into, including iCloud Hide My Email and other made-up addresses. iCloud addresses count toward your iCloud inbox, Gmail addresses toward Gmail, and your own domains toward whichever inbox their orders come into.',
+    'Phone: the date range is one dropdown with “Custom…” in it, and the custom dates only show when you pick it.',
+  ] },
   { v: '0.20.8', date: '2026-11-09', title: 'Fix: Mac/Windows app saving after updating itself', items: [
     'After the Mac and Windows apps updated themselves, saving to disk stopped (“Not saved to disk”). Fixed. Anything you did meanwhile was kept on this computer and is saved to disk again the next time Kingpin opens.',
     'The apps also check the website for updates every couple of hours while open.',

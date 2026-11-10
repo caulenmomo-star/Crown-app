@@ -384,7 +384,8 @@ button.primary.dangerbtn{background:var(--danger);border-color:var(--danger)}
   .toolbar>.spacer{display:none}
   .selbar{position:sticky;top:0;z-index:5}
   .rangebar>.small{display:none}
-  .rangeins{width:100%;display:grid!important;grid-template-columns:64px 1fr auto 1fr}
+  .rangeins{width:100%;display:grid!important;grid-template-columns:64px minmax(0,1fr) auto minmax(0,1fr)}
+  .rangeins[hidden]{display:none!important}
   .rangeins input{width:100%!important;min-width:0;padding-left:8px;padding-right:6px}
   /* cards & grids */
   .fgrid{grid-template-columns:1fr 1fr}.fgrid .s3,.fgrid .s4{grid-column:span 2}
@@ -1222,3 +1223,4 @@ a.btn.primary{background:var(--accent);color:var(--onAccent);border-color:transp
 .ocard.orow .oprog i.on{background:var(--sc)}
 .stmore{margin-top:8px}.stmore summary{cursor:pointer;padding:4px 0}
 .dibpick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px}
+.rangeins[hidden]{display:none!important}

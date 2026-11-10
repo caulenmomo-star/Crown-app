@@ -35,13 +35,45 @@ function greet() { const h = new Date().getHours(); return h < 5 ? 'Up late' : h
 
 /* ================= dashboard ================= */
 // Which inbox's orders the dashboard counts: all of them, or the inboxes you pick (saved, so every device shows the same)
+// Orders from before Kingpin noted the inbox: work it out from the address the order email was sent to.
+// iCloud Hide My Email / @icloud.com addresses → the iCloud inbox, @gmail.com → the Gmail inbox, and a custom domain
+// → whichever inbox the other orders to that domain came to.
+const IB_KIND = [['icloud', /(^|\.)(icloud\.com|me\.com|mac\.com|privaterelay\.appleid\.com)$/], ['gmail', /(^|\.)(gmail\.com|googlemail\.com)$/], ['outlook', /(^|\.)(outlook|hotmail|live|msn)\.[a-z.]+$/], ['yahoo', /(^|\.)(yahoo|ymail|rocketmail)\.[a-z.]+$/], ['aol', /(^|\.)aol\.com$/]];
+const ibKindOfDomain = d => (IB_KIND.find(([, re]) => re.test(d)) || [''])[0];
+function ibKindOfInbox(a) {
+  const h = String(a.host || '').toLowerCase(), u = String(a.user || '').toLowerCase().split('@')[1] || '';
+  if (/mail\.me\.com|icloud/.test(h)) return 'icloud';
+  if (/gmail|google/.test(h)) return 'gmail';
+  if (/outlook|office365|hotmail/.test(h)) return 'outlook';
+  if (/yahoo/.test(h)) return 'yahoo';
+  if (/aol/.test(h)) return 'aol';
+  return ibKindOfDomain(u);
+}
+let IB_GUESS = null;
+function ibGuessMap() {
+  // custom domains: which inbox their (already known) orders came to
+  const key = state.orders.length + ':' + (state.imapAccounts || []).map(a => a.id).join(',');
+  if (IB_GUESS && IB_GUESS.key === key) return IB_GUESS;
+  const byDom = {};
+  state.orders.forEach(o => { if (!(o.inboxIds || []).length) return; const d = String(o.recipientEmail || '').toLowerCase().split('@')[1]; if (!d) return; byDom[d] = byDom[d] || {}; o.inboxIds.forEach(i => { byDom[d][i] = (byDom[d][i] || 0) + 1; }); });
+  const dom = {}; Object.entries(byDom).forEach(([d, c]) => { dom[d] = Object.entries(c).sort((a, b) => b[1] - a[1])[0][0]; });
+  const kind = {}; (state.imapAccounts || []).forEach(a => { const k = ibKindOfInbox(a); if (k && !kind[k]) kind[k] = a.id; });
+  IB_GUESS = { key, dom, kind };
+  return IB_GUESS;
+}
 function orderInboxIds(o) {
   if ((o.inboxIds || []).length) return o.inboxIds;
   const accs = state.imapAccounts || [];
-  if (o.source !== 'email') return [];
+  if (o.source !== 'email' || !accs.length) return [];
   if (accs.length === 1) return [accs[0].id];
-  const r = String(o.recipientEmail || '').toLowerCase().trim(), a = r && accs.find(x => String(x.user || '').toLowerCase().trim() === r);
-  return a ? [a.id] : [];
+  const r = String(o.recipientEmail || '').toLowerCase().trim();
+  const exact = r && accs.find(x => String(x.user || '').toLowerCase().trim() === r);
+  if (exact) return [exact.id];
+  const d = r.split('@')[1] || '', g = ibGuessMap();
+  if (d && g.dom[d]) return [g.dom[d]];
+  const k = ibKindOfDomain(d);
+  if (k && g.kind[k]) return [g.kind[k]];
+  return [];
 }
 function dashInboxSel() {
   const ids = new Set((state.imapAccounts || []).map(a => a.id));
@@ -57,7 +89,8 @@ function dashInboxPicker() {
   const accs = state.imapAccounts || []; if (accs.length < 2) return '';
   const sel = dashInboxSel(), hand = state.orders.some(o => o.source !== 'email');
   const chip = (id, label, title) => `<button type="button" class="chip ${sel && sel.includes(id) ? 'on' : ''}" data-dib="${esc(id)}" title="${esc(title || label)}">${esc(label)}</button>`;
-  return `<div class="dibpick" id="dashInbox" aria-label="Show stats for"><span class="small muted">Stats for</span><button type="button" class="chip ${sel ? '' : 'on'}" data-dib="__all">All inboxes</button>${accs.map(a => chip(a.id, a.label || a.user, a.user)).join('')}${hand ? chip('__hand', 'Added by hand') : ''}</div>`;
+  const unk = sel ? state.orders.filter(o => o.source === 'email' && !orderInboxIds(o).length).length : 0;
+  return `<div class="dibpick" id="dashInbox" aria-label="Show stats for"><span class="small muted">Stats for</span><button type="button" class="chip ${sel ? '' : 'on'}" data-dib="__all">All inboxes</button>${accs.map(a => chip(a.id, a.label || a.user, a.user)).join('')}${hand ? chip('__hand', 'Added by hand') : ''}${unk ? `<span class="small faint" title="Their emails don’t say which inbox they came to. They’re counted in All inboxes.">${plural(unk, 'older order')} not matched</span>` : ''}</div>`;
 }
 function wireDashInbox() {
   const box = $('#dashInbox'); if (!box) return;
@@ -127,8 +160,7 @@ PAGES.dashboard = {
       ${state.imapAccounts.length ? `<button id="dSync" ${syncing ? 'disabled' : ''}>${syncing ? 'Syncing…' : 'Sync email now'}</button>` : ''}<button class="primary" data-nav="orders">View orders</button></div>
       ${!state.imapAccounts.length ? `<div class="card" style="margin-bottom:16px;border-color:var(--selLine);background:var(--selBg)"><h3>📬 Connect your email to track orders automatically</h3><div class="muted" style="margin-bottom:12px">Kingpin reads order confirmations, shipping and delivery emails from Target, Walmart, Pokémon Center, Best Buy and more. It builds your order list, houses, calendar and spending for you — read-only, it never changes your mail.</div><button class="primary" data-nav="inboxes">Connect an inbox</button></div>` : ''}
       ${dashInboxPicker()}
-      <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}</div>
-<button class="chip ${DASH.from || DASH.to || DASH.custom ? 'on' : ''}" id="dCustom">Custom</button>
+      <div class="hstack rangebar" style="flex-wrap:wrap;gap:6px;margin-bottom:12px"><span class="small muted">Show</span><div class="chips" id="dDays">${[1, 3, 7, 14, 30, 60, 90, 180, 365].map(n => `<button class="chip ${!DASH.custom && !DASH.from && !DASH.to && DASH.days === n ? 'on' : ''}" data-dd="${n}">${n === 1 ? 'Today' : n + 'd'}</button>`).join('')}<button class="chip ${DASH.from || DASH.to || DASH.custom ? 'on' : ''}" id="dCustom">Custom…</button></div>
         <span class="hstack rangeins" style="gap:6px" ${DASH.from || DASH.to || DASH.custom ? '' : 'hidden'}><input type="number" id="dN" min="1" max="400" placeholder="days" style="width:72px" value="${!DASH.from && !DASH.to && ![1, 3, 7, 14, 30, 60, 90, 180, 365].includes(DASH.days) ? DASH.days : ''}"><input type="date" id="dFrom" style="width:auto" value="${DASH.from || ''}"><span class="faint">to</span><input type="date" id="dTo" style="width:auto" value="${DASH.to || ''}"></span></div>
       ${(() => { const si = stickInfo(inSel), inv = (state.inventory || []).length ? invStats((state.inventory || []).filter(i => (Number(i.qty) || 0) > 0)) : null;
         const m0 = dayKey(new Date(now.getFullYear(), now.getMonth(), 1)), ss = (state.sales || []).filter(x => x.date >= m0), pm = (state.sales || []).length ? sum(ss, saleProfit) - sum((state.expenses || []).filter(x => x.date >= m0), x => x.amount) : null;
