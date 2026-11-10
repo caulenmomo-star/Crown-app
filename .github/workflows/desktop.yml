@@ -101,7 +101,12 @@ jobs:
           sed -i.bak 's/^VERSION = ".*"/VERSION = "0.0.1"/' oldcopy/server.py && sed -i.bak "s/const VERSION = '[^']*'/const VERSION = '0.0.1'/" oldcopy/app/core.js
           CROWN_NO_BROWSER=1 CROWN_DATA=$PWD/upddata CROWN_PORT=8897 "$PY" -u oldcopy/server.py > upd.log 2>&1 &
           for i in $(seq 60); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8897/api/ping | grep -q '"ok": true' && break; sleep 1; done
-          for i in $(seq 90); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8897/api/update > st.json; grep -qE '"state": "(ready|error|download)"' st.json && break; sleep 2; done
+          # (if the website is publishing a new version at this moment a file can come out mismatched: ask again)
+          for t in 1 2 3 4 5 6; do
+            for i in $(seq 90); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8897/api/update > st.json; grep -qE '"state": "(ready|error|download)"' st.json && break; sleep 2; done
+            grep -q '"state": "error"' st.json || break
+            cat st.json; echo " - trying again"; sleep 20; curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8897/api/update/check > /dev/null
+          done
           cat st.json; echo
           grep -q '"state": "ready"' st.json
           curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8897/api/update/apply; echo
@@ -118,7 +123,8 @@ jobs:
           mkdir -p smokedata && echo '{"salt":"AAAA","iv":"AAAA","ct":"AAAA","v":2}' > smokedata/vault.json
           for m in local online; do
             rm -f smoke-$m.json
-            KINGPIN_SMOKE=$m KINGPIN_SMOKE_OUT=$PWD/smoke-$m.json CROWN_DATA=$PWD/smokedata CROWN_PORT=8893 timeout 150 "$EXE" > smoke-$m.log 2>&1 || true
+            KINGPIN_SMOKE=$m KINGPIN_SMOKE_OUT=$PWD/smoke-$m.json CROWN_DATA=$PWD/smokedata CROWN_PORT=8893 "$EXE" > smoke-$m.log 2>&1 &
+            pid=$!; for i in $(seq 150); do kill -0 $pid 2>/dev/null || break; sleep 1; done; kill $pid 2>/dev/null || true
             echo "$m: $(cat smoke-$m.json 2>/dev/null)"; tail -5 smoke-$m.log
             grep -q '"ok":true' smoke-$m.json
           done
