@@ -2,6 +2,11 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.12 — Email list finds accounts from profile names (2026-11-10)
+
+- Email list “Store accounts” also counts profiles named for a store, like “Target Account #18”, “abc.def_Target” or “PKC 3”, so emails you only have on bot profiles show their store too. These show with a dashed outline, meaning there’s no saved login for them under Store logins. The store filters and Copy use them too.
+- Emails match even with different capitals, stray spaces or invisible characters from copying.
+
 ## v0.20.11 — Accounts know their profile, email list shows stores (2026-11-10)
 
 - Store logins show their profile automatically: the profile with the same email, or one named after the address. Profiles you add later are picked up too. A profile you chose yourself still wins.
