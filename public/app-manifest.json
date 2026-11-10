@@ -6,8 +6,8 @@
    "size": 21452
   },
   "accounts.js": {
-   "sha256": "76d4a602ba2586bf69f65ded4067ab18240c54e3dcabbfeabff5357c2351af41",
-   "size": 29522
+   "sha256": "3a85c5425f6878701ba6127e99001fd339a7e950c9ab15b952316e9e56a51f27",
+   "size": 31417
   },
   "aco.js": {
    "sha256": "20542615e9230e36ef33aa2546c17323a7d2598fd510a91e18fa9a1b7b8b149b",
@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "0941f7ed7184992559ea216287cb531f2110ae9a4b10e5ae06c8ab8581ef8e3a",
-   "size": 36926
+   "sha256": "472f98908bda7b667c5897d94492f083d4b96b5fabcd723bcf233743d534fb38",
+   "size": 37564
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,7 +58,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "27acd159a33944fed10817d2708523a52c89a4c39d5b98c3b20bd3e21b24c93c",
+   "sha256": "e4f30b07a351a3a1b56440009b8efe2a218f843efa9eeb95f83874c0f34d2cb2",
    "size": 53539
   },
   "ct-icon-180.png": {
@@ -90,8 +90,8 @@
    "size": 21072
   },
   "emails.js": {
-   "sha256": "6365e8d2ed22acdef3bae3b0ccf944bc697a6cb71b2a8222791f092f668a1fc3",
-   "size": 17563
+   "sha256": "1cc047c1258825f760d808006782a638b82f0c52558a7147bb08d6f2ffee83b0",
+   "size": 22233
   },
   "index.html": {
    "sha256": "7eb7cfc84410eeaec267088731610855f493f3ebccfef8828b995b5b3303a5c6",
@@ -226,8 +226,8 @@
    "size": 21107
   },
   "styles.css": {
-   "sha256": "304c33b8843c4f97314ffd9967682c6a33f13eadd9af85e32b05d461037e6a33",
-   "size": 94278
+   "sha256": "0f3efd78306ba521a1c6c27b25233e4804ec382686cb47ad121c7126879b508d",
+   "size": 94889
   },
   "sw.js": {
    "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
@@ -325,5 +325,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.10"
+ "version": "0.20.11"
 }

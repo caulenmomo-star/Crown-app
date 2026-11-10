@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.11 — Accounts know their profile, email list shows stores (2026-11-10)
+
+- Store logins show their profile automatically: the profile with the same email, or one named after the address. Profiles you add later are picked up too. A profile you chose yourself still wins.
+- Email list: a “Store accounts” column shows every store each address has a login on. Filter by “No store account yet”, “On Target”, “Not on Walmart” and so on, and sort by fewest or most stores.
+- One tap copies the emails you’re looking at, one per line, ready to paste into a generator.
+
 ## v0.20.10 — Mac and Windows apps stay in sync with your account (2026-11-10)
 
 - The Mac and Windows apps can link to your Kingpin Online account, so your computer, your phone and anyone you share the account with see the same data. The new download asks once when it opens. You can switch anytime in Settings.

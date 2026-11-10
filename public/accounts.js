@@ -35,9 +35,32 @@ function accOrderIndex() {
   return (_accIx = m);
 }
 function accOrders(a) { const e = normEmail(a.email || ''); if (!e) return []; const ix = accOrderIndex(); return a.store === 'custom' ? (ix.get('*|' + e) || []) : (ix.get(a.store + '|' + e) || []); }
-function accProfile(a) { return a.profileId ? profileById(a.profileId) : null; }
+// Which profile an account belongs to: the one you picked; otherwise the profile with the same email (always up to
+// date - add or change a profile and its accounts follow); otherwise a profile named after the email ("abc.def_Target").
+let _accPIx = null;
+function accProfIndex() {
+  if (_accPIx && _accPIx.ref === state.profiles && _accPIx.n === state.profiles.length && Date.now() - _accPIx.t < 1500) return _accPIx;
+  const exact = new Map(), loose = new Map(), names = [];
+  const put = (m, k, p) => { if (!k) return; const l = m.get(k); if (l) l.push(p); else m.set(k, [p]); };
+  for (const p of state.profiles) { const e = String(p.email || '').toLowerCase().trim(); put(exact, e, p); if (e) put(loose, normEmail(e), p); const n = String(p.name || '').toLowerCase().trim(); if (n) names.push([n, p]); }
+  return (_accPIx = { ref: state.profiles, n: state.profiles.length, t: Date.now(), exact, loose, names });
+}
+function accMatchProfile(a) {
+  const e = String(a.email || '').toLowerCase().trim(); if (!e) return null;
+  const ix = accProfIndex(); let l = ix.exact.get(e) || ix.loose.get(normEmail(e));
+  if (l && l.length) {
+    if (l.length > 1) { const st = a.store === 'custom' ? norm(a.storeName) : a.store; const best = l.find(p => st && String(p.name || '').toLowerCase().includes(st)); if (best) return { p: best, how: 'email' }; }
+    return { p: l[0], how: 'email' };
+  }
+  // profile named after the address: "abc.def_Target", "abc.def Walmart"…
+  const local = e.split('@')[0]; if (local.length < 4) return null;
+  const hits = ix.names.filter(([n]) => n === local || (n.startsWith(local) && /[\s_|·-]/.test(n[local.length] || ''))).map(x => x[1]);
+  return hits.length === 1 ? { p: hits[0], how: 'name' } : null;
+}
+function accProfileHow(a) { if (a.profileId) { const p = profileById(a.profileId); if (p) return { p, how: 'set' }; } return accMatchProfile(a); }
+function accProfile(a) { const m = accProfileHow(a); return m ? m.p : null; }
 // a profile with the same email is the natural match
-function suggestProfile(a) { const e = String(a.email || '').toLowerCase().trim(); return e ? state.profiles.find(p => String(p.email || '').toLowerCase().trim() === e) || null : null; }
+function suggestProfile(a) { const m = accMatchProfile(a); return m ? m.p : null; }
 
 async function copyText(t, what) {
   try { await navigator.clipboard.writeText(t); toast((what || 'Copied') + ' copied'); }
@@ -65,7 +88,7 @@ function filteredAccounts() {
 
 PAGES.accounts = {
   render() {
-    _accIx = null;
+    _accIx = null; _accPIx = null;
     const pg = $('#pg-accounts');
     if (AF.view === 'emails') { emlRender(pg); return; }
     const all = state.accounts || [];
@@ -88,14 +111,14 @@ PAGES.accounts = {
         <div class="chips" id="acStatus">${[['all', 'All']].concat(ACC_STATUS.map(s => [s.k, s.l])).map(([k, l]) => `<button class="chip ${AF.status === k ? 'on' : ''}" data-as="${k}">${esc(l)}${k !== 'all' ? `<span class="n">${cnt(k)}</span>` : ''}</button>`).join('')}</div></div>
       ${accSel.size ? `<div class="selbar"><strong>${accSel.size} selected</strong><button class="sm primary" id="acEditSel">Edit selected</button><select id="acSetStatus" style="width:auto"><option value="">Set status…</option>${ACC_STATUS.map(s => `<option value="${s.k}">${s.l}</option>`).join('')}</select><select id="acMove" style="width:auto"><option value="">Move to group…</option>${accGroupOptions('').replace('<option value="">No group</option>', '<option value="-">No group</option>')}</select><button class="sm" id="acCopySel">Copy email:password</button><button class="sm danger" id="acDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="acClrSel">Clear</button></div>` : ''}
       ${list.length ? `<div class="tablewrap"><table class="atable"><thead><tr><th class="cb"><input type="checkbox" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" id="acAll" ${list.every(a => accSel.has(a.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Store</th><th>Email / username</th><th>Password</th><th>Status</th><th>Group</th><th>Profile</th><th class="right">Orders</th></tr></thead><tbody>
-        ${list.map(a => { const os = accOrders(a), st = ACCS[a.status] || ACCS.new, p = accProfile(a), shown = AF.reveal.has(a.id); const t = tally(os);
+        ${list.map(a => { const os = accOrders(a), st = ACCS[a.status] || ACCS.new, ph = accProfileHow(a), p = ph && ph.p, shown = AF.reveal.has(a.id); const t = tally(os);
           return `<tr data-acc="${a.id}" class="${accSel.has(a.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-acb="${a.id}" ${accSel.has(a.id) ? 'checked' : ''} aria-label="Select"></td>
           <td class="a-store">${accStoreBadge(a)}</td>
           <td class="a-email"><div class="cellflex"><span class="ellipsis">${esc(a.email) || '<span class="faint">—</span>'}</span>${a.email ? `<button class="ghost sm icopy" data-copy="email" data-id="${a.id}" title="Copy email" aria-label="Copy email">⧉</button>` : ''}</div></td>
           <td class="a-pw"><div class="cellflex"><span class="mono pw">${a.password ? (shown ? esc(a.password) : '••••••••••') : '<span class="faint">—</span>'}</span>${a.password ? `<button class="ghost sm icopy" data-reveal="${a.id}" title="${shown ? 'Hide' : 'Show'} password" aria-label="${shown ? 'Hide' : 'Show'} password">${shown ? 'Hide' : 'Show'}</button><button class="ghost sm icopy" data-copy="pw" data-id="${a.id}" title="Copy password" aria-label="Copy password">⧉</button>` : ''}</div></td>
           <td class="a-st"><span class="hpill"><i style="background:${st.c}"></i>${esc(st.l)}</span></td>
           <td class="a-grp">${accGroupById(a.groupId) ? `<span class="tag">${esc(accGroupById(a.groupId).name)}</span>` : '<span class="faint">—</span>'}</td>
-          <td class="a-prof">${p ? esc(p.name || 'Untitled') : '<span class="faint">—</span>'}</td>
+          <td class="a-prof">${p ? `<span class="ellipsis" title="${ph.how === 'set' ? 'Linked to this profile' : ph.how === 'email' ? 'Profile with this email' : 'Profile named after this email'}">${esc(p.name || 'Untitled')}</span>` : '<span class="faint">—</span>'}</td>
           <td class="right a-n">${os.length ? `${os.length}<span class="small faint"> · ${t.stuck}✓ ${t.dead}✕</span>` : '<span class="faint">—</span>'}</td></tr>`; }).join('')}</tbody></table></div>`
         : `<div class="empty">${all.length ? 'No accounts match.' : 'No accounts yet. Save every store login here — email, password, which profile it goes with and whether it still works. <b>Import</b> takes email:password lists or a spreadsheet. Make groups like “Target main” to keep them sorted.'}</div>`}</div></div>`;
     wireAccTabs();
@@ -257,8 +280,7 @@ function openAccExport() {
 }
 // Profile dialog: the store accounts that belong to this profile
 function profileAccountsHtml(p) {
-  const e = String(p.email || '').toLowerCase().trim();
-  const list = (state.accounts || []).filter(a => a.profileId === p.id || (e && !a.profileId && String(a.email || '').toLowerCase().trim() === e));
+  const list = (state.accounts || []).filter(a => { const x = accProfile(a); return x && x.id === p.id; });
   if (!list.length) return '';
   return `<div class="section">Store accounts</div><div class="list">${list.map(a => { const st = ACCS[a.status] || ACCS.new; return `<div class="li small">${accStoreBadge(a)}<span class="ellipsis" style="flex:1">${esc(a.email)}</span><span class="hpill"><i style="background:${st.c}"></i>${esc(st.l)}</span></div>`; }).join('')}</div>`;
 }

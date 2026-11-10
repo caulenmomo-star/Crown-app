@@ -1181,10 +1181,14 @@ a.btn:hover{background:var(--panel3)}
 #dlgSalesImp .seg{flex-wrap:wrap;max-width:100%}
 .mectl>textarea{min-height:58px;height:58px;resize:vertical}
 .siprev .li{align-items:flex-start}.siprev .mmain{flex:1;min-width:0}
+.estores{display:inline-flex;flex-wrap:wrap;gap:4px}.etable .e-stores{min-width:120px}.etable .a-prof .ellipsis{display:inline-block;max-width:220px;vertical-align:bottom}
 @media (max-width:760px){
+  .etable .e-stores{grid-column:1 / 3;min-width:0}.etable .e-stores>.faint{font-size:12px}.etable .e-stores>.faint::before{content:'Store accounts: '}
+  #pg-accounts .toolbar #emStore,#pg-accounts .toolbar #emSort{flex:1 1 40%;min-width:0}#pg-accounts .toolbar #emCopyAll{flex:1 1 100%}
   .etable .a-email{grid-column:1;grid-row:1}.etable .a-store{grid-column:2;grid-row:1;justify-self:end;font-size:12px}
   .etable .a-grp{grid-column:1}.etable .a-prof{grid-column:2;justify-self:end;font-size:12px}.etable .e-notes{grid-column:1 / 3;max-width:none!important}.etable .e-notes:empty{display:none}
   #pg-accounts .toolbar #emQ{flex:1 1 100%}
+  .etable .a-prof{grid-column:1 / 3;justify-self:start;color:var(--muted)}.etable .a-prof>.faint{display:none}.etable .a-prof .ellipsis{max-width:100%}
 }
 
 /* two-step sign-in */

@@ -3,7 +3,7 @@
    copy of the iCloud HME page — the addresses are picked out of whatever's pasted), see which ones are already on a
    profile or a store login, and use a group's unused ones in the profile builder. */
 'use strict';
-const EF = { q: '', group: 'all', use: 'all', prov: '' };
+const EF = { q: '', group: 'all', use: 'all', prov: '', store: '', sort: 'added' };
 let emlSel = new Set();
 const emlGroupById = id => (state.emailGroups || []).find(g => g.id === id);
 function ensureEmlGroup(name) {
@@ -29,25 +29,45 @@ function emlExtract(text) {
   for (const m of String(text || '').matchAll(/[a-z0-9][a-z0-9._%+'-]*@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/gi)) { const e = m[0].toLowerCase().replace(/\.+$/, ''); if (!seen.has(e)) { seen.add(e); out.push(e); } }
   return out;
 }
-// where each address is already used
+// where each address is already used: on which profiles, and which stores have a login saved with it
+const emlAccKey = a => a.store === 'custom' ? 'c:' + norm(a.storeName) : a.store;
 function emlUseIndex() {
-  const ix = new Map(), add = (e, k, v) => { e = String(e || '').toLowerCase().trim(); if (!e) return; const x = ix.get(e) || { profiles: [], accounts: 0 }; if (k === 'p') x.profiles.push(v); else x.accounts++; ix.set(e, x); };
-  state.profiles.forEach(p => add(p.email, 'p', p.name || 'Untitled'));
-  (state.accounts || []).forEach(a => add(a.email, 'a'));
+  const ix = new Map(), get = e => { e = String(e || '').toLowerCase().trim(); if (!e) return null; let x = ix.get(e); if (!x) ix.set(e, x = { profiles: [], accounts: 0, stores: new Map() }); return x; };
+  state.profiles.forEach(p => { const x = get(p.email); if (x) x.profiles.push(p.name || 'Untitled'); });
+  (state.accounts || []).forEach(a => { const x = get(a.email); if (!x) return; x.accounts++; x.stores.set(emlAccKey(a), a.store === 'custom' ? (a.storeName || 'Other') : Parser.storeInfo(a.store).label); });
+  // a profile named after the address (no email on it) counts too, the same way the store logins find it
+  if (typeof accMatchProfile === 'function') (state.emails || []).forEach(e => { const x = ix.get(e.email); if (x && x.profiles.length) return; const m = accMatchProfile({ email: e.email, store: '' }); if (m) get(e.email).profiles.push(m.p.name || 'Untitled'); });
   return ix;
 }
+// stores for the "Store accounts" filter: the ones you have logins for first, then the rest
+function emlStoreChoices() {
+  const have = new Map(); (state.accounts || []).forEach(a => have.set(emlAccKey(a), a.store === 'custom' ? (a.storeName || 'Other') : Parser.storeInfo(a.store).label));
+  const rest = Parser.STORES.filter(x => x.key !== 'other' && !have.has(x.key)).map(x => [x.key, x.label]);
+  return { have: [...have].sort((a, b) => a[1].localeCompare(b[1])), rest: rest.sort((a, b) => a[1].localeCompare(b[1])) };
+}
+const emlStoreLabel = k => { for (const [kk, l] of [].concat(emlStoreChoices().have, emlStoreChoices().rest)) if (kk === k) return l; return k; };
 function emlFiltered(ix) {
   const q = EF.q.trim().toLowerCase();
-  return (state.emails || []).filter(e => {
+  const list = (state.emails || []).filter(e => {
     if (EF.group === 'none' ? emlGroupById(e.groupId) : EF.group !== 'all' && e.groupId !== EF.group) return false;
     const used = ix.has(e.email);
     if (EF.use === 'unused' && used) return false;
     if (EF.use === 'used' && !used) return false;
     if (EF.prov && emlProvider(e.email) !== EF.prov) return false;
-    return !q || [e.email, e.notes, (emlGroupById(e.groupId) || {}).name].some(v => String(v || '').toLowerCase().includes(q));
+    if (EF.store) { const u = ix.get(e.email), st = u ? u.stores : null;
+      if (EF.store === 'none' ? st && st.size : EF.store === 'any' ? !(st && st.size) : EF.store.startsWith('has:') ? !(st && st.has(EF.store.slice(4))) : EF.store.startsWith('not:') && st && st.has(EF.store.slice(4))) return false; }
+    if (!q) return true;
+    const u = ix.get(e.email);
+    return [e.email, e.notes, (emlGroupById(e.groupId) || {}).name, u && u.profiles.join(' '), u && [...u.stores.values()].join(' ')].some(v => String(v || '').toLowerCase().includes(q));
   });
+  if (EF.sort === 'az') list.sort((a, b) => a.email.localeCompare(b.email, undefined, { numeric: true }));
+  else if (EF.sort === 'fewest' || EF.sort === 'most') { const n = e => { const u = ix.get(e.email); return u ? u.stores.size : 0; }; list.sort((a, b) => EF.sort === 'fewest' ? n(a) - n(b) : n(b) - n(a)); }
+  else if (EF.sort === 'newest') list.reverse();
+  return list;
 }
-const emlUsedHtml = u => !u ? '<span class="faint">Unused</span>' : [u.profiles.length ? (u.profiles.length > 2 ? plural(u.profiles.length, 'profile') : 'Profile ' + u.profiles.map(esc).join(', ')) : '', u.accounts ? plural(u.accounts, 'store login') : ''].filter(Boolean).join(' · ');
+// store logins as store badges (each store once), then the profile(s) on this address
+const emlStoresHtml = u => !u || !u.stores.size ? '<span class="faint">None</span>' : `<span class="estores">${[...u.stores].sort((a, b) => a[1].localeCompare(b[1])).map(([k, l]) => k.startsWith('c:') ? `<span class="badge"><i style="background:var(--faint)"></i>${esc(l)}</span>` : storeBadge(k)).join('')}</span>`;
+const emlUsedHtml = u => !u || !u.profiles.length ? '<span class="faint">—</span>' : u.profiles.length > 2 ? esc(plural(u.profiles.length, 'profile')) : `<span class="ellipsis">${u.profiles.map(esc).join(', ')}</span>`;
 function emlRender(pg) {
   if (!state.emails) state.emails = [];
   if (!state.emailGroups) state.emailGroups = [];
@@ -62,20 +82,26 @@ function emlRender(pg) {
     <div class="split"><div class="catlist"><div id="egList"><div class="cat ${EF.group === 'all' ? 'active' : ''}" data-eg="all"><span>All emails</span><span class="n">${all.length}</span></div>${state.emailGroups.map(g => `<div class="cat ${EF.group === g.id ? 'active' : ''}" data-eg="${g.id}"><span class="ellipsis">${esc(g.name)}</span><span class="n">${n(g.id)}</span><span class="act"><button data-egren="${g.id}">Rename</button><button data-egdel="${g.id}">✕</button></span></div>`).join('')}${state.emailGroups.length && n('none') ? `<div class="cat ${EF.group === 'none' ? 'active' : ''}" data-eg="none"><span class="faint">No group</span><span class="n">${n('none')}</span></div>` : ''}</div><button id="egAdd" class="ghost" style="width:100%;margin-top:6px;text-align:left">+ New group</button></div><div style="min-width:0">
       <div class="toolbar"><input class="search" data-search id="emQ" placeholder="Search emails, notes…  ( / )" value="${esc(EF.q)}">
         ${provs.length > 1 ? `<select id="emProv"><option value="">All kinds</option>${provs.map(p => `<option ${EF.prov === p ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>` : ''}
-        <div class="chips" id="emUse">${[['all', 'All'], ['unused', 'Unused'], ['used', 'Used']].map(([k, l]) => `<button class="chip ${EF.use === k ? 'on' : ''}" data-eu="${k}">${l}</button>`).join('')}</div></div>
+        <select id="emStore" title="Filter by the stores these emails have logins on">${(() => { const c = emlStoreChoices(), o = (v, l) => `<option value="${esc(v)}" ${EF.store === v ? 'selected' : ''}>${esc(l)}</option>`;
+          return o('', 'Any store accounts') + o('none', 'No store account yet') + o('any', 'Has a store account') + (c.have.length ? `<optgroup label="Has an account on">${c.have.map(([k, l]) => o('has:' + k, 'On ' + l)).join('')}</optgroup>` : '') + `<optgroup label="No account on">${c.have.concat(c.rest).map(([k, l]) => o('not:' + k, 'Not on ' + l)).join('')}</optgroup>`; })()}</select>
+        <select id="emSort" title="Sort">${[['added', 'Oldest first'], ['newest', 'Newest first'], ['az', 'A–Z'], ['fewest', 'Fewest stores first'], ['most', 'Most stores first']].map(([k, l]) => `<option value="${k}" ${EF.sort === k ? 'selected' : ''}>${l}</option>`).join('')}</select>
+        <div class="chips" id="emUse">${[['all', 'All'], ['unused', 'Unused'], ['used', 'Used']].map(([k, l]) => `<button class="chip ${EF.use === k ? 'on' : ''}" data-eu="${k}">${l}</button>`).join('')}</div>
+        ${list.length ? `<button class="sm primary" id="emCopyAll" title="Copies these emails, one per line — ready to paste into a generator">Copy ${list.length === all.length ? 'all ' : ''}${plural(list.length, 'email')}</button>` : ''}</div>
+      ${EF.store ? `<div class="small muted" style="margin:-4px 0 8px">${esc(plural(list.length, 'email'))} ${EF.store === 'none' ? 'with no store login saved yet' : EF.store === 'any' ? 'with at least one store login' : EF.store.startsWith('has:') ? 'with a ' + emlStoreLabel(EF.store.slice(4)) + ' login' : 'without a ' + emlStoreLabel(EF.store.slice(4)) + ' login'} · <button class="linkbtn" id="emStoreClr">show all</button></div>` : ''}
       ${emlSel.size ? `<div class="selbar"><strong>${emlSel.size} selected</strong><button class="sm primary" id="emEditSel">Edit selected</button><select id="emMove" style="width:auto"><option value="">Move to group…</option><option value="-">No group</option>${state.emailGroups.map(g => `<option value="${g.id}">${esc(g.name)}</option>`).join('')}<option value="__new">+ New group…</option></select><button class="sm" id="emCopySel">Copy</button><button class="sm danger" id="emDelSel">Delete</button><div class="spacer"></div><button class="sm ghost" id="emClrSel">Clear</button></div>` : ''}
-      ${list.length ? `<div class="tablewrap"><table class="atable etable"><thead><tr><th class="cb"><input type="checkbox" id="emAll" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" ${list.every(e => emlSel.has(e.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Email</th><th>Kind</th><th>Group</th><th>Used on</th><th>Notes</th></tr></thead><tbody>
+      ${list.length ? `<div class="tablewrap"><table class="atable etable"><thead><tr><th class="cb"><input type="checkbox" id="emAll" title="Select all (⌘A / Ctrl+A) · Shift-click to select a range" ${list.every(e => emlSel.has(e.id)) ? 'checked' : ''} aria-label="Select all"></th><th>Email</th><th>Kind</th><th>Group</th><th>Store accounts</th><th>Profile</th><th>Notes</th></tr></thead><tbody>
         ${list.slice(0, 1500).map(e => `<tr data-eml="${e.id}" class="${emlSel.has(e.id) ? 'sel' : ''}"><td class="cb"><input type="checkbox" data-ecb="${e.id}" ${emlSel.has(e.id) ? 'checked' : ''} aria-label="Select"></td>
           <td class="a-email"><div class="cellflex"><span class="ellipsis">${esc(e.email)}</span><button class="ghost sm icopy" data-ecopy="${e.id}" title="Copy email" aria-label="Copy email">⧉</button></div></td>
           <td class="a-store"><span class="tag">${esc(emlProvider(e.email))}</span></td>
           <td class="a-grp">${emlGroupById(e.groupId) ? `<span class="tag">${esc(emlGroupById(e.groupId).name)}</span>` : '<span class="faint">—</span>'}</td>
+          <td class="e-stores">${emlStoresHtml(ix.get(e.email))}</td>
           <td class="a-prof">${emlUsedHtml(ix.get(e.email))}</td>
           <td class="e-notes small muted ellipsis" style="max-width:220px">${esc(e.notes || '')}</td></tr>`).join('')}</tbody></table></div>${list.length > 1500 ? `<div class="small muted" style="padding:8px">Showing 1,500 of ${list.length} — search or pick a group to see the rest.</div>` : ''}`
       : `<div class="empty">${all.length ? 'No emails match.' : 'Keep every address you use for checkouts here — iCloud Hide My Email, Outlook, Gmail, your own domain — in groups. <b>+ Add emails</b> takes a pasted list, a spreadsheet column or a copy of the Hide My Email page; the addresses are picked out of it.'}</div>`}
     </div></div>`;
   wireAccTabs();
   $('#emAdd').onclick = () => openEmlAdd();
-  $('#emExp').onclick = () => { const rows = emlFiltered(ix).map(e => ({ email: e.email, kind: emlProvider(e.email), group: (emlGroupById(e.groupId) || {}).name || '', used_on: (u => !u ? '' : [...u.profiles, u.accounts ? u.accounts + ' store login(s)' : ''].filter(Boolean).join('; '))(ix.get(e.email)), notes: e.notes || '' })); download(`kingpin-emails-${stamp()}.csv`, toCSV(['email', 'kind', 'group', 'used_on', 'notes'], rows), 'text/csv'); toast(`Exported ${plural(rows.length, 'email')}`); };
+  $('#emExp').onclick = () => { const rows = emlFiltered(ix).map(e => ({ email: e.email, kind: emlProvider(e.email), group: (emlGroupById(e.groupId) || {}).name || '', store_accounts: (u => u ? [...u.stores.values()].sort().join('; ') : '')(ix.get(e.email)), profile: (u => u ? u.profiles.join('; ') : '')(ix.get(e.email)), notes: e.notes || '' })); download(`kingpin-emails-${stamp()}.csv`, toCSV(['email', 'kind', 'group', 'store_accounts', 'profile', 'notes'], rows), 'text/csv'); toast(`Exported ${plural(rows.length, 'email')}`); };
   $('#egAdd').onclick = async () => { const nm = await askText('New email group', '', { placeholder: 'iCloud HME main, Outlook batch 2…', ok: 'Add group' }); if (nm && nm.trim()) { snapshot('add email group'); EF.group = ensureEmlGroup(nm); save(); PAGES.accounts.render(); } };
   $('#egList').onclick = async e => {
     const ren = e.target.dataset.egren, del = e.target.dataset.egdel;
@@ -85,6 +111,10 @@ function emlRender(pg) {
   };
   $('#emQ').oninput = debounce(e => { EF.q = e.target.value; PAGES.accounts.render(); const i = $('#emQ'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }, 160);
   if ($('#emProv')) $('#emProv').onchange = e => { EF.prov = e.target.value; PAGES.accounts.render(); };
+  $('#emStore').onchange = e => { EF.store = e.target.value; emlSel.clear(); PAGES.accounts.render(); };
+  $('#emSort').onchange = e => { EF.sort = e.target.value; PAGES.accounts.render(); };
+  if ($('#emStoreClr')) $('#emStoreClr').onclick = () => { EF.store = ''; PAGES.accounts.render(); };
+  if ($('#emCopyAll')) $('#emCopyAll').onclick = () => copyText(list.map(x => x.email).join('\n'), plural(list.length, 'email'));
   $('#emUse').onclick = e => { const b = e.target.closest('[data-eu]'); if (b) { EF.use = b.dataset.eu; PAGES.accounts.render(); } };
   if ($('#emAll')) $('#emAll').onchange = e => { list.forEach(x => e.target.checked ? emlSel.add(x.id) : emlSel.delete(x.id)); PAGES.accounts.render(); };
   if ($('#emClrSel')) $('#emClrSel').onclick = () => { emlSel.clear(); PAGES.accounts.render(); };

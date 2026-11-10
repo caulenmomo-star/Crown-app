@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.11', date: '2026-11-10', title: 'Accounts know their profile, email list shows stores', items: [
+    'Store logins show their profile automatically: the profile with the same email, or one named after the address. Profiles you add later are picked up too. A profile you chose yourself still wins.',
+    'Email list: a “Store accounts” column shows every store each address has a login on. Filter by “No store account yet”, “On Target”, “Not on Walmart” and so on, and sort by fewest or most stores.',
+    'One tap copies the emails you’re looking at, one per line, ready to paste into a generator.',
+  ] },
   { v: '0.20.10', date: '2026-11-10', title: 'Mac and Windows apps stay in sync with your account', items: [
     'The Mac and Windows apps can link to your Kingpin Online account, so your computer, your phone and anyone you share the account with see the same data. The new download asks once when it opens. You can switch anytime in Settings.',
     'When you link, Kingpin offers to add the data already on that computer to your account. Anything you already have there (same card, profile, order, inbox or group) isn’t added twice.',
