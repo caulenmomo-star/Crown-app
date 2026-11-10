@@ -92,6 +92,24 @@ jobs:
           cat engine.log; curl -s -H 'X-Crown: 1' http://127.0.0.1:8899/api/ping | tee ping.json; grep -q '"ok": true' ping.json
           curl -s -o /dev/null -w "page %{http_code}\n" http://127.0.0.1:8899/
           curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8899/api/shutdown || true
+      - name: Check an older copy updates itself from the website
+        if: matrix.plat == 'win32' || matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          if [ "${{ matrix.plat }}" = darwin ]; then R=build/out/Kingpin-darwin-arm64/Kingpin.app/Contents/Resources; PY=$R/python/bin/python3; else R=build/out/Kingpin-win32-x64/resources; PY=$R/python/python.exe; fi
+          rm -rf oldcopy && cp -R "$R/engine" oldcopy
+          sed -i.bak 's/^VERSION = ".*"/VERSION = "0.0.1"/' oldcopy/server.py && sed -i.bak "s/const VERSION = '[^']*'/const VERSION = '0.0.1'/" oldcopy/app/core.js
+          CROWN_NO_BROWSER=1 CROWN_DATA=$PWD/upddata CROWN_PORT=8897 "$PY" -u oldcopy/server.py > upd.log 2>&1 &
+          for i in $(seq 60); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8897/api/ping | grep -q '"ok": true' && break; sleep 1; done
+          for i in $(seq 90); do curl -s -H 'X-Crown: 1' http://127.0.0.1:8897/api/update > st.json; grep -qE '"state": "(ready|error|download)"' st.json && break; sleep 2; done
+          cat st.json; echo
+          grep -q '"state": "ready"' st.json
+          curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8897/api/update/apply; echo
+          curl -s http://127.0.0.1:8897/core.js | grep -o "const VERSION = '[^']*'" | tee ver.txt
+          ! grep -q "0.0.1" ver.txt
+          curl -s -o /dev/null -w "page %{http_code}\n" http://127.0.0.1:8897/
+          curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8897/api/shutdown || true
+          sleep 1; cat upd.log | tail -5; rm -rf oldcopy upddata
       - name: Sign for this Mac (ad hoc) and zip
         if: matrix.plat == 'darwin'
         run: |

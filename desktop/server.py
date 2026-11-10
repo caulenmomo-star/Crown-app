@@ -2940,7 +2940,14 @@ def check_update():
             with open(os.path.join(stage, "app-manifest.json"), "w", encoding="utf-8") as f:
                 json.dump(m, f)
             shutil.rmtree(target, ignore_errors=True)
-            os.replace(stage, target)
+            for i in range(8):  # Windows virus scanning can hold new files for a moment
+                try:
+                    os.replace(stage, target)
+                    break
+                except OSError:
+                    if i == 7:
+                        raise
+                    time.sleep(1 + i)
             stage = None
         UPD.update(state="ready", ready=ver, needsDownload="")
         # keep only the set being shown and the new one
@@ -2965,8 +2972,9 @@ def update_status():
 def update_loop():
     time.sleep(2)
     while True:
-        check_update()
-        time.sleep(6 * 3600)
+        r = check_update()
+        # couldn't reach the website (asleep, offline, starting up): try again soon instead of in 6 hours
+        time.sleep(600 if r.get("state") == "error" else 6 * 3600)
 
 
 def main():
