@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.10', date: '2026-11-10', title: 'Mac and Windows apps stay in sync with your account', items: [
+    'The Mac and Windows apps can link to your Kingpin Online account, so your computer, your phone and anyone you share the account with see the same data. The new download asks once when it opens. You can switch anytime in Settings.',
+    'When you link, Kingpin offers to add the data already on that computer to your account. Anything you already have there (same card, profile, order, inbox or group) isn’t added twice.',
+    'Settings → Backups: “Add from a backup…” adds what’s new from a backup file without replacing anything.',
+  ] },
   { v: '0.20.9', date: '2026-11-10', title: 'Stats per inbox works with Hide My Email', items: [
     'Dashboard “Stats for” now places every order under the inbox it came into, including iCloud Hide My Email and other made-up addresses. iCloud addresses count toward your iCloud inbox, Gmail addresses toward Gmail, and your own domains toward whichever inbox their orders come into.',
     'Phone: the date range is one dropdown with “Custom…” in it, and the custom dates only show when you pick it.',

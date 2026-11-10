@@ -155,6 +155,7 @@ const Account = (() => {
     if (r.vault.salt !== b64e(keys.salt)) { s = b64d(r.vault.salt); k = (await deriveKeys(keys.pw, s)).key; }
     let data; try { data = await decryptWithKey(r.vault, k); } catch (_) { throw new Error('Your password doesn’t open your saved data.'); }
     cryptoKey = k; salt = s; state = migrate(data); rev = r.rev; baseJSON = JSON.stringify(data); acct = r.account || acct;
+    if (typeof lastUnlockPw !== 'undefined' && keys.pw) { lastUnlockPw = keys.pw; clearTimeout(lastUnlockT); lastUnlockT = setTimeout(() => { lastUnlockPw = ''; }, 5 * 60000); }
     keys.pw = null; notice = '';
     $('#acct').hidden = true; $('#lock').hidden = true; $('#app').hidden = false; $('#noServerBanner').hidden = true;
     lastActivity = Date.now(); applyRoute(); if (typeof onUnlocked === 'function') onUnlocked();
@@ -199,7 +200,7 @@ const Account = (() => {
   // the server said this account lost access mid-session (subscription ended, suspended…)
   async function lostAccess(reason) {
     if (cryptoKey && (pendingSave || saving)) { try { await saveNow({ force: true }); } catch (_) { } }
-    cryptoKey = null; baseJSON = null; state = blankState();
+    cryptoKey = null; baseJSON = null; state = blankState(); lastUnlockPw = '';
     $$('dialog').forEach(d => d.open && d.close());
     if (typeof onLocked === 'function') onLocked();
     try { acct = (await api('/api/account')).account; } catch (_) { acct = Object.assign({}, acct, { access: false, reason }); }

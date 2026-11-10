@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.9'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.10'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -103,6 +103,7 @@ let state = blankState();
 let cryptoKey = null, salt = null, vaultBlob = null, SERVER = false;
 // the Mac/Windows engine's own version: the screens update themselves, so they can be newer than the engine they talk to
 let ENGINE_VER = '';
+let lastUnlockPw = '', lastUnlockT = 0; // kept a few minutes after unlocking, only to open this computer's / a backup's data with the same password
 let CLOUD = false, cloudInfo = {}, authKey = null, acctEmail = null, rev = 0, baseJSON = null, cloudExists = false, pendingRestore = null;
 
 /* ---------- server API ---------- */
@@ -554,6 +555,7 @@ async function doUnlock() {
       cryptoKey = out.key; salt = out.salt; state = migrate(out.data);
       if (cands[0] && out && cands.length > 1) save(); // re-sync both copies
     }
+    lastUnlockPw = pw; clearTimeout(lastUnlockT); lastUnlockT = setTimeout(() => { lastUnlockPw = ''; }, 5 * 60000);
     if (bc) bc.postMessage({ type: 'unlocked', tab: TAB_ID });
     $('#setupCode').value = '';
     $('#lock').hidden = true; $('#app').hidden = false; $('#noServerBanner').hidden = SERVER;
@@ -563,7 +565,7 @@ async function doUnlock() {
 }
 async function lock(msg) {
   if (cryptoKey && (pendingSave || saving)) { try { await saveNow({ force: true }); } catch (_) { } }
-  cryptoKey = null; authKey = null; baseJSON = null; rev = 0; state = blankState(); lastUndo = null;
+  cryptoKey = null; authKey = null; baseJSON = null; rev = 0; state = blankState(); lastUndo = null; lastUnlockPw = '';
   if (typeof selected !== 'undefined') selected.clear();
   $$('dialog').forEach(d => d.open && d.close());
   if (typeof onLocked === 'function') onLocked();

@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.10 — Mac and Windows apps stay in sync with your account (2026-11-10)
+
+- The Mac and Windows apps can link to your Kingpin Online account, so your computer, your phone and anyone you share the account with see the same data. The new download asks once when it opens. You can switch anytime in Settings.
+- When you link, Kingpin offers to add the data already on that computer to your account. Anything you already have there (same card, profile, order, inbox or group) isn’t added twice.
+- Settings → Backups: “Add from a backup…” adds what’s new from a backup file without replacing anything.
+
 ## v0.20.9 — Stats per inbox works with Hide My Email (2026-11-10)
 
 - Dashboard “Stats for” now places every order under the inbox it came into, including iCloud Hide My Email and other made-up addresses. iCloud addresses count toward your iCloud inbox, Gmail addresses toward Gmail, and your own domains toward whichever inbox their orders come into.

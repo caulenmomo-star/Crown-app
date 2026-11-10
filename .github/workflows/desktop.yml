@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p build/src build/engine
-          cp desktop/main.js desktop/package.json desktop/icon.icns desktop/icon.ico desktop/icon.png build/src/
+          cp desktop/main.js desktop/preload.js desktop/package.json desktop/icon.icns desktop/icon.ico desktop/icon.png build/src/
           cp desktop/server.py build/engine/server.py
           cp -R public build/engine/app
           cd build/src && npm install --no-audit --no-fund --save-dev electron@latest @electron/packager@latest
@@ -110,6 +110,19 @@ jobs:
           curl -s -o /dev/null -w "page %{http_code}\n" http://127.0.0.1:8897/
           curl -s -X POST -H 'X-Crown: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8897/api/shutdown || true
           sleep 1; cat upd.log | tail -5; rm -rf oldcopy upddata
+      - name: Check the app window opens in both modes (this computer / Kingpin Online)
+        if: matrix.plat == 'win32' || matrix.arch == 'arm64'
+        shell: bash
+        run: |
+          if [ "${{ matrix.plat }}" = darwin ]; then EXE=build/out/Kingpin-darwin-arm64/Kingpin.app/Contents/MacOS/Kingpin; else EXE=build/out/Kingpin-win32-x64/Kingpin.exe; fi
+          mkdir -p smokedata && echo '{"salt":"AAAA","iv":"AAAA","ct":"AAAA","v":2}' > smokedata/vault.json
+          for m in local online; do
+            rm -f smoke-$m.json
+            KINGPIN_SMOKE=$m KINGPIN_SMOKE_OUT=$PWD/smoke-$m.json CROWN_DATA=$PWD/smokedata CROWN_PORT=8893 timeout 150 "$EXE" > smoke-$m.log 2>&1 || true
+            echo "$m: $(cat smoke-$m.json 2>/dev/null)"; tail -5 smoke-$m.log
+            grep -q '"ok":true' smoke-$m.json
+          done
+          rm -rf smokedata
       - name: Sign for this Mac (ad hoc) and zip
         if: matrix.plat == 'darwin'
         run: |
