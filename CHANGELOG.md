@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.13 — Fix profile names ending in a store (2026-11-10)
+
+- Profiles named like “abc.def_Target” get their name back without the store. Copies of profiles you already have are removed, and their orders and store logins move to the profile you keep.
+- Kingpin offers this once when it finds such names. It’s also in Settings → Data tools → Fix profile names, and Undo works right after.
+- Adding a computer’s data to your account no longer adds a second copy of a profile just because its name is different.
+
 ## v0.20.12 — Email list finds accounts from profile names (2026-11-10)
 
 - Email list “Store accounts” also counts profiles named for a store, like “Target Account #18”, “abc.def_Target” or “PKC 3”, so emails you only have on bot profiles show their store too. These show with a dashed outline, meaning there’s no saved login for them under Store logins. The store filters and Copy use them too.

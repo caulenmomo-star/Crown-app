@@ -693,6 +693,7 @@ PAGES.settings = {
           <div id="stBackups" style="margin-top:12px"></div></div>
         <div class="card"><h3>Data tools</h3>
           <div class="list">
+            <div class="li"><div style="flex:1"><div>Fix profile names</div><div class="small muted">Takes a store off the end of profile names (“abc.def_Target” → “abc.def”) and removes copies of profiles you already have.</div></div><button class="sm" id="stPfFix">Run</button></div>
             <div class="li"><div style="flex:1"><div>Re-match orders to profiles</div><div class="small muted">Re-run automatic linking (email → address → card). Links you set by hand are kept.</div></div><button class="sm" id="stRelink">Run</button></div>
             <div class="li"><div style="flex:1"><div>Rebuild houses</div><div class="small muted">Regroup every order by street address only (apt / unit / line 2 ignored). Nicknames and notes are kept.</div></div><button class="sm" id="stRehouse">Run</button></div>
             <div class="li"><div style="flex:1"><div>Export everything to CSV</div><div class="small muted">Profiles and orders as two spreadsheet files (not encrypted).</div></div><button class="sm" id="stCsv">Export</button></div>
@@ -752,6 +753,7 @@ PAGES.settings = {
     $('#stStores').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s; if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; } save(); PAGES.settings.render(); };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
     $('#stRestore').onclick = () => $('#restoreFile').click();
+    $('#stPfFix').onclick = () => nfRun(false);
     $('#stRelink').onclick = () => { snapshot('re-match'); state.orders.forEach(o => { if (o.profileLink !== 'manual') { o.profileLink = ''; o.profileId = ''; } }); autoLinkAll(); save(); refresh(); toast(`Linked ${state.orders.filter(o => o.profileId).length} of ${plural(state.orders.length, 'order')}`, { undo: true }); };
     $('#stRehouse').onclick = () => { snapshot('rebuild houses'); regroupHouses(); save(); refresh(); toast(`${plural(state.houses.filter(h => houseOrders(h.id).length).length, 'house')} after rebuild`, { undo: true }); };
     $('#stCsv').onclick = () => {

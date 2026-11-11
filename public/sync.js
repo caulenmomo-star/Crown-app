@@ -204,6 +204,7 @@ function onUnlocked() {
   if (state.settings.theme) applyTheme(state.settings.theme);
   if (typeof maybeShowChangelog === 'function') maybeShowChangelog();
   if (typeof desktopOfferImport === 'function') setTimeout(desktopOfferImport, 1200);
+  if (typeof nfOffer === 'function') setTimeout(nfOffer, 1800);
   // Drop anything in "couldn't read" that isn't a real-looking store order email (old builds listed promos there).
   const keepUn = state.unparsed.filter(u => Parser.looksLikeOrderMail(u.subject, Parser.detectStore(u.from, u.subject, '')) && !isIgnoredSender(u.from));
   if (keepUn.length !== state.unparsed.length) { state.unparsed = keepUn; save(); }

@@ -13,7 +13,8 @@ const digitsS = v => String(v || '').replace(/\D/g, '');
 // what makes two records "the same" when they were made separately (different ids)
 const IMPORT_NK = {
   categories: x => x.name ? 'n:' + lowS(x.name) : '', cardGroups: x => x.name ? 'n:' + lowS(x.name) : '', accountGroups: x => x.name ? 'n:' + lowS(x.name) : '', emailGroups: x => x.name ? 'n:' + lowS(x.name) : '',
-  profiles: x => [lowS(x.name), lowS(x.email), lowS(x.shipAddr1), digitsS(x.shipZip).slice(0, 5), digitsS(x.cardNumber)].join('|'),
+  // the same person/address/card is the same profile whatever it's called (a bot may have renamed it, e.g. "abc_Target")
+  profiles: x => (x.email || x.shipAddr1 || x.cardNumber) ? [lowS(x.email), lowS(x.shipAddr1), lowS(x.shipAddr2), digitsS(x.shipZip).slice(0, 5), digitsS(x.cardNumber), lowS(x.shipFirst), lowS(x.shipLast)].join('|') : '',
   cards: x => digitsS(x.number) ? 'c:' + digitsS(x.number) : '',
   accounts: x => x.email ? lowS(x.store) + '|' + lowS(x.email) : '',
   emails: x => lowS(x.email),
