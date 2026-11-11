@@ -170,7 +170,7 @@ PAGES.dashboard = {
         <div class="hero-tiles">
           <button class="htile" data-nav="orders"><span>Orders</span><b>${dOrders}</b><i>${dItems} items${dDead ? ` · ${dDead} cancelled` : ''}</i></button>
           <button class="htile" data-nav="orders"><span>Stick rate</span><b>${si.rate == null ? '—' : si.rate + '%'}</b><i>${inSel.length ? `${si.stuck} shipped${si.pending ? ` · ${si.pending} pending` : ''}` : 'no orders yet'}</i></button>
-          <button class="htile" id="dProfit"><span>Est. profit</span><b>${pf.priced ? fmtSigned(pf.profit) : '—'}</b><i>${pf.priced ? (pf.pend.priced ? fmtSigned(pf.pend.profit) + ' more pending' : 'shipped & delivered') : IV.busy || IV.queue.length ? 'pricing items…' : 'no priced items'}</i></button>
+          <button class="htile" id="dProfit"><span>Est. profit</span><b>${pf.priced ? fmtSigned(pf.profit) : pf.pend.priced ? fmtSigned(pf.pend.profit) : '—'}</b><i>${pf.priced ? (pf.pend.priced ? fmtSigned(pf.pend.profit) + ' more pending' : 'shipped & delivered') : pf.pend.priced ? 'if they ship (none shipped yet)' : IV.busy || IV.queue.length ? 'pricing items…' : 'no priced items'}</i></button>
           <button class="htile" data-nav="calendar"><span>On the way</span><b>${transit.length}</b><i>${soon.length ? soon.length + ' arriving by tomorrow' : overdue.length ? overdue.length + ' running late' : 'in transit now'}</i></button>
           ${inv ? `<button class="htile" data-nav="inventory"><span>Inventory</span><b>${fmtMoney(inv.value || inv.cost, true)}</b><i>${inv.units} units${inv.priced ? ' · ' + (inv.gain >= 0 ? '+' : '−') + fmtMoney(Math.abs(inv.gain), true) : ''}</i></button>` : ''}
           ${pm != null ? `<button class="htile" data-nav="sales"><span>Profit this month</span><b>${pm >= 0 ? '' : '−'}${fmtMoney(Math.abs(pm), true)}</b><i>${plural(ss.length, 'sale')}</i></button>` : ''}
@@ -195,7 +195,8 @@ PAGES.dashboard = {
     $('#dShare').onclick = openShare; $('#dProfit').onclick = openShare;
     $('#dCustom').onclick = () => { DASH.custom = !(DASH.custom || DASH.from || DASH.to); if (!DASH.custom) DASH.from = DASH.to = ''; PAGES.dashboard.render(); };
     IV.onUpdate = () => { if (!cryptoKey) return; if ($('#dlgShare').open) renderShare(); else if ($('#dlgPrices').open) renderPriceReview(); else if (route.page === 'dashboard' && !document.querySelector('dialog[open]')) PAGES.dashboard.render(); };
-    const dsave = () => { try { localStorage.setItem('crown.dash', JSON.stringify(DASH)); } catch (_) { } PAGES.dashboard.render(); };
+    // picking a range here also sets the checkout card to it (the card can still be given its own range in Share)
+    const dsave = () => { try { localStorage.setItem('crown.dash', JSON.stringify(DASH)); } catch (_) { } if (SHARE.range !== 'page') { SHARE.range = 'page'; saveShare(); } PAGES.dashboard.render(); };
     $('#dDays').onclick = e => { const b = e.target.closest('[data-dd]'); if (b) { DASH.days = +b.dataset.dd; DASH.from = DASH.to = ''; dsave(); } };
     $('#dN').onchange = e => { const n = Math.round(+e.target.value); if (n >= 1 && n <= 400) { DASH.days = n; DASH.from = DASH.to = ''; dsave(); } };
     $('#dFrom').onchange = $('#dTo').onchange = () => { DASH.from = $('#dFrom').value; DASH.to = $('#dTo').value; dsave(); };
@@ -377,7 +378,7 @@ function recapCardHtml() {
   if (typeof ensureLinks === 'function') ensureLinks(list);
   const names = new Map(); list.filter(o => !isDead(o)).forEach(o => (o.items || []).forEach(i => { if (i.name && qtyOf(i) > 0) names.set(i.name, (names.get(i.name) || 0) + qtyOf(i)); }));
   const photo = sharePhoto();
-  const pfLine = !SHARE.money ? '' : pf.priced ? ` · <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> est. profit` : IV.busy || IV.queue.length ? ' · pricing items…' : '';
+  const pfLine = !SHARE.money ? '' : pf.priced ? ` · <b class="${pf.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.profit)}</b> est. profit` : pf.pend.priced ? ` · <b class="${pf.pend.profit >= 0 ? 'pos' : 'neg'}">${fmtSigned(pf.pend.profit)}</b> est. profit if they ship` : IV.busy || IV.queue.length ? ' · pricing items…' : '';
   return `<div class="recap open"><div class="recap-grid">
       <div class="recap-prev"><canvas id="shareCanvas" width="1080" height="1350" aria-label="Checkout card preview"></canvas></div>
       <div class="recap-head"><div class="recap-title"><h3>Share as a picture</h3><div class="small muted">${esc(label)} · ${plural(cs.live.length, 'order')}${cs.dead.length ? ' · ' + cs.dead.length + ' cancelled' : ''}${SHARE.money && cs.live.length ? ' · ' + esc(fmtMoney(cs.spent)) : ''}${pfLine}</div></div>
@@ -478,11 +479,13 @@ function drawShareCard(cv, d, img) {
   boxes.forEach(([v, l], i) => { const x = L + i * (bw + gap); ctx.fillStyle = 'rgba(255,255,255,.09)'; rr(ctx, x, by, bw, bh, 24); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.14)'; ctx.lineWidth = 2; ctx.stroke(); ctx.fillStyle = '#fff'; fitFont(ctx, v, bw - 44, 750, 52, F); ctx.fillText(v, x + 24, by + 76); ctx.fillStyle = 'rgba(255,255,255,.64)'; ctx.font = `500 23px ${F}`; ctx.fillText(l, x + 24, by + 114); });
   let y = by + bh + 26;
   // estimated profit: TCGplayer median value of what was bought, minus what it cost
-  if (SHARE.money && SHARE.profit && pf && pf.priced) {
-    const ph = 132, up = pf.profit >= 0, col = up ? '#4ade80' : '#f87171';
+  // (nothing shipped yet in the range: what the pending orders should make if they ship)
+  const pv = pf && (pf.priced ? pf.profit : pf.pend && pf.pend.priced ? pf.pend.profit : null), pLbl = pf && pf.priced ? 'EST. PROFIT' : 'EST. PROFIT · IF THEY SHIP';
+  if (SHARE.money && SHARE.profit && pv != null) {
+    const ph = 132, up = pv >= 0, col = up ? '#4ade80' : '#f87171';
     ctx.fillStyle = up ? 'rgba(74,222,128,.12)' : 'rgba(248,113,113,.12)'; rr(ctx, L, y, CW, ph, 24); ctx.fill(); ctx.strokeStyle = up ? 'rgba(74,222,128,.35)' : 'rgba(248,113,113,.35)'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText('EST. PROFIT', L + 28, y + 44);
-    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pf.profit), CW - 56, 800, 64, F); ctx.fillText(fmtSigned(pf.profit), L + 26, y + 108);
+    ctx.fillStyle = 'rgba(255,255,255,.62)'; ctx.font = `700 21px ${F}`; ctx.fillText(pLbl, L + 28, y + 44);
+    ctx.fillStyle = col; fitFont(ctx, fmtSigned(pv), CW - 56, 800, 64, F); ctx.fillText(fmtSigned(pv), L + 26, y + 108);
     y += ph + 24;
   }
   const head = t => { ctx.fillStyle = 'rgba(255,255,255,.56)'; ctx.font = `700 21px ${F}`; ctx.fillText(t, L, y); };

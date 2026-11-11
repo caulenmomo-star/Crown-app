@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "13194543e788418c11605e93ea224d0bc5ebf3704494ff19be4bf8f57967da83",
-   "size": 38696
+   "sha256": "36793ab6dc45db122d49b6acaaa86eb5c115f75837a4a2817e12f2ec9fbf0461",
+   "size": 39257
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,8 +58,8 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "ce4bcc0204c87a399fdc5dd5d902111854b773ca5a63bdf6db863bfd0fa34ad0",
-   "size": 53539
+   "sha256": "910faca0a608ca3bca40c684f5d968614f73558c7991006c4dc3d706b5ee4313",
+   "size": 53790
   },
   "ct-icon-180.png": {
    "sha256": "d58821d5e97b52c66a03893641c793df7f35e65ed7523bb63af4ffa5f4bf0186",
@@ -166,8 +166,8 @@
    "size": 21156
   },
   "pages.js": {
-   "sha256": "5d7fc8ed014ee0feff7d0a9f459bfc239c08c807e733db88c02df9df3948f1d7",
-   "size": 100163
+   "sha256": "d6a3c470ea2f19171f03c4ee5e7b68282ae140a6ca6fe2322cd8b84a69fe62ff",
+   "size": 100799
   },
   "parser.js": {
    "sha256": "e086ec20e76cad72f1f3a949019c8b49d34d892635e9db82b471e5ff44c6f2cf",
@@ -329,5 +329,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.13"
+ "version": "0.20.14"
 }

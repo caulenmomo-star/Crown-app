@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.13'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.14'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -79,7 +79,10 @@ const isStuck = o => ['shipped', 'out', 'ready', 'delivered'].includes(o.status)
 const isPending = o => o.status === 'placed' || o.status === 'confirmed';
 function stickInfo(list) {
   const stuck = list.filter(isStuck).length, dead = list.filter(isDead).length, pending = list.filter(isPending).length;
-  return { stuck, dead, pending, rate: stuck + dead ? Math.round(stuck / (stuck + dead) * 100) : null };
+  // stick = checkouts that weren't cancelled ÷ all checkouts. Pending ones (placed, pre-orders) count as stuck until
+  // they're cancelled, so a fresh drop shows its real rate right away instead of 0% until something ships.
+  const n = stuck + pending + dead;
+  return { stuck, dead, pending, rate: n ? Math.round((stuck + pending) / n * 100) : null };
 }
 
 /* ---------- state ---------- */

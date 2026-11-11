@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.20.14', date: '2026-11-11', title: 'Stick rate right after a drop, est. profit for pending orders', items: [
+    'Stick rate is now checkouts that weren’t cancelled out of all checkouts. Orders that haven’t shipped yet (including pre-orders) count until they’re cancelled, so a fresh drop shows its real rate instead of 0%.',
+    'Est. profit shows for orders that haven’t shipped yet, marked “if they ship”, when nothing in the range has shipped.',
+    'Picking a range on the dashboard sets the checkout card to the same range.',
+  ] },
   { v: '0.20.13', date: '2026-11-10', title: 'Fix profile names ending in a store', items: [
     'Profiles named like “abc.def_Target” get their name back without the store. Copies of profiles you already have are removed, and their orders and store logins move to the profile you keep.',
     'Kingpin offers this once when it finds such names. It’s also in Settings → Data tools → Fix profile names, and Undo works right after.',

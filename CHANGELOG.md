@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.14 — Stick rate right after a drop, est. profit for pending orders (2026-11-11)
+
+- Stick rate is now checkouts that weren’t cancelled out of all checkouts. Orders that haven’t shipped yet (including pre-orders) count until they’re cancelled, so a fresh drop shows its real rate instead of 0%.
+- Est. profit shows for orders that haven’t shipped yet, marked “if they ship”, when nothing in the range has shipped.
+- Picking a range on the dashboard sets the checkout card to the same range.
+
 ## v0.20.13 — Fix profile names ending in a store (2026-11-10)
 
 - Profiles named like “abc.def_Target” get their name back without the store. Copies of profiles you already have are removed, and their orders and store logins move to the profile you keep.
