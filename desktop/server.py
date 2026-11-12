@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.20.14"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.20.15"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -1432,7 +1432,7 @@ def sku_info(req):
                                               "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-US,en;q=0.9"})
     try:
         with urllib.request.urlopen(rq, timeout=20, context=ssl_context()) as resp:
-            html = resp.read(900_000).decode("utf-8", "replace")
+            html = resp.read(3_000_000).decode("utf-8", "replace")
     except urllib.error.HTTPError as e:
         if e.code == 404:
             out = {"ok": True, "found": False, "sku": tcin or raw, "store": sname, "url": url, "why": "%s says this product doesn't exist (any more)." % sname}
@@ -1459,11 +1459,46 @@ def sku_info(req):
     out = {"ok": True, "found": found, "sku": tcin or raw, "store": sname, "url": url, "name": _clip(name, 200) if found else "",
            "image": img if found and img.startswith("https://") else "", "price": price if found and price and 0 < price < 100000 else None,
            "priceFrom": sname if found and price else ""}
+    if found:
+        out.update(_sku_seller(html, sname))
     if not found:
         out["why"] = "%s didn't show this product's details." % sname
     else:
         _SKUCACHE[key] = (time.time() + 6 * 3600, out)
     return out
+
+
+_SELLER_RX = [re.compile(r"ships from third[- ]party seller\s*:?\s*([^\n|•]{2,80}?)\s*(?:\.|$|\n|Sold|Ships|Shipping|See|Learn|Report)", re.I),
+              re.compile(r"Sold (?:&|and) shipped by\s*:?\s*([^\n|•]{2,80}?)\s*(?:\.|$|\n|Ships|item ships|Shipping|See|Learn|Report|Fulfilled)", re.I),
+              re.compile(r"Sold by\s*:?\s*([^\n|•]{2,80}?)\s*(?:\.|$|\n|Ships|Shipping|Fulfilled)", re.I)]
+
+
+def _sku_seller(html, store):
+    """Who sells the product: the store itself, or another seller on its site (Target Plus partners, Walmart Marketplace…).
+    Read from the words on the product page ("Sold & shipped by …", "item ships from third party seller: …")."""
+    body = re.sub(r"(?is)<(script|style|noscript)\b.*?</\1>", " ", html)
+    body = re.sub(r"(?s)<!--.*?-->", "", body)
+    text = _html.unescape(re.sub(r"<[^>]+>", "\n", body))
+    text = re.sub(r"[ \t\u00a0]+", " ", text)
+    text = re.sub(r"\n\s*\n+", "\n", text)
+    flat = re.sub(r"\s+", " ", text)
+    seller = ""
+    st = (store or "").lower()
+    # Target: only the line about this product ("item ships from third party seller: …"); "Sold & shipped by" can also
+    # belong to other products shown on the page
+    for rx in (_SELLER_RX[:1] if st == "target" else _SELLER_RX):
+        m = rx.search(text) or rx.search(flat)
+        if m:
+            seller = m.group(1).strip(" :-\u2013")
+            break
+    own = {"target": ("target",), "walmart": ("walmart", "walmart.com"), "best buy": ("best buy", "bestbuy"), "amazon": ("amazon", "amazon.com")}.get(st, (st,))
+    if seller and seller.lower().rstrip(".") in own:
+        return {"seller": seller, "thirdParty": False}
+    if seller:
+        return {"seller": seller, "thirdParty": True}
+    if re.search(r"Target Plus\W{0,3}\s*Partner", flat, re.I) and st == "target":
+        return {"seller": "a Target Plus partner", "thirdParty": True}
+    return {"seller": store or "", "thirdParty": False}
 
 
 # ---------------------------------------------------------------- Pokémon news (public RSS feeds from news sites)

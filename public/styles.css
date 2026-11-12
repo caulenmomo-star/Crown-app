@@ -1228,3 +1228,6 @@ a.btn.primary{background:var(--accent);color:var(--onAccent);border-color:transp
 .stmore{margin-top:8px}.stmore summary{cursor:pointer;padding:4px 0}
 .dibpick{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:10px}
 .rangeins[hidden]{display:none!important}
+
+.tag.thirdp{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;white-space:nowrap;background:rgba(248,113,113,.14);color:#fca5a5;border:1px solid rgba(248,113,113,.4);margin-right:6px;font-weight:600}
+.thirdbar .hstack{vertical-align:middle}

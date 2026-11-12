@@ -61,7 +61,7 @@ function skuMarket(it) {
 }
 async function skuLookup(list, it, force) {
   if (!SERVER) return;
-  if (!force && it.lookedAt && Date.now() - it.lookedAt < 3 * 864e5 && it.name) return;
+  if (!force && it.lookedAt && Date.now() - it.lookedAt < 3 * 864e5 && it.name && !skuSellerDue(it, list)) return;
   SK.busy++; it.looking = true; skuRefresh();
   try {
     const r = await api('/api/skuinfo', { sku: it.url || it.sku, store: it.store || list.store });
@@ -70,16 +70,42 @@ async function skuLookup(list, it, force) {
       if (!it.nameByYou) it.name = r.name || it.name;
       it.image = r.image || it.image; it.price = r.price != null ? r.price : null; it.priceFrom = r.priceFrom || '';
       if (r.url) it.link = r.url; delete it.lookErr;
+      if ('thirdParty' in r) { it.thirdParty = !!r.thirdParty; it.seller = r.seller || ''; it.sellerAt = Date.now(); }
     } else it.lookErr = r.why || 'Couldn’t find this product.';
     it.lookedAt = Date.now();
     // trading-card products: find the TCGplayer value too (in the background)
     if (it.name && typeof matchItem === 'function' && !linkFor(it.name)) matchItem(it.name).then(() => { save(); skuRefresh(); }).catch(() => {});
   } catch (e) { it.lookErr = e.message; it.lookedAt = Date.now(); }
-  finally { delete it.looking; SK.busy--; skuTouch(list); save(); skuRefresh(); }
+  finally { if (!it.sellerAt) it.sellerTried = Date.now(); delete it.looking; SK.busy--; skuTouch(list); save(); skuRefresh(); }
 }
+// a Target SKU whose seller hasn't been read yet (tried again at most once a day if the page couldn't be read)
+const skuSellerDue = (it, list) => (it.store || list.store) === 'Target' && !it.sellerAt && !(it.sellerTried && Date.now() - it.sellerTried < 864e5);
 async function skuLookupAll(list, force) {
-  const todo = list.items.filter(it => force || !it.lookedAt);
+  const todo = list.items.filter(it => force || !it.lookedAt || skuSellerDue(it, list));
   for (let i = 0; i < todo.length; i += 3) await Promise.all(todo.slice(i, i + 3).map(it => skuLookup(list, it, force)));
+  skuWarnThird(list, todo);
+}
+/* ---------- third-party sellers: a SKU for something sold by another seller on Target (Target Plus partners, imports…)
+   instead of Target itself. Your bot would check out from that seller, usually at a markup. Kingpin reads who sells
+   it from the product page; until then, Target's own product list gives a hint (its own listings are named
+   "Pokémon Trading Card Game: …"). */
+function skuThird(it, list) {
+  if ((it.store || (list && list.store)) !== 'Target') return it.thirdParty ? { sure: true, seller: it.seller } : null;
+  if (it.sellerAt) return it.thirdParty ? { sure: true, seller: it.seller || 'another seller' } : null;
+  const x = typeof pkByTcin === 'function' ? pkByTcin(it.sku) : null;
+  return x && (!x.o || x.imp) ? { sure: false, seller: x.imp ? 'an import / marketplace seller' : 'probably another seller' } : null;
+}
+const skuThirdTag = (it, list) => { const t = skuThird(it, list); return t ? `<span class="tag thirdp" title="${esc(t.sure ? 'Sold by ' + t.seller + ', not ' + (it.store || list.store) : 'Looks like a third-party listing — checking the product page')}">${t.sure ? '⚠ 3rd party · ' + esc(t.seller) : '⚠ 3rd party?'}</span>` : ''; };
+async function skuWarnThird(list, checked) {
+  // only when the product page said so (a guess from the name just gets the “3rd party?” tag)
+  const bad = checked.filter(it => list.items.includes(it) && !it.tpWarned && (skuThird(it, list) || {}).sure);
+  if (!bad.length) return;
+  bad.forEach(it => { it.tpWarned = true; }); save();
+  const lines = bad.slice(0, 8).map(it => { const t = skuThird(it, list); return `• ${it.sku} — ${it.name ? (typeof pkShort === 'function' ? pkShort(it.name) : it.name).slice(0, 60) : 'unknown product'} (${t.sure ? 'sold by ' + t.seller : t.seller})`; });
+  const ok = await ask(`⚠ ${bad.length === 1 ? 'This SKU is' : plural(bad.length, 'SKU') + ' are'} sold by a third-party seller, not ${list.store || 'the store'}\n\n${lines.join('\n')}${bad.length > 8 ? `\n…and ${bad.length - 8} more` : ''}\n\nYour bot would buy from that seller, usually at a markup and not on drop day. Remove ${bad.length === 1 ? 'it' : 'them'} from “${list.name}”?`, { ok: bad.length === 1 ? 'Remove it' : `Remove ${bad.length}`, cancel: 'Keep', danger: true });
+  if (!ok) return;
+  snapshot('remove third-party SKUs'); const ids = new Set(bad.map(i => i.id)); list.items = list.items.filter(i => !ids.has(i.id)); skuTouch(list); save(); skuRefresh();
+  toast(`Removed ${plural(bad.length, 'third-party SKU')}`, { undo: true });
 }
 let skuRT = 0; function skuRefresh() { clearTimeout(skuRT); skuRT = setTimeout(() => { if (route.page === 'skus' && cryptoKey) PAGES.skus.render(); }, 120); }
 const skuStoreLink = (it, list) => it.link || it.url || ((it.store || list.store) === 'Target' && /^\d{6,12}$/.test(it.sku) ? 'https://www.target.com/p/-/A-' + it.sku : '');
@@ -93,7 +119,7 @@ PAGES.skus = {
     const l = skuListById(SK.list);
     const side = L.map(x => `<div class="cat ${x.id === SK.list ? 'active' : ''}" data-skl="${x.id}"><span class="ellipsis">${esc(x.name)}</span><span class="n">${x.items.length}</span></div>`).join('');
     const q = SK.q.trim().toLowerCase();
-    const items = l ? l.items.filter(i => !q || [i.sku, i.name, i.notes].some(v => String(v || '').toLowerCase().includes(q))) : [];
+    const items = l ? l.items.filter(i => !q || (q === '3rd party' ? !!skuThird(i, l) : [i.sku, i.name, i.notes, i.seller].some(v => String(v || '').toLowerCase().includes(q)))) : [];
     const total = l ? l.items.reduce((s, i) => { const p = skuPrice(i); return s + (p ? p.v * (Number(i.qty) || 1) : 0); }, 0) : 0;
     const seg = `<div class="seg" id="skView"><button data-skv="lists" class="${SK.view === 'lists' ? 'on' : ''}">My lists</button><button data-skv="products" class="${SK.view === 'products' ? 'on' : ''}">Pokémon products</button></div>`;
     if (SK.view === 'products') {
@@ -112,11 +138,12 @@ PAGES.skus = {
         ${l.items.length ? `<div class="card"><div class="hstack" style="flex-wrap:wrap;gap:8px;margin-bottom:10px"><b>For your bot</b><span class="small faint">${plural(l.items.length, 'SKU')}${total ? ' · about ' + fmtMoney(total) + ' for everything' : ''}</span><span class="spacer"></span>
             <button class="sm" id="sklCopyLines">Copy, one per line</button><button class="sm" id="sklCopyComma">Copy, comma separated</button><button class="sm ghost" id="sklCsv">Download CSV</button></div>
           <textarea readonly id="sklOut" rows="${Math.min(6, Math.max(2, l.items.length))}" class="mono" style="font-size:12px">${esc(skuExport(l))}</textarea></div>
+          ${(() => { const tp = l.items.filter(i => skuThird(i, l)); return tp.length ? `<div class="note warn small thirdbar" style="margin-bottom:10px"><b>⚠ ${plural(tp.length, 'SKU')} in this list ${tp.length === 1 ? 'is' : 'are'} sold by third-party sellers, not ${esc(l.store)}.</b> Your bot would buy from them instead of ${esc(l.store)}. <span class="hstack" style="display:inline-flex;gap:6px;margin-left:4px"><button class="sm" id="sklTpShow">${SK.q === '3rd party' ? 'Show all' : 'Show them'}</button><button class="sm danger" id="sklTpDel">Remove them</button></span></div>` : ''; })()}
           <div class="toolbar"><input class="search" data-search id="sklQ" placeholder="Search this list…" value="${esc(SK.q)}"><span class="spacer"></span>${SERVER ? `<button class="sm ghost" id="sklLook" ${SK.busy ? 'disabled' : ''}>${SK.busy ? 'Looking up…' : '↻ Look up again'}</button>` : ''}</div>
           <div class="tablewrap"><table class="tbl skutbl"><thead><tr><th>Product</th><th>SKU</th><th class="num">Price</th><th class="num">Value</th><th class="num">Qty</th><th></th></tr></thead><tbody>
           ${items.map(i => { const p = skuPrice(i), m = skuMarket(i), link = skuStoreLink(i, l), paid = skuPaid(i);
-            return `<tr data-ski="${i.id}"><td><div class="hstack" style="gap:10px;min-width:0">${thumb(i.image)}<div style="min-width:0"><div class="ellipsis skuname">${i.looking ? '<span class="faint">Looking up…</span>' : i.name ? esc(i.name) : `<span class="faint">${esc(i.lookErr || (SERVER ? 'Not looked up yet' : 'Type a name'))}</span>`}</div>
-                <div class="small faint ellipsis">${[i.store && i.store !== l.store ? i.store : '', paid ? `bought ${paid.n === 1 ? 'once' : paid.n + ' times'}` : '', i.notes].filter(Boolean).map(esc).join(' · ')}${link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">${esc(i.store || l.store)} ↗</a>` : ''}</div></div></div></td>
+            return `<tr data-ski="${i.id}"><td><div class="hstack" style="gap:10px;min-width:0">${thumb(i.image)}<div style="min-width:0;flex:1"><div class="ellipsis skuname">${i.looking ? '<span class="faint">Looking up…</span>' : i.name ? esc(i.name) : `<span class="faint">${esc(i.lookErr || (SERVER ? 'Not looked up yet' : 'Type a name'))}</span>`}</div>
+                <div class="small faint ellipsis">${skuThirdTag(i, l)}${[i.store && i.store !== l.store ? i.store : '', paid ? `bought ${paid.n === 1 ? 'once' : paid.n + ' times'}` : '', i.notes].filter(Boolean).map(esc).join(' · ')}${link ? ` <a href="${esc(link)}" target="_blank" rel="noopener">${esc(i.store || l.store)} ↗</a>` : ''}</div></div></div></td>
               <td class="mono">${esc(i.sku)} <button class="ghost sm icopy" data-skcopy="${esc(i.sku)}" title="Copy SKU" aria-label="Copy SKU">⧉</button></td>
               <td class="num">${p ? `<b>${fmtMoney(p.v)}</b><div class="small faint">${p.from === 'you' ? 'you typed' : p.from === 'paid' ? 'you paid' + (p.date ? ' ' + esc(fmtDate(p.date)) : '') : esc(p.from)}</div>` : '<span class="faint">—</span>'}</td>
               <td class="num">${m ? `<b>${fmtMoney(m.v)}</b><div class="small faint">TCGplayer</div>` : '<span class="faint">—</span>'}</td>
@@ -125,7 +152,7 @@ PAGES.skus = {
           </tbody></table></div>
           <div class="skucards">${items.map(i => { const p = skuPrice(i), m = skuMarket(i), link = skuStoreLink(i, l), paid = skuPaid(i);
             return `<details class="skucard" data-ski="${i.id}"><summary>${thumb(i.image)}<div class="scmain"><div class="scname">${i.looking ? '<span class="faint">Looking up…</span>' : i.name ? esc(typeof pkShort === 'function' ? pkShort(i.name) : i.name) : `<span class="faint">${esc(i.lookErr || 'Not looked up yet')}</span>`}</div>
-                <div class="small muted"><span class="mono">${esc(i.sku)}</span>${p ? ' · <b>' + fmtMoney(p.v) + '</b>' : ''}${(Number(i.qty) || 1) > 1 ? ' · ×' + (Number(i.qty) || 1) : ''}</div></div>
+                <div class="small muted">${skuThirdTag(i, l)}<span class="mono">${esc(i.sku)}</span>${p ? ' · <b>' + fmtMoney(p.v) + '</b>' : ''}${(Number(i.qty) || 1) > 1 ? ' · ×' + (Number(i.qty) || 1) : ''}</div></div>
                 <button class="ghost sm icopy" data-skcopy="${esc(i.sku)}" title="Copy SKU" aria-label="Copy SKU">⧉</button><span class="scchev" aria-hidden="true">▾</span></summary>
               <div class="scmore">
                 <div class="scrow"><span class="muted">Price</span><span>${p ? `<b>${fmtMoney(p.v)}</b> <span class="small faint">${p.from === 'you' ? 'you typed' : p.from === 'paid' ? 'you paid' + (p.date ? ' ' + esc(fmtDate(p.date)) : '') : esc(p.from)}</span>` : '<span class="faint">—</span>'}</span></div>
@@ -161,6 +188,10 @@ PAGES.skus = {
     $('#sklCsv').onclick = () => download(`kingpin-skus-${l.name.replace(/[^\w-]+/g, '-').toLowerCase()}.csv`, toCSV(['sku', 'name', 'qty', 'price', 'store', 'link', 'notes'], l.items.map(i => { const p = skuPrice(i); return { sku: i.sku, name: i.name, qty: Number(i.qty) || 1, price: p ? p.v.toFixed(2) : '', store: i.store || l.store, link: skuStoreLink(i, l), notes: i.notes }; })), 'text/csv');
     $('#sklQ').oninput = debounce(e => { SK.q = e.target.value; PAGES.skus.render(); const q = $('#sklQ'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
     if ($('#sklLook')) $('#sklLook').onclick = () => skuLookupAll(l, true);
+    if ($('#sklTpShow')) $('#sklTpShow').onclick = () => { SK.q = SK.q === '3rd party' ? '' : '3rd party'; PAGES.skus.render(); };
+    if ($('#sklTpDel')) $('#sklTpDel').onclick = async () => { const tp = l.items.filter(i => skuThird(i, l)); if (!await ask(`Remove ${plural(tp.length, 'third-party SKU')} from “${l.name}”?`, { ok: 'Remove', danger: true })) return; snapshot('remove third-party SKUs'); const ids = new Set(tp.map(i => i.id)); l.items = l.items.filter(i => !ids.has(i.id)); if (SK.q === '3rd party') SK.q = ''; skuTouch(l); save(); PAGES.skus.render(); toast(`Removed ${plural(tp.length, 'SKU')}`, { undo: true }); };
+    // SKUs saved before Kingpin checked sellers: check them now (in the background)
+    if (SERVER && !SK.busy && l.items.some(i => !i.looking && skuSellerDue(i, l))) skuLookupAll(l);
     const tb = pg.querySelector('.skutbl'), cards = pg.querySelector('.skucards');
     tb.onchange = e => { const q = e.target.closest('[data-skqty]'); if (!q) return; const it = l.items.find(i => i.id === q.dataset.skqty); it.qty = Math.max(1, Math.min(99, parseInt(q.value, 10) || 1)); skuTouch(l); save(); };
     tb.onclick = async e => {

@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.14'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.20.15'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -382,7 +382,7 @@ function askBox(o) {
     const ok = $('#askOk'); ok.textContent = o.ok || (o.input ? 'Save' : 'OK'); ok.className = 'primary' + (o.danger || /delete|remove|erase/i.test(o.text) && !o.input ? ' dangerbtn' : '');
     const done = v => { result = v; d.close(); };
     ok.onclick = () => done(o.input ? inp.value : true);
-    $('#askCancel').onclick = () => done(null);
+    $('#askCancel').onclick = () => done(null); $('#askCancel').textContent = o.cancel || 'Cancel';
     inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); done(inp.value); } };
     d.onclose = () => resolve(result);
     d.showModal(); setTimeout(() => (o.input ? inp : ok).focus(), 30);

@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.20.15 — Warning for third-party SKUs (2026-11-11)
+
+- SKU lists: when you add a Target SKU that’s sold by another seller (a Target Plus partner or other third party), Kingpin warns you right away, says who sells it, and offers to remove it.
+- Third-party SKUs are tagged “⚠ 3rd party” with the seller’s name. A bar above the list lets you show just those or remove them all.
+- SKUs already in your lists are checked too, in the background.
+
 ## v0.20.14 — Stick rate right after a drop, est. profit for pending orders (2026-11-11)
 
 - Stick rate is now checkouts that weren’t cancelled out of all checkouts. Orders that haven’t shipped yet (including pre-orders) count until they’re cancelled, so a fresh drop shows its real rate instead of 0%.
