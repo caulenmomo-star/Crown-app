@@ -128,6 +128,8 @@ jobs:
             echo "$m: $(cat smoke-$m.json 2>/dev/null)"; tail -5 smoke-$m.log
             grep -q '"ok":true' smoke-$m.json
           done
+          # nothing from the check may keep files in the app folder open (Windows then can't rename it for the zip)
+          if [ "${{ matrix.plat }}" = win32 ]; then taskkill //F //T //IM Kingpin.exe >/dev/null 2>&1 || true; taskkill //F //IM python.exe >/dev/null 2>&1 || true; sleep 3; fi
           rm -rf smokedata
       - name: Sign for this Mac (ad hoc) and zip
         if: matrix.plat == 'darwin'
@@ -160,7 +162,7 @@ jobs:
         if: matrix.plat == 'win32'
         shell: pwsh
         run: |
-          Rename-Item build/out/Kingpin-win32-x64 Kingpin
+          for ($i = 0; $i -lt 10; $i++) { try { Rename-Item build/out/Kingpin-win32-x64 Kingpin -ErrorAction Stop; break } catch { Start-Sleep -Seconds 3 } }
           Copy-Item "desktop/First time opening Kingpin (Windows).txt" build/out/Kingpin/
           Compress-Archive -Path build/out/Kingpin -DestinationPath ${{ matrix.out }}.zip
       - uses: actions/upload-artifact@v4
