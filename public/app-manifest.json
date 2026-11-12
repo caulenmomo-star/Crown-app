@@ -2,8 +2,8 @@
  "engine": 1,
  "files": {
   "account.js": {
-   "sha256": "f60ad02e588cb329ec1c5561db9ecc68c59c1f64018793071f1f51058c56a154",
-   "size": 21452
+   "sha256": "73be90563b9f81ef9602bb309a169f6ddf482ea24a159909a59ceca11c10ff50",
+   "size": 21635
   },
   "accounts.js": {
    "sha256": "3a85c5425f6878701ba6127e99001fd339a7e950c9ab15b952316e9e56a51f27",
@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "744aa57d7efac266e0a099fe3f340a6beb845814f4ac3b3713f21cdb5f1af764",
-   "size": 39763
+   "sha256": "f8fc267b9b22bd149919fd95c9565d1a78bdbd3e1ecc4c89bb21dd906b18a164",
+   "size": 40902
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,8 +58,8 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "aa7d720e0ce93422e17a940e21c65c0080310fe8a4ec5ec473b97f81d39b6e30",
-   "size": 53842
+   "sha256": "53cb87a9d2000ef1ae6d242c50d10dbbf692cc7d688138f58b202c2f70078d09",
+   "size": 54343
   },
   "ct-icon-180.png": {
    "sha256": "d58821d5e97b52c66a03893641c793df7f35e65ed7523bb63af4ffa5f4bf0186",
@@ -94,8 +94,8 @@
    "size": 24524
   },
   "index.html": {
-   "sha256": "11fbaffac57a397bdde80934da35b1d70d10ceb9d213136d21e4f2d925281e45",
-   "size": 33172
+   "sha256": "d02e4a4d3b4fd34f99c9b87b0b88878e5af817ed7e4b0dc2362256b42412ae99",
+   "size": 33271
   },
   "install.css": {
    "sha256": "f0f1e17e621604747b95349dbdd9764ecc77e21e4d614df317c88b35e73b44ca",
@@ -136,6 +136,10 @@
   "legal.css": {
    "sha256": "345247542aaa9e50e0e5314c8b0335a6f8f75ee7fb36d5f55d0f94d6c4a07588",
    "size": 589
+  },
+  "mail.js": {
+   "sha256": "05d9479d78178c62792409847f3cc8e475070fd39705ffa123c83a7e363e7690",
+   "size": 31759
   },
   "manifest.webmanifest": {
    "sha256": "d80ba98a65d9365ef4196fcf97f3d422d4d1c26752f57b67b54bbd5ac0872afc",
@@ -230,8 +234,8 @@
    "size": 25684
   },
   "styles.css": {
-   "sha256": "3fca1a52ef3dd12509332a4226ebba37d3113f0e9433a58e8a7e402b69562e20",
-   "size": 95244
+   "sha256": "fb706e6035036ee8c20b8ba1888f75036a0c678030cf0b93fae26cf9b6b4e5c5",
+   "size": 99128
   },
   "sw.js": {
    "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
@@ -301,9 +305,14 @@
   "/api/discord/check",
   "/api/discord/read",
   "/api/imap/bodies",
+  "/api/imap/delete",
   "/api/imap/folders",
+  "/api/imap/headers",
+  "/api/imap/message",
   "/api/imap/scan",
+  "/api/imap/search",
   "/api/imap/test",
+  "/api/imap/uids",
   "/api/img",
   "/api/market/categories",
   "/api/market/groups",
@@ -329,5 +338,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.20.15"
+ "version": "0.21.0"
 }

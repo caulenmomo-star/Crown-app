@@ -37,7 +37,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.20.15"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.21.0"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -735,6 +735,243 @@ def imap_bodies(req):
             out.append({"uid": u, "messageId": mid, "subject": dh(msg.get("Subject")), "from": dh(msg.get("From")),
                         "to": addresses(msg, "To", "Delivered-To", "X-Original-To", "Cc"), "date": date, "text": text, "html": html})
         return {"ok": True, "messages": out, "deferred": deferred}
+
+    return with_retry(acc, run)
+
+
+
+# ---------------------------------------------------------------- Mailbox: browse, search and clean up a whole inbox
+# (the order reader above only looks at order emails; these list everything, for the Mailbox page)
+MAIL_FIELDS = "SUBJECT FROM DATE TO CC DELIVERED-TO X-ORIGINAL-TO X-FORWARDED-TO LIST-UNSUBSCRIBE"
+_SIZE_RE = re.compile(rb"RFC822\.SIZE\s+(\d+)", re.I)
+_FLAGS_RE = re.compile(rb"FLAGS\s+\(([^)]*)\)", re.I)
+
+
+def _mail_folder(req):
+    return str(req.get("folder") or (req.get("account") or {}).get("folder") or "INBOX")
+
+
+def mail_uids(req):
+    """Every message in the folder (just the UIDs - cheap even for 100,000 emails)."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+
+    def run(c):
+        info = ensure_folder(c, folder, force=True)
+        typ, data = c["M"].uid("SEARCH", None, "ALL")
+        if typ != "OK":
+            raise UserError("The mail server rejected the search.")
+        uids = [int(u) for u in (data[0].split() if data and data[0] else [])]
+        return {"ok": True, "folder": folder, "uidValidity": str(info.get("uidvalidity") or ""), "uids": uids}
+
+    return with_retry(acc, run)
+
+
+def _mail_to(h, user):
+    """The address an email was sent to. For Hide My Email / forwarded mail that's the made-up address, not your inbox."""
+    user = (user or "").lower()
+    seen = []
+    for name in ("To", "X-Original-To", "X-Forwarded-To", "Delivered-To", "Cc"):
+        for v in h.get_all(name, []) or []:
+            for _, addr in getaddresses([dh(v)]):
+                addr = addr.strip().lower()
+                if addr and "@" in addr and addr not in seen:
+                    seen.append(addr)
+    for a in seen:
+        if a != user:
+            return a
+    return seen[0] if seen else ""
+
+
+def mail_headers(req):
+    """Who/what/when for up to 1,500 emails: [uid, time ms, from name, from address, sent to, subject, size, read, newsletter]."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    try:
+        uids = [int(u) for u in (req.get("uids") or [])][:1500]
+    except (TypeError, ValueError):
+        raise UserError("Bad request.")
+    if not uids:
+        return {"ok": True, "rows": []}
+    user = str(acc.get("user") or "")
+
+    def run(c):
+        M = c["M"]
+        ensure_folder(c, folder)
+        rows = []
+        for i in range(0, len(uids), 500):
+            chunk = uids[i:i + 500]
+            typ, resp = M.uid("FETCH", ",".join(str(u) for u in chunk), "(UID RFC822.SIZE FLAGS INTERNALDATE BODY.PEEK[HEADER.FIELDS (%s)])" % MAIL_FIELDS)
+            if typ != "OK":
+                continue
+            items = resp or []
+            for j, it in enumerate(items):
+                if not (isinstance(it, tuple) and len(it) >= 2):
+                    continue
+                meta = it[0] + (items[j + 1] if j + 1 < len(items) and isinstance(items[j + 1], bytes) else b"")
+                m = UID_RE.search(meta)
+                if not m:
+                    continue
+                h = email.message_from_bytes(it[1] or b"")
+                ts = 0
+                try:
+                    dtv = parsedate_to_datetime(str(h.get("Date")))
+                    if dtv.tzinfo is None:
+                        dtv = dtv.replace(tzinfo=datetime.timezone.utc)
+                    ts = int(dtv.timestamp() * 1000)
+                except Exception:
+                    try:  # no usable Date header: when the server received it
+                        tt = imaplib.Internaldate2tuple(meta)
+                        ts = int(time.mktime(tt) * 1000) if tt else 0
+                    except Exception:
+                        ts = 0
+                frm = getaddresses([dh(h.get("From"))])
+                fname, faddr = (frm[0] if frm else ("", ""))
+                sz = _SIZE_RE.search(meta)
+                fl = _FLAGS_RE.search(meta)
+                rows.append([int(m.group(1)), ts, (fname or "").strip()[:120], (faddr or "").strip().lower()[:200], _mail_to(h, user)[:200],
+                             (dh(h.get("Subject")) or "").strip()[:300], int(sz.group(1)) if sz else 0,
+                             1 if fl and b"\\seen" in fl.group(1).lower() else 0, 1 if h.get("List-Unsubscribe") else 0])
+        return {"ok": True, "rows": rows}
+
+    return with_retry(acc, run)
+
+
+def mail_message(req):
+    """One whole email to read: text, HTML and the names of any attachments."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    try:
+        uid = int(req.get("uid"))
+    except (TypeError, ValueError):
+        raise UserError("Bad request.")
+
+    def run(c):
+        M = c["M"]
+        ensure_folder(c, folder)
+        typ, resp = M.uid("FETCH", str(uid), "(BODY.PEEK[]<0.6000000>)")
+        got = dict(parse_fetch(resp)) if typ == "OK" else {}
+        raw = got.get(str(uid))
+        if raw is None:
+            raise UserError("That email isn't there any more (it may have been deleted).")
+        msg = email.message_from_bytes(raw, policy=policy.default)
+        text, html = body_parts(msg)
+        files = []
+        for part in msg.walk():
+            fn = part.get_filename()
+            if fn and not part.is_multipart():
+                try:
+                    n = len(part.get_payload(decode=True) or b"")
+                except Exception:
+                    n = 0
+                files.append({"name": dh(fn)[:200], "type": part.get_content_type(), "size": n})
+        try:
+            date = parsedate_to_datetime(str(msg.get("Date"))).astimezone(datetime.timezone.utc).isoformat()
+        except Exception:
+            date = ""
+        return {"ok": True, "uid": uid, "subject": dh(msg.get("Subject")), "from": dh(msg.get("From")), "replyTo": dh(msg.get("Reply-To")),
+                "to": addresses(msg, "To"), "cc": addresses(msg, "Cc"), "sentTo": _mail_to(msg, str(acc.get("user") or "")), "date": date,
+                "text": text[:200000], "html": html[:600000], "files": files[:40], "cut": len(raw) >= 6000000}
+
+    return with_retry(acc, run)
+
+
+def mail_search(req):
+    """Emails whose words (subject or message) contain the text - the mail server searches, so it covers bodies too."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    q = str(req.get("q") or "").strip()[:200]
+    if not q:
+        return {"ok": True, "uids": []}
+
+    def run(c):
+        M = c["M"]
+        ensure_folder(c, folder, force=True)
+        try:
+            M.literal = q.encode("utf-8")
+            typ, data = M.uid("SEARCH", "CHARSET", "UTF-8", "TEXT")
+        except imaplib.IMAP4.error:
+            M.literal = None
+            typ, data = M.uid("SEARCH", None, "TEXT", imap_quote(q.encode("ascii", "ignore").decode()))
+        finally:
+            M.literal = None
+        if typ != "OK":
+            raise UserError("The mail server couldn't search for that.")
+        return {"ok": True, "uids": [int(u) for u in (data[0].split() if data and data[0] else [])]}
+
+    return with_retry(acc, run)
+
+
+def _mail_trash(M):
+    """The folder deleted mail goes to (iCloud "Deleted Messages", Gmail "[Gmail]/Trash", Outlook "Deleted"…)."""
+    try:
+        typ, rows = M.list()
+    except Exception:
+        return None
+    names = []
+    for row in rows or []:
+        if isinstance(row, tuple):
+            row = row[0] + b" " + row[1]
+        line = row.decode("utf-8", "replace") if isinstance(row, bytes) else ""
+        m = LIST_RE.match(line)
+        if not m:
+            continue
+        name = m.group("name").strip()
+        if name.startswith('"') and name.endswith('"'):
+            name = name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        if "\\trash" in m.group("flags").lower():
+            return name
+        names.append(name)
+    for want in ("Deleted Messages", "Trash", "[Gmail]/Trash", "Deleted Items", "Deleted", "INBOX.Trash"):
+        for n in names:
+            if n.lower() == want.lower():
+                return n
+    return None
+
+
+def mail_delete(req):
+    """Move emails to the trash folder (they can still be restored from there). Already in the trash: delete for good."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    try:
+        uids = sorted(set(int(u) for u in (req.get("uids") or [])))
+    except (TypeError, ValueError):
+        raise UserError("Bad request.")
+    if not uids:
+        return {"ok": True, "moved": 0}
+
+    def run(c):
+        M = c["M"]
+        trash = _mail_trash(M)
+        c["folder"] = None  # selecting for changes; the next request re-selects read-only
+        typ, data = M.select(imap_quote(folder), readonly=False)
+        if typ != "OK":
+            raise UserError("Couldn't open \"%s\" to delete from it." % folder)
+        caps = set(x.decode().upper() if isinstance(x, bytes) else str(x).upper() for x in (M.capabilities or ()))
+        permanent = not trash or trash.lower() == folder.lower()
+        done = 0
+        for i in range(0, len(uids), 400):
+            part = ",".join(str(u) for u in uids[i:i + 400])
+            if not permanent and "MOVE" in caps:
+                typ, _ = M.uid("MOVE", part, imap_quote(trash))
+                if typ != "OK":
+                    raise UserError("The mail server wouldn't move those emails to %s." % trash)
+            else:
+                if not permanent:
+                    typ, _ = M.uid("COPY", part, imap_quote(trash))
+                    if typ != "OK":
+                        raise UserError("The mail server wouldn't copy those emails to %s." % trash)
+                M.uid("STORE", part, "+FLAGS.SILENT", "(\\Deleted)")
+                if "UIDPLUS" in caps:
+                    M.uid("EXPUNGE", part)
+                else:
+                    M.expunge()
+            done += len(uids[i:i + 400])
+        try:
+            M.close()
+        except Exception:
+            pass
+        return {"ok": True, "moved": done, "trash": None if permanent else trash, "permanent": permanent}
 
     return with_retry(acc, run)
 
@@ -2735,6 +2972,11 @@ class Handler(BaseHTTPRequestHandler):
             "/api/imap/folders": lambda b: imap_folders(b.get("account") or {}),
             "/api/imap/scan": imap_scan,
             "/api/imap/bodies": imap_bodies,
+            "/api/imap/uids": mail_uids,
+            "/api/imap/headers": mail_headers,
+            "/api/imap/message": mail_message,
+            "/api/imap/search": mail_search,
+            "/api/imap/delete": mail_delete,
             "/api/track": track,
             "/api/carriertest": carrier_test,
             "/api/track17": track17,

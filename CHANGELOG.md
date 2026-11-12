@@ -2,6 +2,14 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.21.0 — Mailbox: find any email, clear out the clutter (2026-11-12)
+
+- New Email section with a Mailbox page that shows every email in your inbox, newest first. Search by the address it was sent to (each Hide My Email address), who sent it or the subject. “Search inside emails too” also searches the message text.
+- Group them by Sent to (one row per Hide My Email address), From or Kinds. Kinds puts the same email together, like “Target · newsletters & promos” or “Target · Thanks for your order #…”, with how much space each takes.
+- Tick a whole address, sender or kind, or shift-click a range, and delete them in one go. They go to the inbox’s trash (Deleted Messages on iCloud), so you can still get them back.
+- Click an email to read it. Pictures stay hidden until you ask, so senders can’t tell you opened it. Filter by date (today, 7, 30 or 90 days, or your own dates) or unread only, and sort by any column.
+- The list is kept on your device, encrypted, so it opens instantly and only loads new mail. Inboxes moved to the Email section too.
+
 ## v0.20.15 — Warning for third-party SKUs (2026-11-11)
 
 - SKU lists: when you add a Target SKU that’s sold by another seller (a Target Plus partner or other third party), Kingpin warns you right away, says who sells it, and offers to remove it.

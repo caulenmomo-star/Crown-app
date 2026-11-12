@@ -1,6 +1,13 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.21.0', date: '2026-11-12', title: 'Mailbox: find any email, clear out the clutter', items: [
+    'New Email section with a Mailbox page that shows every email in your inbox, newest first. Search by the address it was sent to (each Hide My Email address), who sent it or the subject. “Search inside emails too” also searches the message text.',
+    'Group them by Sent to (one row per Hide My Email address), From or Kinds. Kinds puts the same email together, like “Target · newsletters & promos” or “Target · Thanks for your order #…”, with how much space each takes.',
+    'Tick a whole address, sender or kind, or shift-click a range, and delete them in one go. They go to the inbox’s trash (Deleted Messages on iCloud), so you can still get them back.',
+    'Click an email to read it. Pictures stay hidden until you ask, so senders can’t tell you opened it. Filter by date (today, 7, 30 or 90 days, or your own dates) or unread only, and sort by any column.',
+    'The list is kept on your device, encrypted, so it opens instantly and only loads new mail. Inboxes moved to the Email section too.',
+  ] },
   { v: '0.20.15', date: '2026-11-11', title: 'Warning for third-party SKUs', items: [
     'SKU lists: when you add a Target SKU that’s sold by another seller (a Target Plus partner or other third party), Kingpin warns you right away, says who sells it, and offers to remove it.',
     'Third-party SKUs are tagged “⚠ 3rd party” with the seller’s name. A bar above the list lets you show just those or remove them all.',

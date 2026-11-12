@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.20.15'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.21.0'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -404,6 +404,7 @@ const ICONS = {
   houses: '<path d="M3 11l9-7 9 7M5 9.5V20h5v-6h4v6h5V9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
   spending: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.8 6.5l8.2 6.2 8.2-6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   inboxes: '<path d="M3 13l2.5-8h13L21 13v6H3z M3 13h5l1.5 2.5h5L16 13h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>',
   more: '<circle cx="5" cy="12" r="1.8" fill="currentColor"/><circle cx="12" cy="12" r="1.8" fill="currentColor"/><circle cx="19" cy="12" r="1.8" fill="currentColor"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M8.5 10.5V7.8a3.5 3.5 0 017 0v2.7" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>',
@@ -425,7 +426,8 @@ const HUBS = [
   { k: 'checkout', l: 'Checkout', side: 'Checkout', icon: 'profiles', pages: [['profiles', 'Profiles'], ['accounts', 'Accounts'], ['cards', 'Cards'], ['skus', 'SKU lists'], ['aco', 'ACO']] },
   { k: 'track', l: 'Orders', side: 'Orders & tracking', icon: 'orders', pages: [['orders', 'Orders'], ['packages', 'Packages'], ['preorders', 'Pre-orders'], ['calendar', 'Calendar'], ['houses', 'Houses'], ['checkin', 'Check-in']] },
   { k: 'resell', l: 'Resell', side: 'Reselling', icon: 'inventory', pages: [['inventory', 'Inventory'], ['sales', 'Sales'], ['spending', 'Spending']] },
-  { k: 'setup', l: 'More', side: 'Setup', icon: 'more', pages: [['inboxes', 'Inboxes'], ['settings', 'Settings']] },
+  { k: 'mail', l: 'Email', side: 'Email', icon: 'mail', pages: [['mail', 'Mailbox'], ['inboxes', 'Inboxes']] },
+  { k: 'setup', l: 'More', side: 'Setup', icon: 'more', pages: [['settings', 'Settings']] },
 ];
 const NAV = HUBS.flatMap(h => h.pages);
 const PAGE_LABEL = Object.fromEntries(NAV);
@@ -569,6 +571,7 @@ async function doUnlock() {
 async function lock(msg) {
   if (cryptoKey && (pendingSave || saving)) { try { await saveNow({ force: true }); } catch (_) { } }
   cryptoKey = null; authKey = null; baseJSON = null; rev = 0; state = blankState(); lastUndo = null; lastUnlockPw = '';
+  if (typeof MB !== 'undefined') { MB.run++; MB.rows = []; MB.key = ''; MB.loaded = false; MB.loading = false; MB.sel.clear(); MB.f = null; MB.q = ''; MB.srv = null; MB.folders = {}; }
   if (typeof selected !== 'undefined') selected.clear();
   $$('dialog').forEach(d => d.open && d.close());
   if (typeof onLocked === 'function') onLocked();

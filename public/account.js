@@ -200,7 +200,7 @@ const Account = (() => {
   // the server said this account lost access mid-session (subscription ended, suspended…)
   async function lostAccess(reason) {
     if (cryptoKey && (pendingSave || saving)) { try { await saveNow({ force: true }); } catch (_) { } }
-    cryptoKey = null; baseJSON = null; state = blankState(); lastUnlockPw = '';
+    cryptoKey = null; baseJSON = null; state = blankState(); lastUnlockPw = ''; if (typeof MB !== 'undefined') { MB.run++; MB.rows = []; MB.key = ''; MB.loaded = false; MB.loading = false; MB.sel.clear(); MB.f = null; MB.q = ''; MB.srv = null; MB.folders = {}; }
     $$('dialog').forEach(d => d.open && d.close());
     if (typeof onLocked === 'function') onLocked();
     try { acct = (await api('/api/account')).account; } catch (_) { acct = Object.assign({}, acct, { access: false, reason }); }

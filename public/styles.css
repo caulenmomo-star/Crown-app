@@ -1231,3 +1231,55 @@ a.btn.primary{background:var(--accent);color:var(--onAccent);border-color:transp
 
 .tag.thirdp{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;white-space:nowrap;background:rgba(248,113,113,.14);color:#fca5a5;border:1px solid rgba(248,113,113,.4);margin-right:6px;font-weight:600}
 .thirdbar .hstack{vertical-align:middle}
+/* Mailbox */
+.mbbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.mbbar select{width:auto;max-width:240px}
+.mbacc{font-weight:600;max-width:260px;padding:0 4px}
+.mbdates{display:inline-flex;gap:6px;align-items:center}.mbdates input{width:auto}
+.mbunread{display:inline-flex;gap:6px;align-items:center;white-space:nowrap}
+.mbprog{margin:0 0 10px}.mbprog .bar{height:6px;border-radius:4px;background:var(--line);overflow:hidden;margin-top:6px}.mbprog .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.mbsearch{gap:8px;align-items:center;flex-wrap:wrap}.mbsearch .search{flex:1 1 280px}
+.mbviews{margin-bottom:10px}.mbviews .n{opacity:.6;font-size:11px;margin-left:3px}
+.mbfocus{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--panel2,rgba(255,255,255,.03));margin-bottom:10px}
+.mbfocus b{max-width:420px}
+.mbtable{width:100%;table-layout:fixed}
+.mbtable td,.mbtable th{padding:8px 8px}
+.mbtable th.cb,.mbtable td.cb{width:34px}
+.mbtable .mb-t{width:92px;white-space:nowrap}.mbtable .mb-to{width:24%}.mbtable .mb-from{width:18%}.mbtable .mb-z{width:70px;text-align:right}
+.mbtable tbody tr{cursor:pointer}.mbtable tbody tr:hover{background:rgba(255,255,255,.03)}
+.mbtable tr.unread .mb-s,.mbtable tr.unread .mb-from{font-weight:650}
+.mbtable mark,.mbgroups mark{background:rgba(250,204,21,.28);color:inherit;border-radius:3px;padding:0 1px}
+.thsort{background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer;text-transform:inherit;letter-spacing:inherit}.thsort.on{color:var(--text)}
+.mbnl{opacity:.55;margin-right:6px;font-size:12px}
+.mbmore{display:flex;gap:10px;align-items:center;justify-content:center;padding:12px}
+.mbghead{display:flex;align-items:center;gap:8px;margin-bottom:8px}.mbgsort{width:auto}
+.mbgroups{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.mbg{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line);cursor:pointer}.mbg:first-child{border-top:0}.mbg:hover{background:rgba(255,255,255,.03)}
+.mbg input{flex:0 0 auto}.mbgmain{flex:1;min-width:0}.mbgname{font-weight:600}
+.mbgnum{display:flex;flex-direction:column;align-items:flex-end;flex:0 0 auto;text-align:right}.mbgnum b{font-size:15px}
+.mbsel{position:sticky;top:0;z-index:5}
+dialog.mbread{width:min(980px,96vw);height:min(92vh,1000px)}
+dialog.mbread .dbody{display:flex;flex-direction:column;gap:8px;min-height:0;flex:1}
+dialog.mbread[open]{display:flex;flex-direction:column}
+.mrhead{display:grid;gap:4px}.mrrow{display:flex;gap:10px;align-items:center;min-width:0}.mrrow>.muted{width:56px;flex:0 0 auto}
+.mrsim{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mrfiles{padding:6px 10px;border:1px solid var(--line);border-radius:8px}
+#mrBody{flex:1;min-height:360px;width:100%;border:0;border-radius:10px;background:#fff}
+@media (max-width:760px){
+  .mbbar select{flex:1 1 40%;max-width:none;min-width:0}.mbacc{flex:1 1 100%}
+  .mbtable thead{display:none}
+  .mbtable,.mbtable tbody{display:block}
+  .mbtable tr{display:grid;grid-template-columns:28px minmax(0,1fr) auto;column-gap:8px;row-gap:1px;padding:9px 6px;border-top:1px solid var(--line)}
+  .mbtable td{padding:0;border:0;min-width:0;width:auto!important}
+  .mbtable td.cb{grid-row:1 / 4;align-self:center}
+  .mbtable .mb-from{grid-column:2;grid-row:1}
+  .mbtable .mb-t{grid-column:3;grid-row:1;text-align:right}
+  .mbtable .mb-s{grid-column:2 / 4;grid-row:2}
+  .mbtable .mb-to{grid-column:2;grid-row:3;font-size:12px;color:var(--muted)}
+  .mbtable .mb-z{grid-column:3;grid-row:3;font-size:11px}
+  .mbfocus b{max-width:100%;flex:1 1 100%}
+  .mbg{gap:8px;padding:10px 8px}.mbgnum b{font-size:14px}
+  dialog.mbread{width:100vw;height:100%;max-height:none}
+  #mrBody{min-height:50vh}
+  .mrsim .chip{font-size:12px}
+}
