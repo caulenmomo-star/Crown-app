@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.21.1 — Mailbox: attachments, pictures and more (2026-11-12)
+
+- Attachments: Download any of them, Open PDFs, and View or Copy pictures. Big files come down in pieces, and only the one you pick.
+- Pictures in an email stay hidden. “Pick pictures” lists each one so you can Load, Copy or Save just the ones you want. “Show all” shows them in the email.
+- Opening an email now only downloads its text. The More… menu has Mark as unread, Copy the text, Save the email (.eml), Print and Move to another folder. Opening an email marks it read, like a mail app.
+
 ## v0.21.0 — Mailbox: find any email, clear out the clutter (2026-11-12)
 
 - New Email section with a Mailbox page that shows every email in your inbox, newest first. Search by the address it was sent to (each Hide My Email address), who sent it or the subject. “Search inside emails too” also searches the message text.

@@ -46,8 +46,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "f8fc267b9b22bd149919fd95c9565d1a78bdbd3e1ecc4c89bb21dd906b18a164",
-   "size": 40902
+   "sha256": "62d351b49995713badfe90cb9aaec73da8512a74f403f79baa0572e9486649b2",
+   "size": 41524
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,7 +58,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "53cb87a9d2000ef1ae6d242c50d10dbbf692cc7d688138f58b202c2f70078d09",
+   "sha256": "09cb1252b042af06585b7be325e1c57c3c46620a40b89e4d50f9eebf3c1f5ff1",
    "size": 54343
   },
   "ct-icon-180.png": {
@@ -138,8 +138,8 @@
    "size": 589
   },
   "mail.js": {
-   "sha256": "05d9479d78178c62792409847f3cc8e475070fd39705ffa123c83a7e363e7690",
-   "size": 31759
+   "sha256": "c19bd61d18011f4dcd56059ee8cfb9d158fd7905292998ed029ac100ee9e09e5",
+   "size": 43835
   },
   "manifest.webmanifest": {
    "sha256": "d80ba98a65d9365ef4196fcf97f3d422d4d1c26752f57b67b54bbd5ac0872afc",
@@ -234,8 +234,8 @@
    "size": 25684
   },
   "styles.css": {
-   "sha256": "fb706e6035036ee8c20b8ba1888f75036a0c678030cf0b93fae26cf9b6b4e5c5",
-   "size": 99128
+   "sha256": "8fec3b931c0975e0e798cf51828152fa5a72b210f8ef7b716ad8bd5c932ad617",
+   "size": 100662
   },
   "sw.js": {
    "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
@@ -306,9 +306,12 @@
   "/api/discord/read",
   "/api/imap/bodies",
   "/api/imap/delete",
+  "/api/imap/flag",
   "/api/imap/folders",
   "/api/imap/headers",
   "/api/imap/message",
+  "/api/imap/move",
+  "/api/imap/part",
   "/api/imap/scan",
   "/api/imap/search",
   "/api/imap/test",
@@ -338,5 +341,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.21.0"
+ "version": "0.21.1"
 }

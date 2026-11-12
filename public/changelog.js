@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.21.1', date: '2026-11-12', title: 'Mailbox: attachments, pictures and more', items: [
+    'Attachments: Download any of them, Open PDFs, and View or Copy pictures. Big files come down in pieces, and only the one you pick.',
+    'Pictures in an email stay hidden. “Pick pictures” lists each one so you can Load, Copy or Save just the ones you want. “Show all” shows them in the email.',
+    'Opening an email now only downloads its text. The More… menu has Mark as unread, Copy the text, Save the email (.eml), Print and Move to another folder. Opening an email marks it read, like a mail app.',
+  ] },
   { v: '0.21.0', date: '2026-11-12', title: 'Mailbox: find any email, clear out the clutter', items: [
     'New Email section with a Mailbox page that shows every email in your inbox, newest first. Search by the address it was sent to (each Hide My Email address), who sent it or the subject. “Search inside emails too” also searches the message text.',
     'Group them by Sent to (one row per Hide My Email address), From or Kinds. Kinds puts the same email together, like “Target · newsletters & promos” or “Target · Thanks for your order #…”, with how much space each takes.',

@@ -18,6 +18,8 @@ import hashlib
 import html as _html
 import imaplib
 import json
+import mimetypes
+import quopri
 import os
 import re
 import shutil
@@ -37,7 +39,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.21.0"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.21.1"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -837,8 +839,153 @@ def mail_headers(req):
     return with_retry(acc, run)
 
 
+# --- reading one email the way a mail app does: the list of parts first (BODYSTRUCTURE), then only the text.
+# Attachments and pictures are fetched one at a time, only when you ask for them.
+def _sx_tokens(segs):
+    """IMAP's parenthesised lists -> Python lists. segs: bytes, or ("lit", bytes) for {n} literals."""
+    toks = []
+    for seg in segs:
+        if isinstance(seg, tuple):
+            toks.append(("s", seg[1].decode("utf-8", "replace")))
+            continue
+        b, i, n = seg, 0, len(seg)
+        while i < n:
+            ch = b[i:i + 1]
+            if ch in (b" ", b"\r", b"\n"):
+                i += 1
+            elif ch in (b"(", b")"):
+                toks.append((ch.decode(), None)); i += 1
+            elif ch == b'"':
+                j, out = i + 1, bytearray()
+                while j < n and b[j:j + 1] != b'"':
+                    if b[j:j + 1] == b"\\" and j + 1 < n:
+                        j += 1
+                    out += b[j:j + 1]; j += 1
+                toks.append(("s", out.decode("utf-8", "replace"))); i = j + 1
+            else:
+                j = i
+                while j < n and b[j:j + 1] not in (b" ", b"(", b")", b"\r", b"\n"):
+                    j += 1
+                a = b[i:j].decode("utf-8", "replace")
+                if not re.fullmatch(r"\{\d+\}", a):
+                    toks.append(("s", None if a.upper() == "NIL" else a))
+                i = j
+    return toks
+
+
+def _sx_build(toks):
+    stack = [[]]
+    for kind, v in toks:
+        if kind == "(":
+            stack.append([])
+        elif kind == ")":
+            if len(stack) > 1:
+                done = stack.pop(); stack[-1].append(done)
+        else:
+            stack[-1].append(v)
+    return stack[0]
+
+
+def _bs_find(tree):
+    """The BODYSTRUCTURE value inside a FETCH response list."""
+    if isinstance(tree, list):
+        for i, v in enumerate(tree):
+            if isinstance(v, str) and v.upper() == "BODYSTRUCTURE" and i + 1 < len(tree):
+                return tree[i + 1]
+            got = _bs_find(v) if isinstance(v, list) else None
+            if got is not None:
+                return got
+    return None
+
+
+def _bs_params(v):
+    out = {}
+    if isinstance(v, list):
+        for i in range(0, len(v) - 1, 2):
+            k = str(v[i] or "").lower()
+            out[k] = v[i + 1] if isinstance(v[i + 1], str) else ""
+    # RFC 2231 names: filename*=utf-8''na%20me, possibly split into filename*0*, filename*1*…
+    for key in ("name", "filename"):
+        if key + "*" in out:
+            val = out[key + "*"]
+            m = re.match(r"([^']*)'[^']*'(.*)", val or "")
+            try:
+                out[key] = urllib.parse.unquote(m.group(2), encoding=m.group(1) or "utf-8") if m else urllib.parse.unquote(val)
+            except Exception:
+                out[key] = urllib.parse.unquote(val or "")
+        elif key + "*0" in out or key + "*0*" in out:
+            parts, i = [], 0
+            while key + "*%d" % i in out or key + "*%d*" % i in out:
+                parts.append(out.get(key + "*%d*" % i) or out.get(key + "*%d" % i) or ""); i += 1
+            joined = "".join(parts)
+            m = re.match(r"([^']*)'[^']*'(.*)", joined)
+            out[key] = urllib.parse.unquote(m.group(2), encoding=m.group(1) or "utf-8") if m else urllib.parse.unquote(joined)
+    return out
+
+
+def _bs_walk(node, sec, out):
+    if not isinstance(node, list) or not node:
+        return
+    if isinstance(node[0], list):  # multipart: the parts, then the subtype
+        i = 0
+        for ch in node:
+            if not isinstance(ch, list):
+                break
+            i += 1
+            _bs_walk(ch, "%s.%d" % (sec, i) if sec else str(i), out)
+        return
+    def at(k):
+        return node[k] if len(node) > k else None
+    typ, sub = str(at(0) or "").lower(), str(at(1) or "").lower()
+    params = _bs_params(at(2))
+    try:
+        size = int(at(6) or 0)
+    except (TypeError, ValueError):
+        size = 0
+    ext = 8 if typ == "text" else 10 if (typ, sub) == ("message", "rfc822") else 7
+    disp = at(ext + 1)
+    dtype, dparams = "", {}
+    if isinstance(disp, list) and disp:
+        dtype = str(disp[0] or "").lower(); dparams = _bs_params(disp[1] if len(disp) > 1 else None)
+    name = dh(dparams.get("filename") or params.get("name") or "")
+    cid = str(at(3) or "").strip().strip("<>")
+    out.append({"sec": sec or "1", "type": "%s/%s" % (typ, sub), "enc": str(at(5) or "7bit").lower(), "size": size,
+                "charset": params.get("charset") or "", "name": name, "cid": cid, "disp": dtype})
+
+
+def _decode_part(raw, enc, charset=None):
+    enc = (enc or "").lower()
+    if enc == "base64":
+        try:
+            data = base64.b64decode(re.sub(rb"[^A-Za-z0-9+/=]", b"", raw) + b"===")
+        except Exception:
+            data = b""
+    elif enc == "quoted-printable":
+
+        data = quopri.decodestring(raw)
+    else:
+        data = raw
+    if charset is None:
+        return data
+    try:
+        return data.decode(charset or "utf-8", "replace")
+    except LookupError:
+        return data.decode("utf-8", "replace")
+
+
+def _fetch_section(M, uid, sec, offset=0, length=None):
+    spec = "BODY.PEEK[%s]" % sec + ("<%d.%d>" % (offset, length) if length else "")
+    typ, resp = M.uid("FETCH", str(uid), "(UID %s)" % spec)
+    if typ != "OK":
+        return None
+    for it in resp or []:
+        if isinstance(it, tuple) and len(it) >= 2:
+            return it[1] or b""
+    return b""
+
+
 def mail_message(req):
-    """One whole email to read: text, HTML and the names of any attachments."""
+    """One email to read: who/when, its text and HTML, and the list of attachments and pictures (not downloaded)."""
     acc = req.get("account") or {}
     folder = _mail_folder(req)
     try:
@@ -849,29 +996,111 @@ def mail_message(req):
     def run(c):
         M = c["M"]
         ensure_folder(c, folder)
-        typ, resp = M.uid("FETCH", str(uid), "(BODY.PEEK[]<0.6000000>)")
-        got = dict(parse_fetch(resp)) if typ == "OK" else {}
-        raw = got.get(str(uid))
-        if raw is None:
+        typ, resp = M.uid("FETCH", str(uid), "(UID FLAGS BODYSTRUCTURE BODY.PEEK[HEADER])")
+        if typ != "OK" or not resp or resp == [None]:
             raise UserError("That email isn't there any more (it may have been deleted).")
-        msg = email.message_from_bytes(raw, policy=policy.default)
-        text, html = body_parts(msg)
+        head, segs = b"", []
+        for it in resp:
+            if isinstance(it, tuple):
+                pre = it[0] or b""
+                if re.search(rb"BODY\[HEADER\]\s*\{\d+\}$", pre):
+                    segs.append(re.sub(rb"BODY\[HEADER\]\s*\{\d+\}$", b"", pre)); head = it[1] or b""
+                else:
+                    segs.append(pre); segs.append(("lit", it[1] or b""))
+            elif isinstance(it, bytes):
+                segs.append(it)
+        if not head:
+            raise UserError("That email isn't there any more (it may have been deleted).")
+        h = email.message_from_bytes(head, policy=policy.default)
+        parts = []
+        bs = _bs_find(_sx_build(_sx_tokens(segs)))
+        _bs_walk(bs, "", parts)
+        # the readable body: the first plain-text and HTML parts that aren't attachments
+        text = html = ""
+        for want in ("text/plain", "text/html"):
+            p = next((x for x in parts if x["type"] == want and x["disp"] != "attachment" and not x["name"]), None)
+            if p:
+                raw = _fetch_section(M, uid, p["sec"], 0, 3_000_000) or b""
+                body = _decode_part(raw, p["enc"], p["charset"] or "utf-8")
+                if want == "text/plain":
+                    text = body
+                else:
+                    html = body
+        if not text and not html:
+            p = next((x for x in parts if x["type"].startswith("text/")), None)
+            if p:
+                text = _decode_part(_fetch_section(M, uid, p["sec"], 0, 3_000_000) or b"", p["enc"], p["charset"] or "utf-8")
         files = []
-        for part in msg.walk():
-            fn = part.get_filename()
-            if fn and not part.is_multipart():
-                try:
-                    n = len(part.get_payload(decode=True) or b"")
-                except Exception:
-                    n = 0
-                files.append({"name": dh(fn)[:200], "type": part.get_content_type(), "size": n})
+        for x in parts:
+            body_part = x["type"] in ("text/plain", "text/html") and x["disp"] != "attachment" and not x["name"]
+            if body_part:
+                continue
+            est = x["size"] * 3 // 4 if x["enc"] == "base64" else x["size"]
+            files.append({"sec": x["sec"], "name": x["name"] or ("picture" if x["type"].startswith("image/") else "attachment") + (mimetypes.guess_extension(x["type"]) or ""),
+                          "type": x["type"], "size": est, "enc": x["enc"], "cid": x["cid"], "inline": x["disp"] != "attachment" and bool(x["cid"])})
         try:
-            date = parsedate_to_datetime(str(msg.get("Date"))).astimezone(datetime.timezone.utc).isoformat()
+            date = parsedate_to_datetime(str(h.get("Date"))).astimezone(datetime.timezone.utc).isoformat()
         except Exception:
             date = ""
-        return {"ok": True, "uid": uid, "subject": dh(msg.get("Subject")), "from": dh(msg.get("From")), "replyTo": dh(msg.get("Reply-To")),
-                "to": addresses(msg, "To"), "cc": addresses(msg, "Cc"), "sentTo": _mail_to(msg, str(acc.get("user") or "")), "date": date,
-                "text": text[:200000], "html": html[:600000], "files": files[:40], "cut": len(raw) >= 6000000}
+        return {"ok": True, "uid": uid, "subject": dh(h.get("Subject")), "from": dh(h.get("From")), "replyTo": dh(h.get("Reply-To")),
+                "to": addresses(h, "To"), "cc": addresses(h, "Cc"), "sentTo": _mail_to(h, str(acc.get("user") or "")), "date": date,
+                "text": text[:400000], "html": html[:1500000], "files": files[:60]}
+
+    return with_retry(acc, run)
+
+
+MAIL_CHUNK = 2_400_000   # per request (Kingpin Online answers are capped at a few MB)
+
+
+def mail_part(req):
+    """One attachment or picture of an email (or, with no part, the whole email as an .eml file), a piece at a time:
+    the raw bytes as stored, base64'd; the screens put the pieces together and decode them."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    try:
+        uid = int(req.get("uid")); offset = max(0, int(req.get("offset") or 0))
+    except (TypeError, ValueError):
+        raise UserError("Bad request.")
+    sec = str(req.get("sec") or "")
+    if sec and not re.fullmatch(r"\d+(\.\d+)*", sec):
+        raise UserError("Bad request.")
+
+    def run(c):
+        M = c["M"]
+        ensure_folder(c, folder)
+        raw = _fetch_section(M, uid, sec, offset, MAIL_CHUNK)
+        if raw is None:
+            raise UserError("Couldn't download that.")
+        return {"ok": True, "data": base64.b64encode(raw).decode(), "next": offset + len(raw), "more": len(raw) >= MAIL_CHUNK}
+
+    return with_retry(acc, run)
+
+
+def mail_flag(req):
+    """Mark emails read or unread."""
+    acc = req.get("account") or {}
+    folder = _mail_folder(req)
+    try:
+        uids = sorted(set(int(u) for u in (req.get("uids") or [])))
+    except (TypeError, ValueError):
+        raise UserError("Bad request.")
+    seen = bool(req.get("seen"))
+    if not uids:
+        return {"ok": True}
+
+    def run(c):
+        M = c["M"]
+        c["folder"] = None
+        typ, _ = M.select(imap_quote(folder), readonly=False)
+        if typ != "OK":
+            raise UserError("Couldn't open \"%s\"." % folder)
+        for i in range(0, len(uids), 400):
+            M.uid("STORE", ",".join(str(u) for u in uids[i:i + 400]), "+FLAGS.SILENT" if seen else "-FLAGS.SILENT", "(\\Seen)")
+        try:
+            M.close()
+        except Exception:
+            pass
+        return {"ok": True, "n": len(uids)}
 
     return with_retry(acc, run)
 
@@ -929,8 +1158,7 @@ def _mail_trash(M):
     return None
 
 
-def mail_delete(req):
-    """Move emails to the trash folder (they can still be restored from there). Already in the trash: delete for good."""
+def _mail_move(req, dest_name):
     acc = req.get("account") or {}
     folder = _mail_folder(req)
     try:
@@ -942,25 +1170,27 @@ def mail_delete(req):
 
     def run(c):
         M = c["M"]
-        trash = _mail_trash(M)
+        dest = _mail_trash(M) if dest_name is None else dest_name
         c["folder"] = None  # selecting for changes; the next request re-selects read-only
         typ, data = M.select(imap_quote(folder), readonly=False)
         if typ != "OK":
-            raise UserError("Couldn't open \"%s\" to delete from it." % folder)
+            raise UserError("Couldn't open \"%s\"." % folder)
         caps = set(x.decode().upper() if isinstance(x, bytes) else str(x).upper() for x in (M.capabilities or ()))
-        permanent = not trash or trash.lower() == folder.lower()
+        permanent = dest_name is None and (not dest or dest.lower() == folder.lower())
+        if dest_name is not None and dest_name.lower() == folder.lower():
+            return {"ok": True, "moved": 0, "trash": dest, "permanent": False}
         done = 0
         for i in range(0, len(uids), 400):
             part = ",".join(str(u) for u in uids[i:i + 400])
             if not permanent and "MOVE" in caps:
-                typ, _ = M.uid("MOVE", part, imap_quote(trash))
+                typ, _ = M.uid("MOVE", part, imap_quote(dest))
                 if typ != "OK":
-                    raise UserError("The mail server wouldn't move those emails to %s." % trash)
+                    raise UserError("The mail server wouldn't move those emails to %s." % dest)
             else:
                 if not permanent:
-                    typ, _ = M.uid("COPY", part, imap_quote(trash))
+                    typ, _ = M.uid("COPY", part, imap_quote(dest))
                     if typ != "OK":
-                        raise UserError("The mail server wouldn't copy those emails to %s." % trash)
+                        raise UserError("The mail server wouldn't copy those emails to %s." % dest)
                 M.uid("STORE", part, "+FLAGS.SILENT", "(\\Deleted)")
                 if "UIDPLUS" in caps:
                     M.uid("EXPUNGE", part)
@@ -971,9 +1201,23 @@ def mail_delete(req):
             M.close()
         except Exception:
             pass
-        return {"ok": True, "moved": done, "trash": None if permanent else trash, "permanent": permanent}
+        return {"ok": True, "moved": done, "trash": None if permanent else dest, "permanent": permanent}
 
     return with_retry(acc, run)
+
+
+def mail_delete(req):
+    """Move emails to the trash folder (they can still be restored from there). Already in the trash: delete for good."""
+    return _mail_move(req, None)
+
+
+def mail_move(req):
+    """Move emails to another folder."""
+    dest = str(req.get("to") or "").strip()
+    if not dest or len(dest) > 300:
+        raise UserError("Pick a folder.")
+    return _mail_move(req, dest)
+
 
 
 def imap_test(acc):
@@ -2977,6 +3221,9 @@ class Handler(BaseHTTPRequestHandler):
             "/api/imap/message": mail_message,
             "/api/imap/search": mail_search,
             "/api/imap/delete": mail_delete,
+            "/api/imap/move": mail_move,
+            "/api/imap/part": mail_part,
+            "/api/imap/flag": mail_flag,
             "/api/track": track,
             "/api/carriertest": carrier_test,
             "/api/track17": track17,

@@ -1283,3 +1283,17 @@ dialog.mbread[open]{display:flex;flex-direction:column}
   #mrBody{min-height:50vh}
   .mrsim .chip{font-size:12px}
 }
+.mrfiles{padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.mrfile{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.mrfile:first-of-type{border-top:0}
+.mrfname{flex:1;min-width:0}.mrficon{width:36px;text-align:center;font-size:18px}.mrthumb{width:36px;height:36px;object-fit:cover;border-radius:6px;background:#fff}
+.mrpics{padding:8px 10px;border:1px solid var(--line);border-radius:10px}
+.mrpicshead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mrpicgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-top:8px;max-height:320px;overflow:auto}
+.mrpic{border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mrpic img,.mrpicph{width:100%;height:90px;object-fit:contain;background:#fff;border-radius:6px}
+.mrpicph{display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.04);font-size:11px;color:var(--muted);text-align:center;padding:4px}
+.mrpicbtns{display:flex;gap:4px;flex-wrap:wrap}.mrpicbtns .sm{padding:3px 8px}
+.mract{width:auto;max-width:140px}
+@media (max-width:760px){ .mrpicgrid{grid-template-columns:repeat(2,minmax(0,1fr))} .mrfile .sm{padding:4px 8px} .mrfile{flex-wrap:wrap} .mrfname{flex:1 1 60%} }
+.mrfbtns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:760px){ .mrfile{display:grid;grid-template-columns:36px minmax(0,1fr);row-gap:6px} .mrfbtns{grid-column:1 / 3;justify-content:flex-end} }

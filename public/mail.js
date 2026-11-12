@@ -267,40 +267,54 @@ async function mbDelete(uids) {
   closeDlg('dlgMail'); mbRender();
 }
 
-/* ---------- reading one email ---------- */
-const MBR = { uid: 0, list: [], pics: false, msg: null };
+/* ---------- reading one email ----------
+   Like a mail app: the text shows right away; attachments and pictures are listed but only downloaded when you
+   pick one (Download / View / Copy), or all of them with "Show pictures". Nothing big is fetched until you ask. */
+const MBR = { uid: 0, list: [], pics: false, msg: null, cids: {}, imgs: {}, open: false };
+const mbIsImg = t => /^image\/(png|jpe?g|gif|webp|bmp)$/i.test(t || '');
 function mbOpen(uid, list) {
-  MBR.uid = uid; MBR.list = list || MBR.list; MBR.msg = null;
+  MBR.uid = uid; MBR.list = list || MBR.list; MBR.msg = null; MBR.cids = {}; MBR.imgs = {}; MBR.open = false;
   if (!document.getElementById('dlgMail')) {
     document.body.insertAdjacentHTML('beforeend', `<dialog id="dlgMail" class="wide mbread"><div class="dhead"><span class="ellipsis" id="mrSubj">Email</span><button class="ghost sm x" data-close>✕</button></div>
-      <div class="dbody"><div id="mrHead" class="mrhead"></div><div class="mrsim small" id="mrSim"><span class="muted">Show all:</span><button class="chip" data-mrf="to">sent to this address</button><button class="chip" data-mrf="from">from this sender</button><button class="chip" data-mrf="type">emails like this</button></div><div id="mrFiles"></div><div id="mrPics" class="small muted" hidden></div><iframe id="mrBody" sandbox="allow-popups allow-popups-to-escape-sandbox" title="Email"></iframe></div>
-      <div class="dfoot"><button class="sm" id="mrPrev" title="Newer (←)">‹</button><button class="sm" id="mrNext" title="Older (→)">›</button><div class="spacer"></div><button class="sm danger" id="mrDel">Delete</button></div></dialog>`);
+      <div class="dbody"><div id="mrHead" class="mrhead"></div><div class="mrsim small" id="mrSim"><span class="muted">Show all:</span><button class="chip" data-mrf="to">sent to this address</button><button class="chip" data-mrf="from">from this sender</button><button class="chip" data-mrf="type">emails like this</button></div>
+        <div id="mrFiles"></div><div id="mrPics"></div><iframe id="mrBody" sandbox="allow-popups allow-popups-to-escape-sandbox" title="Email"></iframe></div>
+      <div class="dfoot"><button class="sm" id="mrPrev" title="Newer (←)">‹</button><button class="sm" id="mrNext" title="Older (→)">›</button><div class="spacer"></div>
+        <select id="mrAct" class="mract" aria-label="More"><option value="">More…</option></select><button class="sm danger" id="mrDel">Delete</button></div></dialog>`);
     const d = $('#dlgMail');
     d.addEventListener('keydown', e => { if (e.target.closest('input,select,textarea')) return; if (e.key === 'ArrowLeft') $('#mrPrev').click(); if (e.key === 'ArrowRight') $('#mrNext').click(); });
     $('#mrPrev').onclick = () => { const i = MBR.list.indexOf(MBR.uid); if (i > 0) mbOpen(MBR.list[i - 1]); };
     $('#mrNext').onclick = () => { const i = MBR.list.indexOf(MBR.uid); if (i >= 0 && i < MBR.list.length - 1) mbOpen(MBR.list[i + 1]); };
     $('#mrDel').onclick = () => mbDelete([MBR.uid]);
+    $('#mrAct').onchange = e => { const v = e.target.value; e.target.value = ''; mbAction(v); };
     $('#mrSim').onclick = e => {
       const b = e.target.closest('[data-mrf]'); const x = MB.rows.find(r => r.uid === MBR.uid); if (!b || !x) return;
       const f = b.dataset.mrf;
       if (f === 'to') mbFocus('to', x.to, x.to); else if (f === 'from') mbFocus('from', x.fa, x.fn ? `${x.fn} (${x.fa})` : x.fa); else mbFocus('type', mbKind(x), mbKindLabel(x));
     };
+    $('#mrFiles').onclick = e => { const b = e.target.closest('[data-mrfile]'); if (b) mbFileAct(b.dataset.mrfile, b.dataset.do); };
+    $('#mrPics').onclick = e => {
+      const b = e.target.closest('[data-pic]'); if (b) { mbPicAct(+b.dataset.pic, b.dataset.do); return; }
+      if (e.target.closest('#mrPicsAll')) { MBR.pics = true; mbLoadCids().then(() => mbShowBody(MBR.msg)); mbPicsDraw(); return; }
+      if (e.target.closest('#mrPicsPick')) { MBR.open = !MBR.open; mbPicsDraw(); }
+    };
   }
   const x = MB.rows.find(r => r.uid === uid) || {};
   $('#mrSubj').textContent = x.s || '(no subject)';
   $('#mrHead').innerHTML = mbHeadHtml(x, null);
-  $('#mrFiles').innerHTML = ''; $('#mrPics').hidden = true;
+  $('#mrFiles').innerHTML = ''; $('#mrPics').innerHTML = '';
   const fr = $('#mrBody'); fr.srcdoc = '<p style="font:14px system-ui;color:#888;padding:16px">Loading…</p>';
   const i = MBR.list.indexOf(uid); $('#mrPrev').disabled = i <= 0; $('#mrNext').disabled = i < 0 || i >= MBR.list.length - 1;
+  mbActOptions(x);
   openDlg('dlgMail');
   const a = mbAcc();
   api('/api/imap/message', { account: mbPayload(a), uid }).then(m => {
     if (MBR.uid !== uid) return;
     MBR.msg = m; MBR.pics = false;
     $('#mrHead').innerHTML = mbHeadHtml(x, m);
-    $('#mrFiles').innerHTML = (m.files || []).length ? `<div class="mrfiles small">📎 ${m.files.map(f => `${esc(f.name)} <span class="faint">${fmtSize(f.size)}</span>`).join(' · ')}</div>` : '';
-    mbShowBody(m);
+    mbFilesDraw(); mbShowBody(m); mbPicsDraw();
     const c = $('#mrHead').querySelector('[data-mrcopy]'); if (c) c.onclick = () => copyText(c.dataset.mrcopy, 'Address');
+    // opening it marks it read, like a mail app
+    if (x.uid && !x.seen) { x.seen = true; api('/api/imap/flag', { account: mbPayload(a), uids: [uid], seen: true }).then(() => { mbSave(); mbRender(); }).catch(() => { x.seen = false; }); mbActOptions(x); }
   }).catch(e => { if (MBR.uid === uid) fr.srcdoc = `<p style="font:14px system-ui;color:#c55;padding:16px">${esc(e.message || 'Couldn’t open this email.')}</p>`; });
 }
 function mbFocus(by, v, label) { closeDlg('dlgMail'); MB.f = { by, v, label }; MB.show = 200; go('mail'); mbRender(); }
@@ -308,7 +322,154 @@ function mbHeadHtml(x, m) {
   const to = m ? m.sentTo || x.to : x.to;
   return `<div class="mrrow"><span class="muted">From</span><span class="ellipsis">${esc(m ? m.from : (x.fn ? `${x.fn} <${x.fa}>` : x.fa))}</span></div>
     <div class="mrrow"><span class="muted">Sent to</span><span class="ellipsis"><b>${esc(to || '—')}</b></span>${to ? `<button class="ghost sm icopy" data-mrcopy="${esc(to)}" title="Copy">⧉</button>` : ''}</div>
+    ${m && m.cc && m.cc.length ? `<div class="mrrow"><span class="muted">Cc</span><span class="ellipsis">${esc(m.cc.join(', '))}</span></div>` : ''}
     <div class="mrrow"><span class="muted">Date</span><span>${m && m.date ? fmtDT(m.date) : x.t ? fmtDT(x.t) : '—'}</span>${x.z ? `<span class="faint small" style="margin-left:auto">${fmtSize(x.z)}</span>` : ''}</div>`;
+}
+// the More… menu: read/unread, move, copy text, save, print
+function mbActOptions(x) {
+  const sel = $('#mrAct'); if (!sel) return;
+  const a = mbAcc(), fl = a && Array.isArray(MB.folders[a.id]) ? MB.folders[a.id].map(f => f.name).filter(n => n !== MB.folder) : [];
+  sel.innerHTML = `<option value="">More…</option><option value="unread">${x && x.seen === false ? 'Mark as read' : 'Mark as unread'}</option><option value="text">Copy the text</option><option value="eml">Save the email (.eml)</option><option value="print">Print</option>${fl.length ? `<optgroup label="Move to">${fl.map(n => `<option value="move:${esc(n)}">${esc(n === 'INBOX' ? 'Inbox' : n)}</option>`).join('')}</optgroup>` : ''}`;
+}
+async function mbAction(v) {
+  const a = mbAcc(), m = MBR.msg, x = MB.rows.find(r => r.uid === MBR.uid); if (!a || !v) return;
+  if (v === 'unread') {
+    const seen = !!(x && x.seen === false);
+    try { await api('/api/imap/flag', { account: mbPayload(a), uids: [MBR.uid], seen }); if (x) x.seen = seen; mbSave(); mbRender(); mbActOptions(x); toast(seen ? 'Marked as read' : 'Marked as unread'); } catch (e) { toast(e.message || 'Couldn’t change that'); }
+  } else if (v === 'text') {
+    if (!m) return;
+    const t = m.text || (m.html ? new DOMParser().parseFromString(m.html, 'text/html').body.innerText : '');
+    copyText(t.trim(), 'Text');
+  } else if (v === 'eml') {
+    const name = (String(m && m.subject || x && x.s || 'email').replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 80) || 'email') + '.eml';
+    const bytes = await mbFetch(MBR.uid, '', '', name); if (bytes) mbSaveBlob(new Blob([bytes], { type: 'message/rfc822' }), name);
+  } else if (v === 'print') {
+    if (!m) return;
+    const r = m.html ? mbSafeHtml(m.html, MBR.pics) : { html: '<pre style="white-space:pre-wrap;font:14px system-ui">' + esc(m.text || '') + '</pre>' };
+    const w = window.open('', '_blank'); if (!w) { toast('Allow pop-ups to print'); return; }
+    w.document.open(); w.document.write(r.html.replace('<body>', `<body><div style="font:13px system-ui;color:#444;border-bottom:1px solid #ccc;padding-bottom:8px;margin-bottom:12px"><b>${esc(m.subject || '')}</b><br>From: ${esc(m.from || '')}<br>To: ${esc(m.sentTo || '')}<br>${m.date ? esc(fmtDT(m.date)) : ''}</div>`)); w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch (_) { } }, 400);
+  } else if (v.startsWith('move:')) {
+    const to = v.slice(5);
+    try { const r = await api('/api/imap/move', { account: mbPayload(a), uids: [MBR.uid], to }); if (r.moved) { MB.rows = MB.rows.filter(y => y.uid !== MBR.uid); mbSave(); closeDlg('dlgMail'); mbRender(); toast(`Moved to ${to === 'INBOX' ? 'Inbox' : to}`); } } catch (e) { toast(e.message || 'Couldn’t move it'); }
+  }
+}
+
+/* attachments and pictures: downloaded a piece at a time, only when asked */
+const mbB64 = s => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; };
+function mbQP(u8) {
+  const s = new TextDecoder('latin1').decode(u8).replace(/=\r?\n/g, ''), out = [];
+  for (let i = 0; i < s.length; i++) { if (s[i] === '=' && /^[0-9A-F]{2}$/i.test(s.substr(i + 1, 2))) { out.push(parseInt(s.substr(i + 1, 2), 16)); i += 2; } else out.push(s.charCodeAt(i) & 255); }
+  return new Uint8Array(out);
+}
+async function mbFetch(uid, sec, enc, label, onProg) {
+  const a = mbAcc(); const parts = []; let off = 0, n = 0;
+  try {
+    for (;;) {
+      const r = await api('/api/imap/part', { account: mbPayload(a), uid, sec, offset: off });
+      const u = mbB64(r.data); parts.push(u); n += u.length; off = r.next;
+      if (onProg) onProg(n);
+      if (!r.more || !u.length) break;
+    }
+  } catch (e) { toast(e.message || `Couldn’t download ${label || 'that'}`); return null; }
+  const all = new Uint8Array(n); let p = 0; for (const u of parts) { all.set(u, p); p += u.length; }
+  enc = String(enc || '').toLowerCase();
+  if (enc === 'base64') { try { return mbB64(new TextDecoder('latin1').decode(all).replace(/[^A-Za-z0-9+/=]/g, '').replace(/=+$/, m => m.slice(0, 2))); } catch (_) { toast('That download came out damaged'); return null; } }
+  if (enc === 'quoted-printable') return mbQP(all);
+  return all;
+}
+function mbSaveBlob(blob, name) {
+  const u = URL.createObjectURL(blob), l = document.createElement('a');
+  l.href = u; l.download = name; document.body.appendChild(l); l.click(); l.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 60000);
+}
+async function mbToPng(blob) {
+  if (blob.type === 'image/png') return blob;
+  const bmp = await createImageBitmap(blob), c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  c.getContext('2d').drawImage(bmp, 0, 0); return await new Promise(ok => c.toBlob(ok, 'image/png'));
+}
+async function mbCopyImage(getBlob) {
+  try {
+    if (!navigator.clipboard || typeof ClipboardItem === 'undefined') throw new Error('no clipboard');
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': getBlob().then(mbToPng) })]);
+    toast('Picture copied');
+  } catch (e) { toast('This browser won’t copy pictures — use Save instead'); }
+}
+// an attachment's blob, downloaded once per open email
+async function mbFileBlob(f, onProg) {
+  if (f.blob) return f.blob;
+  const bytes = await mbFetch(MBR.uid, f.sec, f.enc, f.name, onProg); if (!bytes) throw new Error('download failed');
+  f.blob = new Blob([bytes], { type: f.type || 'application/octet-stream' });
+  if (mbIsImg(f.type)) f.url = URL.createObjectURL(f.blob);
+  return f.blob;
+}
+function mbFilesDraw() {
+  const m = MBR.msg, box = $('#mrFiles'); if (!m || !box) return;
+  const html = m.html || '';
+  // inline pictures used by the email itself are listed under Pictures, not here
+  const files = (m.files || []).filter(f => !(f.cid && html.includes('cid:' + f.cid)));
+  box.innerHTML = files.length ? `<div class="mrfiles"><div class="small muted" style="margin-bottom:6px">📎 ${plural(files.length, 'attachment')}</div>${files.map(f => { const i = m.files.indexOf(f); return `<div class="mrfile">${f.url ? `<img class="mrthumb" src="${f.url}" alt="">` : `<span class="mrficon">${mbIsImg(f.type) ? '🖼' : /pdf/.test(f.type) ? '📄' : '📎'}</span>`}<div class="mrfname"><div class="ellipsis">${esc(f.name)}</div><div class="small faint">${fmtSize(f.size)}${f.prog ? ` · ${esc(f.prog)}` : ''}</div></div>
+      <div class="mrfbtns">${mbIsImg(f.type) && !f.url ? `<button class="sm" data-mrfile="${i}" data-do="view">View</button>` : ''}${mbIsImg(f.type) ? `<button class="sm" data-mrfile="${i}" data-do="copy">Copy</button>` : ''}${/pdf/.test(f.type) ? `<button class="sm" data-mrfile="${i}" data-do="open">Open</button>` : ''}<button class="sm" data-mrfile="${i}" data-do="save">Download</button></div></div>`; }).join('')}</div>` : '';
+}
+async function mbFileAct(i, what) {
+  const f = MBR.msg && MBR.msg.files[+i]; if (!f) return;
+  const prog = n => { f.prog = `downloading ${fmtSize(n)}…`; mbFilesDraw(); };
+  if (what === 'copy') { mbCopyImage(() => mbFileBlob(f, prog).finally(() => { f.prog = ''; mbFilesDraw(); })); return; }
+  try { await mbFileBlob(f, prog); } catch (_) { f.prog = ''; mbFilesDraw(); return; }
+  f.prog = ''; mbFilesDraw();
+  if (what === 'save') mbSaveBlob(f.blob, f.name);
+  if (what === 'open') { const u = URL.createObjectURL(f.blob); const w = window.open(u, '_blank'); if (!w) mbSaveBlob(f.blob, f.name); setTimeout(() => URL.revokeObjectURL(u), 120000); }
+}
+// pictures in the email's HTML: inline ones (cid:) and ones on the web
+function mbPicList() {
+  const m = MBR.msg; if (!m || !m.html) return [];
+  if (MBR.picList && MBR.picList.uid === MBR.uid) return MBR.picList.list;
+  const doc = new DOMParser().parseFromString(m.html, 'text/html'), seen = new Set(), list = [];
+  doc.querySelectorAll('img[src]').forEach(n => {
+    const src = n.getAttribute('src').trim(); if (!src || seen.has(src) || /^data:/i.test(src)) return;
+    const w = +n.getAttribute('width') || 0, h = +n.getAttribute('height') || 0;
+    if ((w && w <= 3) || (h && h <= 3)) return;   // tracking pixels
+    seen.add(src);
+    const cid = /^cid:/i.test(src) ? src.slice(4).replace(/^<|>$/g, '') : '';
+    const f = cid ? (m.files || []).find(x => x.cid === cid) : null;
+    if (cid && !f) return;
+    let host = ''; try { host = new URL(src).hostname.replace(/^www\./, ''); } catch (_) { }
+    list.push({ src, cid, f, label: (n.getAttribute('alt') || '').trim().slice(0, 60) || (f && f.name) || host || 'picture' });
+  });
+  MBR.picList = { uid: MBR.uid, list };
+  return list;
+}
+async function mbPicBlob(p) {
+  if (p.blob) return p.blob;
+  if (p.f) p.blob = await mbFileBlob(p.f);
+  else {
+    if (!/^https:/i.test(p.src)) throw new Error('Only secure (https) pictures can be loaded here.');
+    const r = await api('/api/img', { url: p.src });
+    p.blob = new Blob([mbB64(r.data)], { type: r.type });
+  }
+  p.url = p.url || URL.createObjectURL(p.blob);
+  return p.blob;
+}
+function mbPicsDraw() {
+  const box = $('#mrPics'), list = mbPicList(); if (!box) return;
+  if (!list.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="mrpics"><div class="mrpicshead small"><span>🖼 ${plural(list.length, 'picture')}${MBR.pics ? ' — shown in the email' : ' hidden (so nothing downloads and the sender can’t tell you opened it)'}</span><div class="spacer"></div>
+      <button class="sm" id="mrPicsPick">${MBR.open ? 'Close' : 'Pick pictures'}</button>${MBR.pics ? '' : `<button class="sm" id="mrPicsAll">Show all</button>`}</div>
+    ${MBR.open ? `<div class="mrpicgrid">${list.map((p, i) => `<div class="mrpic">${p.url ? `<img src="${p.url}" alt="">` : `<div class="mrpicph">${p.busy ? 'Loading…' : esc(p.err || '')}</div>`}<div class="small ellipsis" title="${esc(p.label)}">${esc(p.label)}</div>
+      <div class="mrpicbtns">${p.url ? '' : `<button class="sm" data-pic="${i}" data-do="load">Load</button>`}<button class="sm" data-pic="${i}" data-do="copy">Copy</button><button class="sm" data-pic="${i}" data-do="save">Save</button></div></div>`).join('')}</div>` : ''}</div>`;
+}
+async function mbPicAct(i, what) {
+  const p = mbPicList()[i]; if (!p) return;
+  if (what === 'copy') { mbCopyImage(async () => { const b = await mbPicBlob(p); mbPicsDraw(); return b; }); return; }
+  p.busy = true; p.err = ''; mbPicsDraw();
+  try { await mbPicBlob(p); } catch (e) { p.err = e.message || 'Couldn’t load it'; }
+  p.busy = false; mbPicsDraw();
+  if (what === 'save' && p.blob) { const ext = (p.blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg'); mbSaveBlob(p.blob, (p.f && p.f.name) || (p.label.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'picture') + '.' + ext); }
+}
+// "Show all": the email's own inline pictures, so they appear in it
+async function mbLoadCids() {
+  const toData = b => new Promise(ok => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = () => ok(''); r.readAsDataURL(b); });
+  for (const p of mbPicList()) if (p.f && !MBR.cids[p.cid]) { try { MBR.cids[p.cid] = await toData(await mbPicBlob(p)); } catch (_) { } }
 }
 // the email's own HTML, made safe: no scripts or forms, links open in a new tab, pictures only when you ask
 function mbSafeHtml(html, pics) {
@@ -321,8 +482,12 @@ function mbSafeHtml(html, pics) {
       if (nm.startsWith('on') || ((nm === 'href' || nm === 'src' || nm === 'action' || nm === 'xlink:href') && v.startsWith('javascript:'))) n.removeAttribute(at.name);
     }
     if (n.tagName === 'A') { n.setAttribute('target', '_blank'); n.setAttribute('rel', 'noopener noreferrer'); }
-    if (!pics && (n.tagName === 'IMG' || n.tagName === 'IMAGE') && /^https?:/i.test(n.getAttribute('src') || '')) { n.setAttribute('data-src', n.getAttribute('src')); n.removeAttribute('src'); n.removeAttribute('srcset'); blocked++; }
-    if (!pics && n.style && /url\(/i.test(n.getAttribute('style') || '')) { n.setAttribute('style', n.getAttribute('style').replace(/url\([^)]*\)/gi, 'none')); blocked++; }
+    if (n.tagName === 'IMG') {
+      const src = n.getAttribute('src') || '';
+      if (/^cid:/i.test(src)) { const u = MBR.cids[src.slice(4).replace(/^<|>$/g, '')]; if (u) n.setAttribute('src', u); else { n.removeAttribute('src'); blocked++; } }
+      else if (!pics && /^https?:/i.test(src)) { n.removeAttribute('src'); n.removeAttribute('srcset'); blocked++; }
+    }
+    if (!pics && n.getAttribute && /url\(/i.test(n.getAttribute('style') || '')) { n.setAttribute('style', n.getAttribute('style').replace(/url\([^)]*\)/gi, 'none')); blocked++; }
     if (!pics && n.hasAttribute && n.hasAttribute('background')) { n.removeAttribute('background'); blocked++; }
   });
   if (!pics) doc.querySelectorAll('style').forEach(s => { if (/url\(/i.test(s.textContent)) { s.textContent = s.textContent.replace(/url\([^)]*\)/gi, 'none'); blocked++; } });
@@ -330,15 +495,7 @@ function mbSafeHtml(html, pics) {
   return { html: '<!doctype html><html><head>' + head + '</head><body>' + doc.body.innerHTML + '</body></html>', blocked };
 }
 function mbShowBody(m) {
-  const fr = $('#mrBody');
-  if (m.html) {
-    const r = mbSafeHtml(m.html, MBR.pics);
-    fr.srcdoc = r.html;
-    const p = $('#mrPics');
-    if (r.blocked && !MBR.pics) { p.hidden = false; p.innerHTML = `Pictures are hidden so the sender can’t tell you opened it. <button class="linkbtn" id="mrShowPics">Show pictures</button>`; $('#mrShowPics').onclick = () => { MBR.pics = true; p.hidden = true; mbShowBody(m); }; }
-    else p.hidden = true;
-  } else {
-    fr.srcdoc = '<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:14px;background:#fff;color:#111;font:14px/1.5 -apple-system,system-ui,sans-serif;white-space:pre-wrap;word-wrap:break-word}</style>' + esc(m.text || '(this email has no text)');
-  }
-  if (m.cut) toast('This email is very large — only the first part is shown');
+  const fr = $('#mrBody'); if (!m) return;
+  if (m.html) fr.srcdoc = mbSafeHtml(m.html, MBR.pics).html;
+  else fr.srcdoc = '<!doctype html><meta charset="utf-8"><style>body{margin:0;padding:14px;background:#fff;color:#111;font:14px/1.5 -apple-system,system-ui,sans-serif;white-space:pre-wrap;word-wrap:break-word}</style>' + esc(m.text || '(this email has no text)');
 }
