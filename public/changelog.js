@@ -1,6 +1,10 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.22.1', date: '2026-11-12', title: 'Full item names', items: [
+    'Order popups show every item’s full name, wrapping onto more lines instead of cutting off.',
+    'Order lists on phones show longer names and the full order number, with a lighter status label.',
+  ] },
   { v: '0.22.0', date: '2026-11-12', title: 'Phone notifications, even when Kingpin is closed', items: [
     'Settings → Phone notifications: Kingpin Online checks your inboxes and packages every few minutes and sends alerts to your phone: new orders, shipped, out for delivery, delivered, cancellations and delays, grouped by house.',
     'A morning summary of today’s deliveries per house, at the hour you pick. Turn each kind on or off, and send a test.',
