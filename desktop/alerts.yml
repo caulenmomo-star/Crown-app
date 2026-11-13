@@ -1,0 +1,23 @@
+# Kingpin Online background alerts: every few minutes, ask Kingpin Online to check the inboxes and packages of
+# accounts that turned on phone notifications. GitHub runs this for free. No secret is needed: GitHub hands this
+# job a short-lived signed token saying "this is the alerts job in Crown-app", and Kingpin Online checks it.
+name: Background alerts
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  id-token: write
+  contents: read
+concurrency:
+  group: alerts
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Check inboxes and packages
+        run: |
+          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=kingpin-bg-tick" | python3 -c "import sys,json;print(json.load(sys.stdin)['value'])")
+          curl -sS -m 300 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}' https://crowntools.vercel.app/api/bg/tick | head -c 300; echo

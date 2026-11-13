@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.22.0 — Phone notifications, even when Kingpin is closed (2026-11-12)
+
+- Settings → Phone notifications: Kingpin Online checks your inboxes and packages every few minutes and sends alerts to your phone: new orders, shipped, out for delivery, delivered, cancellations and delays, grouped by house.
+- A morning summary of today’s deliveries per house, at the hour you pick. Turn each kind on or off, and send a test.
+- Off until you turn it on. Your inbox logins are kept encrypted for this, and turning it off erases them. On iPhone it works from the home-screen app.
+
 ## v0.21.1 — Mailbox: attachments, pictures and more (2026-11-12)
 
 - Attachments: Download any of them, Open PDFs, and View or Copy pictures. Big files come down in pieces, and only the one you pick.

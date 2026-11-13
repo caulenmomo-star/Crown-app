@@ -17,6 +17,10 @@
    "sha256": "0b40c272b692467d9075dffcb54d85c4aaddde737853f6f3b5f0ff026949b2ae",
    "size": 6436
   },
+  "bg.js": {
+   "sha256": "c64cf6cac5761a970cd1ab7310363ced84fc133ec1625d88a0bc21d22b65e64f",
+   "size": 12324
+  },
   "boot.js": {
    "sha256": "54a634aebfa21399a64b9cad982e278af0f0e6c3ca64c9129a189e5218c08151",
    "size": 1219
@@ -46,8 +50,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "62d351b49995713badfe90cb9aaec73da8512a74f403f79baa0572e9486649b2",
-   "size": 41524
+   "sha256": "3972c2e9979477e0f408b7efe064c77b8fb66014c232bd34d540c4f80131533e",
+   "size": 42151
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -58,7 +62,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "09cb1252b042af06585b7be325e1c57c3c46620a40b89e4d50f9eebf3c1f5ff1",
+   "sha256": "f8055cd87d58b39f2afa864e607393f5280fdf7fb48dd817832edf37b54e6aa8",
    "size": 54343
   },
   "ct-icon-180.png": {
@@ -94,8 +98,8 @@
    "size": 24524
   },
   "index.html": {
-   "sha256": "d02e4a4d3b4fd34f99c9b87b0b88878e5af817ed7e4b0dc2362256b42412ae99",
-   "size": 33271
+   "sha256": "7d006f12d9d7c54b26f46929558e47c479cc56ac64116c0b42cfb45c89b1e1f1",
+   "size": 33301
   },
   "install.css": {
    "sha256": "f0f1e17e621604747b95349dbdd9764ecc77e21e4d614df317c88b35e73b44ca",
@@ -170,8 +174,8 @@
    "size": 21156
   },
   "pages.js": {
-   "sha256": "d6a3c470ea2f19171f03c4ee5e7b68282ae140a6ca6fe2322cd8b84a69fe62ff",
-   "size": 100799
+   "sha256": "fcbb043434e868fd96016a989907ed22331e357fdb0310adaf10f666dc7b9f42",
+   "size": 100915
   },
   "parser.js": {
    "sha256": "e086ec20e76cad72f1f3a949019c8b49d34d892635e9db82b471e5ff44c6f2cf",
@@ -238,12 +242,12 @@
    "size": 100662
   },
   "sw.js": {
-   "sha256": "dcf60f011e221606df09573b09d36593f96e5b745eaca36ce858391ad125243b",
-   "size": 2039
+   "sha256": "d862586d8fb98182205e395017e48844782b5db2870e8588a53eaa0d53662f72",
+   "size": 2500
   },
   "sync.js": {
-   "sha256": "73ad40b1e498bdc2d08db0cf1c9f84011524d44530e33eeddd80d0b43506393f",
-   "size": 38436
+   "sha256": "4c3f6628f06fdb2e08c1efef0ea25783843f913eac98ea150032d3900adf9637",
+   "size": 38510
   },
   "terms.html": {
    "sha256": "d135d9ffe5ca127d01bc854d304dd87bcc689a1e3f56bec5e15a96a4a87d1713",
@@ -341,5 +345,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.21.1"
+ "version": "0.22.0"
 }

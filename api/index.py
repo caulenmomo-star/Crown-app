@@ -39,7 +39,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.21.1"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.22.0"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -3983,6 +3983,10 @@ def user_backups(uid):
 
 
 def delete_user_data(u):
+    try:
+        bg_erase(u["id"])
+    except Exception:
+        pass
     uid = u["id"]
     keys = ["ct:user:" + uid, "ct:email:" + u["email"], "ct:vault:" + uid, "ct:vmeta:" + uid, "ct:bki:" + uid, "ct:bkl:" + uid]
     for r in kv("LRANGE", "ct:bki:" + uid, "0", "-1") or []:
@@ -4261,6 +4265,478 @@ def admin_stats():
 
 # ---------------------------------------------------------------- HTTP handler
 
+# ---------------------------------------------------------------- background alerts (opt-in, per account)
+# Normally Kingpin Online can't read anything you keep in Kingpin: it's encrypted with your password. With
+# background alerts on, the app also sends a small "watch list" - your inbox app passwords, tracking numbers, house
+# names and a few order details - which is kept here encrypted with a server key (CROWN_BG_KEY, separate from the
+# database). Every few minutes a scheduled check (GitHub Actions -> /bg/tick) reads new order emails, checks the
+# packages, and sends push notifications to the phones/computers you turned them on for. Turning it off erases it.
+BG_KEY = os.environ.get("CROWN_BG_KEY") or ""
+VAPID_KEY = os.environ.get("CROWN_VAPID_KEY") or ""     # the push signing key (base64url P-256 private number)
+TICK_SECRET = os.environ.get("CROWN_TICK_SECRET") or ""
+BG_PREFS = {"orders": True, "shipped": True, "ofd": True, "delivered": True, "problems": True, "summary": True, "summaryHour": 8}
+PUSH_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com", "push.services.mozilla.com", "web.push.apple.com",
+              "notify.windows.com", "push.apple.com")
+
+
+def bg_ready():
+    return bool(BG_KEY and VAPID_KEY)
+
+
+# Who may run the scheduled check: GitHub Actions in our repo proves itself with a short-lived token GitHub signs
+# (OIDC), so no shared secret has to live in GitHub. (CROWN_TICK_SECRET still works for running it by hand.)
+GH_ISS = os.environ.get("CROWN_OIDC_ISS") or "https://token.actions.githubusercontent.com"
+GH_JWKS = os.environ.get("CROWN_OIDC_JWKS") or GH_ISS + "/.well-known/jwks"
+GH_REPO = os.environ.get("CROWN_TICK_REPO") or "caulenmomo-star/Crown-app"
+GH_AUD = "kingpin-bg-tick"
+_JWKS = {"at": 0, "keys": {}}
+
+
+def _gh_keys(kid):
+    if kid not in _JWKS["keys"] and time.time() - _JWKS["at"] > 60:
+        with urllib.request.urlopen(urllib.request.Request(GH_JWKS, headers={"User-Agent": "Kingpin"}), timeout=10, context=ssl_context()) as r:
+            _JWKS["keys"] = {k.get("kid"): k for k in json.loads(r.read().decode()).get("keys", []) if k.get("kty") == "RSA"}
+        _JWKS["at"] = time.time()
+    return _JWKS["keys"].get(kid)
+
+
+def gh_oidc_ok(tok):
+    try:
+        from cryptography.hazmat.primitives.asymmetric import rsa, padding
+        from cryptography.hazmat.primitives import hashes
+        a, b, c = tok.split(".")
+        head, body = json.loads(_b64ud(a)), json.loads(_b64ud(b))
+        if head.get("alg") != "RS256":
+            return False
+        k = _gh_keys(head.get("kid"))
+        if not k:
+            return False
+        pub = rsa.RSAPublicNumbers(int.from_bytes(_b64ud(k["e"]), "big"), int.from_bytes(_b64ud(k["n"]), "big")).public_key()
+        pub.verify(_b64ud(c), (a + "." + b).encode(), padding.PKCS1v15(), hashes.SHA256())
+        now = time.time()
+        aud = body.get("aud")
+        return (body.get("iss") == GH_ISS and (aud == GH_AUD or (isinstance(aud, list) and GH_AUD in aud))
+                and body.get("repository") == GH_REPO and body.get("ref") == "refs/heads/main"
+                and body.get("event_name") in ("schedule", "workflow_dispatch")
+                and float(body.get("exp", 0)) > now and float(body.get("nbf", body.get("iat", 0))) <= now + 60)
+    except Exception:
+        return False
+
+
+def _b64u(b):
+    return _b64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _b64ud(v):
+    v = v.encode() if isinstance(v, str) else v
+    return _b64.urlsafe_b64decode(v + b"=" * (-len(v) % 4))
+
+
+def _bg_aes():
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    key = _b64ud(BG_KEY)
+    if len(key) != 32:
+        raise UserError("Background alerts aren't set up on the server.")
+    return AESGCM(key)
+
+
+def bg_put(kind, uid, obj):
+    nonce = os.urandom(12)
+    ct = _bg_aes().encrypt(nonce, json.dumps(obj, separators=(",", ":")).encode(), ("%s:%s" % (kind, uid)).encode())
+    kv("SET", "bg:%s:%s" % (kind, uid), _b64u(nonce + ct))
+
+
+def bg_get(kind, uid):
+    raw = kv("GET", "bg:%s:%s" % (kind, uid))
+    if not raw:
+        return None
+    try:
+        b = _b64ud(raw)
+        return json.loads(_bg_aes().decrypt(b[:12], b[12:], ("%s:%s" % (kind, uid)).encode()).decode())
+    except Exception:
+        return None
+
+
+def bg_erase(uid):
+    kv("SREM", "bg:users", uid)
+    for k in ("b", "s", "subs"):
+        kv("DEL", "bg:%s:%s" % (k, uid))
+
+
+# --- Web Push (RFC 8291 message encryption, RFC 8292 VAPID)
+def vapid_keys():
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    priv = ec.derive_private_key(int.from_bytes(_b64ud(VAPID_KEY), "big"), ec.SECP256R1())
+    pub = priv.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    return priv, pub
+
+
+def _hk(key, data):
+    return _hmac.new(key, data, _hashlib.sha256).digest()
+
+
+def push_encrypt(payload, p256dh, auth, salt=None, eph=None):
+    """aes128gcm body for one push message (RFC 8291)."""
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    ua_pub, secret = _b64ud(p256dh), _b64ud(auth)
+    as_priv = eph or ec.generate_private_key(ec.SECP256R1())
+    as_pub = as_priv.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    shared = as_priv.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), ua_pub))
+    ikm = _hk(_hk(secret, shared), b"WebPush: info\x00" + ua_pub + as_pub + b"\x01")[:32]
+    salt = salt or os.urandom(16)
+    prk = _hk(salt, ikm)
+    cek = _hk(prk, b"Content-Encoding: aes128gcm\x00\x01")[:16]
+    nonce = _hk(prk, b"Content-Encoding: nonce\x00\x01")[:12]
+    body = AESGCM(cek).encrypt(nonce, payload + b"\x02", None)
+    return salt + _struct.pack(">I", 4096) + bytes([len(as_pub)]) + as_pub + body
+
+
+def vapid_auth(endpoint):
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+    priv, pub = vapid_keys()
+    u = _urlparse(endpoint)
+    head = _b64u(json.dumps({"typ": "JWT", "alg": "ES256"}, separators=(",", ":")).encode())
+    claims = _b64u(json.dumps({"aud": "%s://%s" % (u.scheme, u.netloc), "exp": int(time.time()) + 12 * 3600,
+                               "sub": (APP_URL or "https://crowntools.vercel.app")}, separators=(",", ":")).encode())
+    r, s_ = decode_dss_signature(priv.sign(("%s.%s" % (head, claims)).encode(), ec.ECDSA(hashes.SHA256())))
+    return "vapid t=%s.%s.%s, k=%s" % (head, claims, _b64u(r.to_bytes(32, "big") + s_.to_bytes(32, "big")), _b64u(pub))
+
+
+def push_ok_endpoint(ep):
+    try:
+        u = _urlparse(str(ep or ""))
+    except Exception:
+        return False
+    host = (u.hostname or "").lower()
+    if os.environ.get("CROWN_PUSH_TEST_HOST") and u.netloc == os.environ["CROWN_PUSH_TEST_HOST"]:
+        return True  # tests: a fake push service on this computer
+    return u.scheme == "https" and any(host == h or host.endswith("." + h) for h in PUSH_HOSTS)
+
+
+def push_send(sub, msg):
+    """Send one notification. Returns 'ok', 'gone' (the device unsubscribed) or an error string."""
+    ep = sub.get("endpoint") or ""
+    if not push_ok_endpoint(ep):
+        return "gone"
+    keys = sub.get("keys") or {}
+    body = push_encrypt(json.dumps(msg, separators=(",", ":")).encode(), keys.get("p256dh") or "", keys.get("auth") or "")
+    req = urllib.request.Request(ep, data=body, method="POST", headers={
+        "Content-Encoding": "aes128gcm", "Content-Type": "application/octet-stream", "TTL": "86400", "Urgency": "high",
+        "Authorization": vapid_auth(ep)})
+    try:
+        ctx = ssl_context() if ep.startswith("https") else None
+        with urllib.request.urlopen(req, timeout=15, context=ctx) as r:
+            return "ok" if r.status in (200, 201, 202) else "status %s" % r.status
+    except urllib.error.HTTPError as e:
+        return "gone" if e.code in (404, 410) else "status %s" % e.code
+    except Exception as e:
+        return str(e)[:120]
+
+
+def bg_push(uid, msg, subs=None):
+    subs = subs if subs is not None else (bg_get("subs", uid) or [])
+    keep, sent = [], 0
+    for sb in subs:
+        r = push_send(sb, msg)
+        if r == "gone":
+            continue
+        keep.append(sb)
+        if r == "ok":
+            sent += 1
+    if len(keep) != len(subs):
+        bg_put("subs", uid, keep)
+    return sent
+
+
+# --- the scheduled check
+BG_ORDER_RX = re.compile(r"(?:order|confirmation)\s*(?:number|no\.?|#)?\s*[:#]?\s*#?\s*([A-Z0-9][A-Z0-9-]{5,24})", re.I)
+TRACK_RXS = [("UPS", re.compile(r"\b(1Z[0-9A-Z]{14,16})\b")),
+             ("USPS", re.compile(r"\b((?:92|93|94|95)\d{18,24})\b")),
+             ("FedEx", re.compile(r"(?i)fedex[^0-9]{0,80}\b(\d{12}|\d{15})\b"))]
+
+
+def bg_classify(subject, text):
+    s = (subject or "").lower()
+    t = (text or "")[:4000].lower()
+    if re.search(r"cancel", s):
+        return "cancelled"
+    if re.search(r"payment|card (was )?declined|update your (card|payment)|couldn.t (charge|process)", s):
+        return "payment"
+    if re.search(r"delivered|has arrived|have arrived|was delivered", s):
+        return "delivered"
+    if re.search(r"out for delivery|arriving today|arrives today|arrive today", s):
+        return "ofd"
+    if re.search(r"shipped|on (its|the) way|has shipped|is coming|tracking|ships? soon|about to ship", s):
+        return "shipped"
+    if re.search(r"order (confirm|received|placed)|thanks for (your )?(order|shopping)|we got your order|order #|your order", s):
+        return "order"
+    if re.search(r"out for delivery", t):
+        return "ofd"
+    return ""
+
+
+def _bg_local(b):
+    off = int(b.get("tz") or 0)
+    return datetime.datetime.utcnow() + datetime.timedelta(minutes=off)
+
+
+def _bg_trk_fresh(t):
+    if os.environ.get("CROWN_BG_FAST"):
+        return 0  # tests: check every package every time
+    s = t.get("s") or ""
+    if s == "out_for_delivery":
+        return 15 * 60
+    if s == "exception":
+        return 3600
+    if s == "pre_transit":
+        return 3 * 3600
+    if not s:
+        return 0
+    return 90 * 60
+
+
+def bg_run_user(uid, b, st, budget_end):
+    """One account's check. Returns a list of notifications to send."""
+    prefs = dict(BG_PREFS, **(b.get("prefs") or {}))
+    st.setdefault("imap", {}); st.setdefault("tr", {}); st.setdefault("found", {})
+    orders = b.get("orders") or []
+    by_no = {}
+    for o in orders:
+        if o.get("n"):
+            by_no[re.sub(r"[^A-Z0-9]", "", str(o["n"]).upper())] = o
+    email_house = {str(k).lower(): v for k, v in (b.get("emailHouse") or {}).items()}
+    domains = {}
+    for x in b.get("stores") or []:
+        for d in x.get("d") or []:
+            domains[str(d).lower()] = x.get("l") or x.get("k") or ""
+    events = []
+
+    def store_of(addr):
+        d = (addr.split("@")[-1] if "@" in addr else "").lower()
+        while d:
+            if d in domains:
+                return domains[d]
+            d = d.split(".", 1)[1] if "." in d else ""
+        return ""
+
+    # 1. new order emails in each inbox
+    for acc in (b.get("imap") or []):
+        if time.time() > budget_end:
+            break
+        aid = str(acc.get("id") or acc.get("user") or "")
+        try:
+            check_mail_host(acc.get("host"))
+            folder = str(acc.get("folder") or "INBOX")
+
+            def run(c, acc=acc, aid=aid, folder=folder):
+                M = c["M"]
+                info = ensure_folder(c, folder, force=True)
+                val = str(info.get("uidvalidity") or "")
+                last = st["imap"].get(aid) or {}
+                if not last or last.get("v") != val:
+                    typ, data = M.uid("SEARCH", None, "ALL")
+                    ids = [int(x) for x in (data[0].split() if data and data[0] else [])]
+                    st["imap"][aid] = {"v": val, "u": max(ids) if ids else 0}
+                    return []
+                typ, data = M.uid("SEARCH", None, "UID", "%d:*" % (int(last.get("u") or 0) + 1))
+                ids = sorted(int(x) for x in (data[0].split() if data and data[0] else []) if int(x) > int(last.get("u") or 0))
+                if not ids:
+                    return []
+                st["imap"][aid] = {"v": val, "u": max(ids)}
+                ids = ids[-150:]
+                typ, resp = M.uid("FETCH", ",".join(map(str, ids)), "(UID BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])")
+                out = []
+                for uid_, raw in parse_fetch(resp):
+                    h = email.message_from_bytes(raw or b"")
+                    frm = (getaddresses([dh(h.get("From"))]) or [("", "")])[0][1].lower()
+                    store = store_of(frm)
+                    if not store:
+                        continue
+                    subj = dh(h.get("Subject")) or ""
+                    kind = bg_classify(subj, "")
+                    if not kind:
+                        continue
+                    to = _mail_to(h, str(acc.get("user") or ""))
+                    text = ""
+                    if kind in ("shipped", "ofd", "order", "cancelled", "payment"):
+                        typ2, r2 = M.uid("FETCH", str(uid_), "(BODY.PEEK[]<0.400000>)")
+                        got = dict(parse_fetch(r2)) if typ2 == "OK" else {}
+                        if got.get(str(uid_)) is not None:
+                            m2 = email.message_from_bytes(got[str(uid_)], policy=policy.default)
+                            tx, hx = body_parts(m2)
+                            text = tx or re.sub(r"<[^>]+>", " ", hx or "")
+                    out.append({"store": store, "subj": subj, "kind": kind, "to": to, "text": text[:20000]})
+                return out
+
+            for e in with_retry(acc, run):
+                hay = e["subj"] + " " + e["text"][:3000]
+                o = None
+                for m in BG_ORDER_RX.finditer(hay):
+                    o = by_no.get(re.sub(r"[^A-Z0-9]", "", m.group(1).upper()))
+                    if o:
+                        break
+                house = (o or {}).get("h") or email_house.get(e["to"]) or ""
+                item = (o or {}).get("item") or ""
+                e.update({"house": house, "item": item})
+                # a tracking number in a shipping email: follow it from now on
+                if e["kind"] in ("shipped", "ofd"):
+                    for carrier, rx in TRACK_RXS:
+                        for m in rx.finditer(e["text"]):
+                            num = m.group(1).upper()
+                            if num not in st["tr"] and num not in st["found"]:
+                                st["found"][num] = {"c": carrier, "h": house, "l": item or e["store"], "at": time.time()}
+                events.append(e)
+            st.pop("imapErr", None)
+        except Exception as ex:
+            st["imapErr"] = str(ex)[:200]
+
+    # 2. packages
+    pk = {}
+    for o in orders:
+        for t in o.get("tr") or []:
+            n = re.sub(r"\s+", "", str(t.get("n") or "")).upper()
+            if n:
+                pk[n] = {"c": t.get("c") or "", "h": o.get("h") or "", "l": o.get("item") or o.get("st") or ""}
+    for n, f in list(st["found"].items()):
+        if time.time() - float(f.get("at") or 0) > 30 * DAY:
+            st["found"].pop(n, None)
+        else:
+            pk.setdefault(n, f)
+    for n in list(st["tr"].keys()):
+        if n not in pk:
+            st["tr"].pop(n, None)
+    keys = b.get("carriers") or {}
+    checked = 0
+    for n, f in pk.items():
+        if time.time() > budget_end or checked >= 40:
+            break
+        cur = st["tr"].get(n) or {}
+        if cur.get("s") == "delivered" or time.time() - float(cur.get("at") or 0) < _bg_trk_fresh(cur):
+            continue
+        checked += 1
+        try:
+            r = track({"tracking": n, "carrier": f.get("c") or "", "carriers": keys, "s17Key": b.get("s17Key") or "", "apiKey": b.get("easypostKey") or ""})
+        except Exception as ex:
+            cur.update({"at": time.time(), "err": str(ex)[:120]})
+            st["tr"][n] = cur
+            continue
+        new_s, est = r.get("status") or "", r.get("est") or ""
+        old_s, old_est = cur.get("s"), cur.get("est")
+        if r.get("pending"):
+            cur.update({"at": time.time() - _bg_trk_fresh({"s": "x"}) + 600})
+            st["tr"][n] = cur
+            continue
+        if old_s is not None and new_s != old_s:
+            if new_s == "out_for_delivery":
+                events.append({"kind": "ofd", "house": f.get("h"), "item": f.get("l"), "store": "", "trk": n})
+            elif new_s == "delivered":
+                events.append({"kind": "delivered", "house": f.get("h"), "item": f.get("l"), "store": "", "trk": n})
+            elif new_s == "exception":
+                events.append({"kind": "problem", "house": f.get("h"), "item": f.get("l"), "store": "", "trk": n, "why": r.get("problem") or r.get("statusText") or "The carrier reported a problem"})
+        elif old_est and est and est > old_est and new_s != "delivered":
+            events.append({"kind": "late", "house": f.get("h"), "item": f.get("l"), "store": "", "trk": n, "est": est})
+        st["tr"][n] = {"s": new_s, "est": est, "at": time.time(), "h": f.get("h"), "l": f.get("l")}
+
+    # 3. turn events into a few notifications
+    msgs = []
+    by_kind = {}
+    for e in events:
+        by_kind.setdefault(e["kind"], []).append(e)
+
+    def where(e):
+        return " · ".join(x for x in [e.get("house") or "", (e.get("item") or "")[:50]] if x)
+
+    def group(kind, title_one, title_many, pref, nav):
+        es = by_kind.get(kind) or []
+        if not es or not prefs.get(pref, True):
+            return
+        if len(es) == 1:
+            e = es[0]
+            msgs.append({"title": (title_one % (e.get("store") or "Package")) if "%s" in title_one else title_one, "body": where(e) or e.get("subj") or "", "tag": kind + ":" + str(time.time()), "nav": nav})
+        else:
+            houses = {}
+            for e in es:
+                houses[e.get("house") or "No house"] = houses.get(e.get("house") or "No house", 0) + 1
+            msgs.append({"title": title_many % len(es), "body": " · ".join("%s: %d" % (k, v) for k, v in sorted(houses.items(), key=lambda x: -x[1])), "tag": kind + ":" + str(time.time()), "nav": nav})
+
+    group("order", "%s: new order", "%d new orders", "orders", "orders")
+    group("shipped", "%s: shipped", "%d orders shipped", "shipped", "packages")
+    group("ofd", "Out for delivery", "%d packages out for delivery", "ofd", "packages")
+    group("delivered", "Delivered", "%d packages delivered", "delivered", "packages")
+    if prefs.get("problems", True):
+        for e in (by_kind.get("cancelled") or [])[:3]:
+            msgs.append({"title": "%s: order cancelled" % (e.get("store") or "Order"), "body": where(e) or e.get("subj") or "", "tag": "cx:" + str(time.time()), "nav": "orders"})
+        if len(by_kind.get("cancelled") or []) > 3:
+            msgs.append({"title": "%d more cancellations" % (len(by_kind["cancelled"]) - 3), "body": "Open Kingpin to see them", "tag": "cx+", "nav": "orders"})
+        for e in (by_kind.get("payment") or [])[:3]:
+            msgs.append({"title": "%s: payment needs updating" % (e.get("store") or "Order"), "body": where(e) or e.get("subj") or "", "tag": "pay:" + str(time.time()), "nav": "preorders"})
+        for e in (by_kind.get("problem") or [])[:3]:
+            msgs.append({"title": "Delivery problem", "body": " · ".join(x for x in [e.get("why"), where(e)] if x), "tag": "px:" + e.get("trk", ""), "nav": "packages"})
+        for e in (by_kind.get("late") or [])[:3]:
+            msgs.append({"title": "Package delayed", "body": " · ".join(x for x in ["now " + e.get("est", ""), where(e)] if x), "tag": "late:" + e.get("trk", ""), "nav": "packages"})
+
+    # 4. the morning summary: today's deliveries by house
+    loc = _bg_local(b)
+    today = loc.strftime("%Y-%m-%d")
+    if prefs.get("summary", True) and loc.hour >= int(prefs.get("summaryHour") or 8) and st.get("sum") != today:
+        st["sum"] = today
+        houses = {}
+        for n, t in st["tr"].items():
+            if t.get("s") == "out_for_delivery" or (t.get("est") == today and t.get("s") != "delivered"):
+                k = t.get("h") or "No house"
+                houses[k] = houses.get(k, 0) + 1
+        if houses:
+            total = sum(houses.values())
+            msgs.append({"title": "Today: %d deliver%s" % (total, "y" if total == 1 else "ies"), "body": " · ".join("%s: %d" % (k, v) for k, v in sorted(houses.items(), key=lambda x: -x[1])), "tag": "sum:" + today, "nav": "calendar"})
+    return msgs
+
+
+def bg_tick():
+    """Every account with background alerts: look for news and send notifications (run every few minutes)."""
+    if not bg_ready():
+        return {"ok": False, "error": "not set up"}
+    if not kv("SET", "bg:lock", "1", "NX", "EX", "280"):
+        return {"ok": True, "busy": True}
+    started, sent, users = time.time(), 0, 0
+    try:
+        uids = kv("SMEMBERS", "bg:users") or []
+        for uid in uids:
+            if time.time() - started > 240:
+                break
+            u = get_user(uid)
+            if not u or not access_of(u)[0]:
+                continue
+            b = bg_get("b", uid)
+            if not b:
+                kv("SREM", "bg:users", uid)
+                continue
+            st = bg_get("s", uid) or {}
+            users += 1
+            try:
+                msgs = bg_run_user(uid, b, st, min(started + 240, time.time() + 120))
+                st["ran"] = time.time()
+                st.pop("err", None)
+            except Exception as ex:
+                msgs = []
+                st["err"] = str(ex)[:200]
+            log = st.get("log") or []
+            if msgs:
+                subs = bg_get("subs", uid) or []
+                for m in msgs[:8]:
+                    sent += bg_push(uid, m, subs)
+                    log.insert(0, {"t": time.time(), "title": m["title"], "body": m["body"]})
+            st["log"] = log[:30]
+            bg_put("s", uid, st)
+    finally:
+        kv("DEL", "bg:lock")
+    return {"ok": True, "users": users, "sent": sent, "secs": round(time.time() - started, 1)}
+
+
 class handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -4492,6 +4968,16 @@ class handler(BaseHTTPRequestHandler):
         if r == "/billing/webhook":  # Stripe calls this; it's checked by signature instead of headers
             raw = self._raw()
             return self._run(lambda: handle_webhook(raw, h))
+        if r == "/bg/tick":  # the scheduled check (GitHub Actions, every few minutes)
+            def tick():
+                auth = h.get("Authorization") or ""
+                ok = bool(TICK_SECRET) and _hmac.compare_digest(h.get("X-Crown-Tick") or "", TICK_SECRET)
+                if not ok and auth.startswith("Bearer "):
+                    ok = gh_oidc_ok(auth[7:].strip())
+                if not ok:
+                    raise PermissionError("Forbidden")
+                return bg_tick()
+            return self._run(tick)
         if not self._guard():
             return
         if r.startswith("/admin"):
@@ -4805,6 +5291,61 @@ class handler(BaseHTTPRequestHandler):
                 put_user(u)
                 return {"ok": True, "rev": rev}
             return self._run(restore)
+
+        if r.startswith("/bg/"):
+            def bg():
+                b = self._body()
+                u = require_user(h)
+                uid = u["id"]
+                rate_limit("bg", uid, 300, 3600)
+                if not bg_ready():
+                    raise UserError("Background alerts aren't set up on Kingpin Online yet.")
+                if r == "/bg/status":
+                    on = bool(kv("SISMEMBER", "bg:users", uid))
+                    st = (bg_get("s", uid) or {}) if on else {}
+                    subs = (bg_get("subs", uid) or []) if on else []
+                    ep = str(b.get("endpoint") or "")
+                    return {"ok": True, "on": on, "vapid": _b64u(vapid_keys()[1]), "devices": [{"name": x.get("name") or "", "at": x.get("at"), "me": bool(ep) and x.get("endpoint") == ep} for x in subs],
+                            "ran": st.get("ran"), "err": st.get("err") or st.get("imapErr") or "", "log": (st.get("log") or [])[:15], "watching": len(st.get("tr") or {})}
+                if r in ("/bg/enable", "/bg/update"):
+                    bundle = b.get("bundle")
+                    if not isinstance(bundle, dict) or len(json.dumps(bundle)) > 900000:
+                        raise UserError("Bad request.")
+                    for acc in bundle.get("imap") or []:
+                        check_mail_host(acc.get("host"))
+                    if r == "/bg/update" and not kv("SISMEMBER", "bg:users", uid):
+                        return {"ok": True, "on": False}
+                    bg_put("b", uid, bundle)
+                    if r == "/bg/enable":
+                        kv("SADD", "bg:users", uid)
+                        audit(uid, "bg on")
+                    return {"ok": True, "on": True}
+                if r == "/bg/subscribe":
+                    sb = b.get("sub") or {}
+                    if not push_ok_endpoint(sb.get("endpoint")) or not (sb.get("keys") or {}).get("p256dh") or not (sb.get("keys") or {}).get("auth"):
+                        raise UserError("This browser's notification address wasn't accepted.")
+                    subs = [x for x in (bg_get("subs", uid) or []) if x.get("endpoint") != sb["endpoint"]]
+                    subs.insert(0, {"endpoint": sb["endpoint"], "keys": {"p256dh": sb["keys"]["p256dh"], "auth": sb["keys"]["auth"]}, "name": str(b.get("name") or "")[:60], "at": time.time()})
+                    bg_put("subs", uid, subs[:10])
+                    return {"ok": True, "devices": len(subs[:10])}
+                if r == "/bg/unsubscribe":
+                    ep = str(b.get("endpoint") or "")
+                    subs = bg_get("subs", uid) or []
+                    keep = [x for x in subs if x.get("endpoint") != ep] if ep else []
+                    if b.get("all"):
+                        keep = []
+                    bg_put("subs", uid, keep)
+                    return {"ok": True, "devices": len(keep)}
+                if r == "/bg/test":
+                    rate_limit("bgtest", uid, 20, 3600)
+                    n = bg_push(uid, {"title": "Kingpin notifications are on", "body": "You'll get alerts like this for orders, packages and today's deliveries.", "tag": "test", "nav": "settings"})
+                    return {"ok": True, "sent": n}
+                if r == "/bg/disable":
+                    bg_erase(uid)
+                    audit(uid, "bg off")
+                    return {"ok": True, "on": False}
+                raise UserError("Not found")
+            return self._run(bg)
 
         routes = {
             "/imap/test": lambda b: imap_test(b.get("account") or {}),

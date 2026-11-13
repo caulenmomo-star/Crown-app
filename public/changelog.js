@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.22.0', date: '2026-11-12', title: 'Phone notifications, even when Kingpin is closed', items: [
+    'Settings → Phone notifications: Kingpin Online checks your inboxes and packages every few minutes and sends alerts to your phone: new orders, shipped, out for delivery, delivered, cancellations and delays, grouped by house.',
+    'A morning summary of today’s deliveries per house, at the hour you pick. Turn each kind on or off, and send a test.',
+    'Off until you turn it on. Your inbox logins are kept encrypted for this, and turning it off erases them. On iPhone it works from the home-screen app.',
+  ] },
   { v: '0.21.1', date: '2026-11-12', title: 'Mailbox: attachments, pictures and more', items: [
     'Attachments: Download any of them, Open PDFs, and View or Copy pictures. Big files come down in pieces, and only the one you pick.',
     'Pictures in an email stay hidden. “Pick pictures” lists each one so you can Load, Copy or Save just the ones you want. “Show all” shows them in the email.',

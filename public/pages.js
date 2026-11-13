@@ -647,6 +647,7 @@ PAGES.settings = {
           <div class="chips" id="stLock">${[[0, 'Never'], [5, '5 min'], [15, '15 min'], [30, '30 min'], [60, '1 hour']].map(([v, l]) => `<button class="chip ${S.autoLockMin === v ? 'on' : ''}" data-v="${v}">${l}</button>`).join('')}</div>
           <div class="hstack" style="margin-top:14px"><button id="stPass">Change password</button><button id="stLockNow">Lock now</button></div>
           ${typeof tfaCardHtml === 'function' ? tfaCardHtml() : ''}</div>
+        ${typeof bgCardHtml === 'function' ? bgCardHtml() : ''}
         ${notifCardHtml()}
         <div class="card" id="carrierCard"><h3>Carrier tracking</h3>
           <div class="small muted" style="margin-bottom:10px">Kingpin looks up every package: every scan, the arrival date, out for delivery, delivered and where it was left, plus delivery problems and delays. See it all on the Packages page; orders and the calendar update on their own. Keys stay encrypted inside your Kingpin data.</div>
@@ -712,7 +713,7 @@ PAGES.settings = {
     $('#stPass').onclick = () => { ['cpOld', 'cpNew', 'cpNew2'].forEach(i => $('#' + i).value = ''); $('#cpErr').textContent = ''; openDlg('dlgPass'); };
     $('#stLockNow').onclick = () => lock();
     if (CLOUD && typeof Account !== 'undefined') Account.wireCard();
-    wireNotifCard(); wireStockxCard();
+    wireNotifCard(); wireStockxCard(); if (typeof wireBgCard === 'function') wireBgCard();
     $('#stUnkOff').onclick = () => { S.trackUnknown = false; save(); PAGES.settings.render(); };
     $('#stUnkOn').onclick = () => { S.trackUnknown = true; save(); PAGES.settings.render(); };
     pg.querySelectorAll('[data-unign]').forEach(b => b.onclick = () => { S.ignoredSenders = (S.ignoredSenders || []).filter(k => k !== b.dataset.unign); save(); PAGES.settings.render(); });
