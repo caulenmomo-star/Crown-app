@@ -1,4 +1,4 @@
-/* Kingpin - profile files for checkout bots: Valor, Hayha, Stellar, Shikari and AYCD.
+/* Kingpin - profile files for checkout bots: Valor, Hayha, Stellar, Shikari, AYCD and Banana ACO.
    Each format can read a bot's export into Kingpin profiles and write profiles back out in that bot's exact layout. */
 'use strict';
 const BotFormats = (() => {
@@ -130,6 +130,28 @@ const BotFormats = (() => {
           paymentDetails: { nameOnCard: v.card.name, cardType: v.card.brand || 'Card', cardNumber: v.card.num, cardExpMonth: v.card.mm, cardExpYear: v.card.yyyy, cardCvv: v.card.cvv },
           sameBillingAndShippingAddress: v.same, onlyCheckoutOnce: v.one, matchNameOnCardAndAddress: false };
       }), null, 2),
+    },
+    {
+      // Banana ACO's profile sheet: one row per profile, full state and country names, TRUE/FALSE switches
+      id: 'banana', name: 'Banana ACO', ext: '.banana.csv', color: '#ffd43b', ink: '#3a2a00', mark: 'B', csv: true,
+      HEAD: ['Email Address', 'Profile Name', 'Only One Checkout', 'Name on Card', 'Card Type', 'Card Number', 'Expiration Month', 'Expiration Year', 'CVV', 'Same Billing/Shipping', 'Shipping Name', 'Shipping Phone', 'Shipping Address', 'Shipping Address 2', 'Shipping Address 3', 'Shipping Post Code', 'Shipping City', 'Shipping State', 'Shipping Country', 'Billing Name', 'Billing Phone', 'Billing Address', 'Billing Address 2', 'Billing Address 3', 'Billing Post Code', 'Billing City', 'Billing State', 'Billing Country', 'Size (Optional)'],
+      detectCsv: head => ['profile name', 'name on card', 'shipping post code'].every(h => head.includes(h)),
+      readRows: (head, rows) => rows.map(r => {
+        const g = k => { const i = head.indexOf(k); return i < 0 ? '' : String(r[i] ?? '').trim(); }; const p = blank();
+        const yes = k => /^(true|yes|y|1)$/i.test(g(k)); const sn = splitName(g('shipping name')), bn = splitName(g('billing name')); const hasBill = !!g('billing address');
+        Object.assign(p, { name: g('profile name'), email: g('email address'), phone: g('shipping phone') || g('billing phone'), oneCheckout: yes('only one checkout'),
+          shipFirst: sn.first, shipLast: sn.last, shipAddr1: g('shipping address'), shipAddr2: [g('shipping address 2'), g('shipping address 3')].filter(Boolean).join(' '), shipCity: g('shipping city'), shipState: g('shipping state'), shipZip: g('shipping post code'), shipCountry: g('shipping country'),
+          sameBilling: !hasBill || yes('same billing/shipping'), billFirst: bn.first, billLast: bn.last, billAddr1: g('billing address'), billAddr2: [g('billing address 2'), g('billing address 3')].filter(Boolean).join(' '), billCity: g('billing city'), billState: g('billing state'), billZip: g('billing post code'), billCountry: g('billing country'),
+          cardName: g('name on card'), cardNumber: g('card number'), cardExpMonth: g('expiration month'), cardExpYear: g('expiration year'), cardCvv: g('cvv') });
+        return finish(p);
+      }).filter(p => (p.name || p.email || p.cardNumber) && !/^EXAMPLE\b/.test(p.name)),
+      write(list) {
+        const tf = b => b ? 'TRUE' : 'FALSE'; const nm = x => [x.first, x.last].filter(Boolean).join(' ');
+        const rows = list.map(view).map(v => [v.email, v.name, tf(v.one), v.card.name, v.card.brand, v.card.num, v.card.mm, v.card.yyyy, v.card.cvv, tf(v.same),
+          nm(v.ship), v.phone, v.ship.a1, v.ship.a2, '', v.ship.zip, v.ship.city, full(v.ship.state), cname(v.ship.country),
+          ...(v.same ? ['', '', '', '', '', '', '', '', ''] : [nm(v.bill), v.phone, v.bill.a1, v.bill.a2, '', v.bill.zip, v.bill.city, full(v.bill.state), cname(v.bill.country)]), '']);
+        return [this.HEAD, ...rows].map(r => r.map(csvCell).join(',')).join('\n') + '\n';
+      },
     },
   ];
   const byId = Object.fromEntries(FORMATS.map(f => [f.id, f]));

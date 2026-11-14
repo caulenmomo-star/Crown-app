@@ -556,7 +556,7 @@ $('#quickList').onclick = e => {
 
 /* ---------- export ---------- */
 const EXP = { scope: 'view', fmt: (() => { try { return localStorage.getItem('crown.expFmt') || 'csv'; } catch (_) { return 'csv'; } })() };
-const botIcon = f => `<span class="boticon" style="background:${f.color}">${esc(f.mark)}</span>`;
+const botIcon = f => `<span class="boticon" style="background:${f.color}${f.ink ? ';color:' + f.ink : ''}">${esc(f.mark)}</span>`;
 const EXP_FORMATS = () => [
   ...(typeof BotFormats !== 'undefined' ? BotFormats.FORMATS.map(f => ({ id: f.id, name: f.name, sub: f.ext, icon: botIcon(f) })) : []),
   { id: 'csv', name: 'Spreadsheet', sub: '.csv', icon: '<span class="boticon" style="background:#323a4c">≡</span>' },

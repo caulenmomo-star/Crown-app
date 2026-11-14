@@ -82,7 +82,7 @@ const Account = (() => {
         <div class="note small">Kingpin is invite-only right now. Send the owner the email you signed up with: <b>${esc(acct.email || '')}</b>. Once they let you in, tap “Check again”.</div>
         <button class="primary" id="acCheck" style="margin-top:12px">Check again</button>` : `
         <div class="pricecard big"><div class="pc1"><b>${esc(priceText())}</b>${P().trialDays && !acct.trialUsed ? ` <span class="badge">${P().trialDays}-day free trial</span>` : ''}</div>
-          <ul class="plist"><li>Profiles for Valor, Hayha, Stellar, Shikari and AYCD</li><li>Orders read from your email automatically</li><li>Houses, delivery calendar and spending</li><li>Works on your phone, iPad, Windows and Mac</li><li>Encrypted — only you can read your data</li></ul></div>
+          <ul class="plist"><li>Profiles for Valor, Hayha, Stellar, Shikari, AYCD and Banana ACO</li><li>Orders read from your email automatically</li><li>Houses, delivery calendar and spending</li><li>Works on your phone, iPad, Windows and Mac</li><li>Encrypted — only you can read your data</li></ul></div>
         ${pastDue ? '<div class="note warn small">Your last payment didn’t go through. Update your card to keep using Kingpin.</div>' : ''}
         ${cloudInfo.billingReady ? `<button class="primary" id="acPay">${pastDue && sub.hasCustomer ? 'Update payment method' : 'Subscribe — ' + esc(priceText())}</button><div class="small faint" style="margin-top:8px;text-align:center">Secure checkout by Stripe. Have a discount code? Enter it at checkout.</div>` : '<div class="note warn">Subscriptions open soon. You’ll get access as soon as the owner turns them on.</div>'}`) + `
         ${errBox()}

@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.23.0', date: '2026-11-14', title: 'Export profiles for Banana ACO', items: [
+    'Profiles → Export has a new Banana ACO tile. It downloads a .banana.csv in Banana ACO’s exact profile sheet layout, ready to upload.',
+    'Banana ACO files are recognized on import too: load the file or paste it and the profiles come in like any other bot’s.',
+    'Profile names are exported exactly as you named them.',
+  ] },
   { v: '0.22.1', date: '2026-11-12', title: 'Full item names', items: [
     'Order popups show every item’s full name, wrapping onto more lines instead of cutting off.',
     'Order lists on phones show longer names and the full order number, with a lighter status label.',

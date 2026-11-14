@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.23.0 — Export profiles for Banana ACO (2026-11-14)
+
+- Profiles → Export has a new Banana ACO tile. It downloads a .banana.csv in Banana ACO’s exact profile sheet layout, ready to upload.
+- Banana ACO files are recognized on import too: load the file or paste it and the profiles come in like any other bot’s.
+- Profile names are exported exactly as you named them.
+
 ## v0.22.1 — Full item names (2026-11-12)
 
 - Order popups show every item’s full name, wrapping onto more lines instead of cutting off.
