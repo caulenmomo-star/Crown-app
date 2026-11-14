@@ -1,6 +1,11 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.23.1', date: '2026-11-14', title: 'Phone notifications: checks every 5 minutes', items: [
+    'Background checks now really run every 5 minutes. Before, they were only running a few times a day.',
+    'Settings → Phone notifications → Check details shows what the last check found: new emails per inbox, packages looked up, and whether the alerts reached your phone. If something went wrong, it says why.',
+    '“Send a test” tells you why a test didn’t arrive. Checks are faster, and packages without a tracking key are no longer retried every time.',
+  ] },
   { v: '0.23.0', date: '2026-11-14', title: 'Export profiles for Banana ACO', items: [
     'Profiles → Export has a new Banana ACO tile. It downloads a .banana.csv in Banana ACO’s exact profile sheet layout, ready to upload.',
     'Banana ACO files are recognized on import too: load the file or paste it and the profiles come in like any other bot’s.',

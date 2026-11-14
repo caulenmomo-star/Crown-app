@@ -48,6 +48,7 @@ async function bgMySub() {
 async function bgStatus() {
   const s = await bgMySub();
   try { BG.info = await api('/api/bg/status', { endpoint: s ? s.endpoint : '' }); } catch (e) { BG.info = { ok: false, error: e.message }; }
+  BG.infoAt = Date.now();
   BG.mine = !!(s && BG.info && (BG.info.devices || []).some(d => d.me));
   return BG.info;
 }
@@ -68,6 +69,29 @@ async function bgSubscribeHere() {
   await api('/api/bg/subscribe', { sub: sub.toJSON(), name: bgDeviceName() });
   return true;
 }
+// why a push didn't arrive, in plain words
+function bgPushWhy(r) {
+  const x = String(r || '');
+  if (x === 'gone') return 'that device stopped accepting them (tap “Get notifications here” on it again)';
+  if (/^status 40[13]/.test(x)) return 'the phone’s push service refused it (' + x + ')';
+  if (/^status/.test(x)) return 'the push service answered ' + x.replace('status ', '');
+  return x || 'unknown problem';
+}
+// what the last background check did — so “no notifications” always has an answer
+function bgDiagHtml(i) {
+  const d = i.diag || {}, p = i.push || {}, rows = [];
+  if (i.every) rows.push(i.every > 900 ? `<span style="color:var(--warn)">Checks are running late: the last two were ${Math.round(i.every / 60)} min apart.</span>` : `Checking about every ${Math.max(1, Math.round(i.every / 60))} min.`);
+  (d.inboxes || []).forEach(x => rows.push(`<b>${esc(x.l)}</b>: ${x.ok ? (x.first ? 'connected — starting from now, older emails are skipped' : `${plural(x.new || 0, 'new email')}${x.new ? `, ${x.store || 0} from stores, ${plural(x.alerts || 0, 'alert')}` : ''}`) : `<span style="color:var(--warn)">couldn’t check — ${esc(x.err || '')}</span>`}`));
+  if (d.pk) {
+    const k = d.pk;
+    if (k.due) rows.push(`Packages: ${k.ok} looked up${k.err ? `, <span style="color:var(--warn)">${k.err} couldn’t be — ${esc((k.why || '').replace(/\.+$/, ''))}</span>` : ''}.`);
+    else if (i.watching) rows.push(`Packages: none due for a look this time.`);
+    if (k.err && /17TRACK|key/i.test(k.why || '')) rows.push(`<span class="faint">Package alerts (out for delivery, delivered, the morning summary) need tracking: add a free key in Settings → Carrier tracking. Email alerts still work without one.</span>`);
+  }
+  if (p.n) rows.push(p.ok === p.n ? `Last alerts reached ${plural(p.devices || 0, 'device')}.` : `<span style="color:var(--warn)">Last alerts didn’t all arrive: ${(p.bad || []).map(b => esc(b.d) + ' — ' + esc(bgPushWhy(b.r))).join('; ')}</span>`);
+  if (!rows.length) return '';
+  return `<details class="bgdiag" style="margin-top:10px"><summary class="small">Check details${d.at ? ' · ' + fmtDT(d.at * 1000) : ''}</summary><div class="small muted" style="margin-top:6px;display:grid;gap:4px;overflow-wrap:anywhere">${rows.map(r => `<div>${r}</div>`).join('')}</div></details>`;
+}
 function bgCardHtml() {
   if (!CLOUD) return '';
   const on = !!state.settings.bgOn, P = bgPrefs(), i = BG.info || {};
@@ -77,17 +101,18 @@ function bgCardHtml() {
     <button class="primary" id="bgOn" style="margin-top:10px">Turn on phone notifications</button></div>`;
   const devs = i.devices || [];
   return head + `<div class="small muted">On — Kingpin Online checks your inboxes and ${i.watching != null ? plural(i.watching, 'package') : 'packages'} every few minutes${i.ran ? `, last ${fmtDT(i.ran * 1000)}` : ''}.${i.err ? ` <span style="color:var(--warn)">Last problem: ${esc(i.err)}</span>` : ''}</div>
-    <div style="margin-top:10px"><b class="small">This ${esc(bgDeviceName().toLowerCase())}</b>: ${BG.mine ? '<span class="small" style="color:var(--ok)">getting notifications</span> <button class="ghost sm" id="bgHereOff">Stop on this device</button>' : bgPushOk() ? '<button class="sm primary" id="bgHere">Get notifications here</button>' : `<span class="small muted">${window.kingpinDesktop ? 'The computer app can’t get push notifications — turn them on from your phone.' : bgIOS() && !bgStandalone() ? 'Open Kingpin from its home-screen icon (Share → Add to Home Screen) to get notifications on this iPhone.' : 'This browser can’t get push notifications.'}</span>`}</div>
+    <div style="margin-top:10px"><b class="small">${bgDeviceName() === 'This device' ? 'This device' : 'This ' + esc(bgDeviceName().toLowerCase())}</b>: ${BG.mine ? '<span class="small" style="color:var(--ok)">getting notifications</span> <button class="ghost sm" id="bgHereOff">Stop on this device</button>' : bgPushOk() ? '<button class="sm primary" id="bgHere">Get notifications here</button>' : `<span class="small muted">${window.kingpinDesktop ? 'The computer app can’t get push notifications — turn them on from your phone.' : bgIOS() && !bgStandalone() ? 'Open Kingpin from its home-screen icon (Share → Add to Home Screen) to get notifications on this iPhone.' : 'This browser can’t get push notifications.'}</span>`}</div>
     ${devs.length ? `<div class="small muted" style="margin-top:6px">Getting them: ${devs.map(d => esc(d.name || 'device') + (d.me ? ' (this one)' : '')).join(', ')}</div>` : `<div class="small" style="margin-top:6px;color:var(--warn)">No device is getting notifications yet.</div>`}
     <div class="bgprefs" style="margin-top:12px">${[['orders', 'New orders'], ['shipped', 'Shipped'], ['ofd', 'Out for delivery'], ['delivered', 'Delivered'], ['problems', 'Cancelled, payment & delivery problems'], ['summary', 'Morning summary']].map(([k, l]) => `<label class="check"><input type="checkbox" data-bgp="${k}" ${P[k] ? 'checked' : ''}> ${l}</label>`).join('')}
       <label class="small muted" style="display:flex;align-items:center;gap:6px">Summary at <select id="bgHour" style="width:auto">${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${+P.summaryHour === h ? 'selected' : ''}>${h === 0 ? '12 AM' : h < 12 ? h + ' AM' : h === 12 ? '12 PM' : (h - 12) + ' PM'}</option>`).join('')}</select></label></div>
+    ${bgDiagHtml(i)}
     ${(i.log || []).length ? `<details style="margin-top:10px"><summary class="small">Recent notifications</summary><div class="list" style="margin-top:6px">${i.log.map(l => `<div class="li"><div style="flex:1;min-width:0"><div class="small"><b>${esc(l.title)}</b></div><div class="small muted ellipsis">${esc(l.body)}</div></div><span class="small faint">${fmtDT(l.t * 1000)}</span></div>`).join('')}</div></details>` : ''}
     <div class="hstack" style="margin-top:12px;gap:8px;flex-wrap:wrap"><button class="sm" id="bgTest">Send a test</button><button class="sm danger" id="bgOff">Turn off and erase</button></div></div>`;
 }
 function wireBgCard() {
   const card = document.getElementById('bgCard'); if (!card) return;
   const redraw = () => { const c = document.getElementById('bgCard'); if (c) { c.outerHTML = bgCardHtml(); wireBgCard(); } };
-  if (state.settings.bgOn && !BG.info && !BG.busy) { BG.busy = true; bgStatus().then(() => { BG.busy = false; redraw(); }); }
+  if (state.settings.bgOn && (!BG.info || Date.now() - (BG.infoAt || 0) > 30000) && !BG.busy) { BG.busy = true; bgStatus().then(() => { BG.busy = false; redraw(); }); }
   const on = $('#bgOn');
   if (on) on.onclick = async () => {
     if (!await ask('Turn on phone notifications?\n\nKingpin Online will keep a watch list for your account — inbox app passwords, tracking numbers, house names and order details — encrypted with a server key, so it can check while Kingpin is closed. It only reads your mail. Turning it off erases it.', { ok: 'Turn on' })) return;
@@ -106,7 +131,9 @@ function wireBgCard() {
   const hOff = $('#bgHereOff');
   if (hOff) hOff.onclick = async () => { const s = await bgMySub(); try { if (s) { await api('/api/bg/unsubscribe', { endpoint: s.endpoint }); await s.unsubscribe(); } } catch (_) { } await bgStatus(); redraw(); };
   const t = $('#bgTest');
-  if (t) t.onclick = async () => { try { const r = await api('/api/bg/test', {}); toast(r.sent ? `Sent to ${plural(r.sent, 'device')}` : 'No device is getting notifications yet'); } catch (e) { toast(e.message); } };
+  if (t) t.onclick = async () => { try { const r = await api('/api/bg/test', {}); const bad = (r.results || []).filter(x => x.r !== 'ok');
+      toast(r.sent && !bad.length ? `Sent to ${plural(r.sent, 'device')} — it should show up in a few seconds` : !(r.results || []).length ? 'No device is getting notifications yet — tap “Get notifications here” on your phone' : `Not delivered: ${bad.map(x => x.d + ' — ' + bgPushWhy(x.r)).join('; ')}`, { ms: 7000 });
+      if (bad.length) { await bgStatus(); redraw(); } } catch (e) { toast(e.message); } };
   const off = $('#bgOff');
   if (off) off.onclick = async () => {
     if (!await ask('Turn off phone notifications?\n\nKingpin Online erases the watch list (inbox passwords, tracking numbers, houses) and stops checking.', { ok: 'Turn off and erase', danger: true })) return;

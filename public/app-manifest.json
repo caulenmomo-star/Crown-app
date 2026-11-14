@@ -18,8 +18,8 @@
    "size": 6436
   },
   "bg.js": {
-   "sha256": "c64cf6cac5761a970cd1ab7310363ced84fc133ec1625d88a0bc21d22b65e64f",
-   "size": 12324
+   "sha256": "c495898c3bb5c416b49689328e6e2394f4d1109db40fe5ea37285585bd6912f4",
+   "size": 15146
   },
   "boot.js": {
    "sha256": "54a634aebfa21399a64b9cad982e278af0f0e6c3ca64c9129a189e5218c08151",
@@ -50,8 +50,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "762653c2dcd787586be2c39023b94165cb6fc6f36cee9102852c8e15b506b4c3",
-   "size": 42861
+   "sha256": "40c82d298b1192c560151770ec565c4b953edec524913bd4a4f8349d7261c3fe",
+   "size": 43441
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -62,7 +62,7 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "c99282e968bd294112e0dd59840f3fcc5c165926900aac1b05d3272c0784892f",
+   "sha256": "e87ce7fa575db40f4f57c351132b209648b4b59bf3a28905f96123fbab64da7b",
    "size": 54343
   },
   "ct-icon-180.png": {
@@ -345,5 +345,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.23.0"
+ "version": "0.23.1"
 }

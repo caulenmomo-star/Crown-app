@@ -39,7 +39,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.23.0"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.23.1"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -3001,7 +3001,7 @@ def track(req):
         raise UserError("No tracking number.")
     carrier = str(req.get("carrier") or "").upper()
     is_ups = carrier == "UPS" or code0.startswith("1Z")
-    is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
+    is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (carrier != "USPS" and not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
     keys = req.get("carriers") or {}
     ups, fx, us = keys.get("ups") or {}, keys.get("fedex") or {}, keys.get("usps") or {}
     is_usps = carrier == "USPS" or (not is_ups and re.fullmatch(r"(92|93|94|95)\d{18,24}|[A-Z]{2}\d{9}US", code0) is not None)
@@ -3580,6 +3580,7 @@ import hmac as _hmac
 import secrets as _secrets
 import smtplib as _smtplib
 import struct as _struct
+import concurrent.futures as _futures
 from email.mime.text import MIMEText as _MIMEText
 from email.mime.multipart import MIMEMultipart as _MIMEMultipart
 from urllib.parse import urlparse as _urlparse, parse_qs as _parse_qs, urlencode as _urlencode
@@ -4438,11 +4439,13 @@ def push_send(sub, msg):
         return str(e)[:120]
 
 
-def bg_push(uid, msg, subs=None):
+def bg_push(uid, msg, subs=None, res=None):
     subs = subs if subs is not None else (bg_get("subs", uid) or [])
     keep, sent = [], 0
     for sb in subs:
         r = push_send(sb, msg)
+        if res is not None:
+            res.append({"d": sb.get("name") or "device", "r": r})
         if r == "gone":
             continue
         keep.append(sb)
@@ -4489,6 +4492,9 @@ def _bg_trk_fresh(t):
     if os.environ.get("CROWN_BG_FAST"):
         return 0  # tests: check every package every time
     s = t.get("s") or ""
+    if not s and t.get("err"):
+        # couldn't look it up: no tracking key for this carrier -> rarely retry; anything else -> in a while
+        return 6 * 3600 if "key" in str(t["err"]).lower() else 30 * 60
     if s == "out_for_delivery":
         return 15 * 60
     if s == "exception":
@@ -4524,11 +4530,17 @@ def bg_run_user(uid, b, st, budget_end):
             d = d.split(".", 1)[1] if "." in d else ""
         return ""
 
-    # 1. new order emails in each inbox
-    for acc in (b.get("imap") or []):
+    # 1. new order emails in each inbox (all inboxes side by side)
+    diag = {"at": time.time(), "inboxes": [], "pk": {"due": 0, "ok": 0, "err": 0, "why": ""}}
+    st["diag"] = diag
+    errs = []
+
+    def do_inbox(acc):
+        label = str(acc.get("label") or acc.get("user") or "inbox")
         if time.time() > budget_end:
-            break
+            return
         aid = str(acc.get("id") or acc.get("user") or "")
+        seen = {"new": 0, "store": 0, "first": False, "other": []}
         try:
             check_mail_host(acc.get("host"))
             folder = str(acc.get("folder") or "INBOX")
@@ -4542,6 +4554,7 @@ def bg_run_user(uid, b, st, budget_end):
                     typ, data = M.uid("SEARCH", None, "ALL")
                     ids = [int(x) for x in (data[0].split() if data and data[0] else [])]
                     st["imap"][aid] = {"v": val, "u": max(ids) if ids else 0}
+                    seen["first"] = True
                     return []
                 typ, data = M.uid("SEARCH", None, "UID", "%d:*" % (int(last.get("u") or 0) + 1))
                 ids = sorted(int(x) for x in (data[0].split() if data and data[0] else []) if int(x) > int(last.get("u") or 0))
@@ -4549,6 +4562,7 @@ def bg_run_user(uid, b, st, budget_end):
                     return []
                 st["imap"][aid] = {"v": val, "u": max(ids)}
                 ids = ids[-150:]
+                seen["new"] = len(ids)
                 typ, resp = M.uid("FETCH", ",".join(map(str, ids)), "(UID BODY.PEEK[HEADER.FIELDS (FROM TO SUBJECT DATE)])")
                 out = []
                 for uid_, raw in parse_fetch(resp):
@@ -4556,7 +4570,11 @@ def bg_run_user(uid, b, st, budget_end):
                     frm = (getaddresses([dh(h.get("From"))]) or [("", "")])[0][1].lower()
                     store = store_of(frm)
                     if not store:
+                        d = frm.split("@")[-1]
+                        if d and d not in seen["other"] and len(seen["other"]) < 4:
+                            seen["other"].append(d)
                         continue
+                    seen["store"] += 1
                     subj = dh(h.get("Subject")) or ""
                     kind = bg_classify(subj, "")
                     if not kind:
@@ -4573,7 +4591,8 @@ def bg_run_user(uid, b, st, budget_end):
                     out.append({"store": store, "subj": subj, "kind": kind, "to": to, "text": text[:20000]})
                 return out
 
-            for e in with_retry(acc, run):
+            got_events = with_retry(acc, run)
+            for e in got_events:
                 hay = e["subj"] + " " + e["text"][:3000]
                 o = None
                 for m in BG_ORDER_RX.finditer(hay):
@@ -4591,11 +4610,19 @@ def bg_run_user(uid, b, st, budget_end):
                             if num not in st["tr"] and num not in st["found"]:
                                 st["found"][num] = {"c": carrier, "h": house, "l": item or e["store"], "at": time.time()}
                 events.append(e)
-            st.pop("imapErr", None)
+            diag["inboxes"].append({"l": label, "ok": True, "new": seen["new"], "store": seen["store"], "alerts": len(got_events), "first": seen["first"], "other": seen["other"]})
         except Exception as ex:
-            st["imapErr"] = str(ex)[:200]
+            errs.append(str(ex)[:200]); diag["inboxes"].append({"l": label, "ok": False, "err": str(ex)[:160]})
 
-    # 2. packages
+
+    with _futures.ThreadPoolExecutor(max_workers=8) as ex_:
+        list(ex_.map(do_inbox, b.get("imap") or []))
+    if errs:
+        st["imapErr"] = errs[0]
+    else:
+        st.pop("imapErr", None)
+
+    # 2. packages (looked up side by side, then compared with last time)
     pk = {}
     for o in orders:
         for t in o.get("tr") or []:
@@ -4611,20 +4638,34 @@ def bg_run_user(uid, b, st, budget_end):
         if n not in pk:
             st["tr"].pop(n, None)
     keys = b.get("carriers") or {}
-    checked = 0
-    for n, f in pk.items():
-        if time.time() > budget_end or checked >= 40:
-            break
-        cur = st["tr"].get(n) or {}
-        if cur.get("s") == "delivered" or time.time() - float(cur.get("at") or 0) < _bg_trk_fresh(cur):
-            continue
-        checked += 1
+    due = [(n, f) for n, f in pk.items() if not ((st["tr"].get(n) or {}).get("s") == "delivered"
+           or time.time() - float((st["tr"].get(n) or {}).get("at") or 0) < _bg_trk_fresh(st["tr"].get(n) or {}))][:40]
+    diag["pk"]["due"] = len(due)
+
+    def look(item):
+        n, f = item
+        if time.time() > budget_end:
+            return n, None, "skipped"
         try:
-            r = track({"tracking": n, "carrier": f.get("c") or "", "carriers": keys, "s17Key": b.get("s17Key") or "", "apiKey": b.get("easypostKey") or ""})
+            return n, track({"tracking": n, "carrier": f.get("c") or "", "carriers": keys, "s17Key": b.get("s17Key") or "", "apiKey": b.get("easypostKey") or ""}), ""
         except Exception as ex:
-            cur.update({"at": time.time(), "err": str(ex)[:120]})
+            return n, None, str(ex)[:120] or "lookup failed"
+
+    with _futures.ThreadPoolExecutor(max_workers=8) as ex_:
+        looked = list(ex_.map(look, due))
+    for n, r, err in looked:
+        f = pk[n]
+        cur = st["tr"].get(n) or {}
+        if err == "skipped":
+            continue
+        if r is None:
+            diag["pk"]["err"] += 1
+            diag["pk"]["why"] = diag["pk"]["why"] or err
+            # keep the last good status; just wait before asking again
+            cur.update({"at": time.time(), "err": err})
             st["tr"][n] = cur
             continue
+        diag["pk"]["ok"] += 1
         new_s, est = r.get("status") or "", r.get("est") or ""
         old_s, old_est = cur.get("s"), cur.get("est")
         if r.get("pending"):
@@ -4641,6 +4682,7 @@ def bg_run_user(uid, b, st, budget_end):
         elif old_est and est and est > old_est and new_s != "delivered":
             events.append({"kind": "late", "house": f.get("h"), "item": f.get("l"), "store": "", "trk": n, "est": est})
         st["tr"][n] = {"s": new_s, "est": est, "at": time.time(), "h": f.get("h"), "l": f.get("l")}
+    diag["events"] = len(events)
 
     # 3. turn events into a few notifications
     msgs = []
@@ -4704,6 +4746,10 @@ def bg_tick():
         return {"ok": True, "busy": True}
     started, sent, users = time.time(), 0, 0
     try:
+        prev = float(kv("GET", "bg:last") or 0)
+        kv("SET", "bg:last", str(int(started)))
+        if prev and started - prev < 86400:
+            kv("SET", "bg:every", str(int(started - prev)))
         uids = kv("SMEMBERS", "bg:users") or []
         for uid in uids:
             if time.time() - started > 240:
@@ -4727,9 +4773,14 @@ def bg_tick():
             log = st.get("log") or []
             if msgs:
                 subs = bg_get("subs", uid) or []
+                res = []
                 for m in msgs[:8]:
-                    sent += bg_push(uid, m, subs)
+                    sent += bg_push(uid, m, subs, res)
+                    if any(x["r"] == "gone" for x in res):
+                        subs = bg_get("subs", uid) or []
                     log.insert(0, {"t": time.time(), "title": m["title"], "body": m["body"]})
+                st["push"] = {"at": time.time(), "n": len(res), "ok": sum(1 for x in res if x["r"] == "ok"),
+                              "bad": [x for x in res if x["r"] != "ok"][:3], "devices": len(subs)}
             st["log"] = log[:30]
             bg_put("s", uid, st)
     finally:
@@ -5306,7 +5357,8 @@ class handler(BaseHTTPRequestHandler):
                     subs = (bg_get("subs", uid) or []) if on else []
                     ep = str(b.get("endpoint") or "")
                     return {"ok": True, "on": on, "vapid": _b64u(vapid_keys()[1]), "devices": [{"name": x.get("name") or "", "at": x.get("at"), "me": bool(ep) and x.get("endpoint") == ep} for x in subs],
-                            "ran": st.get("ran"), "err": st.get("err") or st.get("imapErr") or "", "log": (st.get("log") or [])[:15], "watching": len(st.get("tr") or {})}
+                            "ran": st.get("ran"), "err": st.get("err") or st.get("imapErr") or "", "log": (st.get("log") or [])[:15], "watching": len(st.get("tr") or {}),
+                            "diag": st.get("diag") or {}, "push": st.get("push") or {}, "every": (lambda e: int(e) if e not in (None, "") else None)(kv("GET", "bg:every"))}
                 if r in ("/bg/enable", "/bg/update"):
                     bundle = b.get("bundle")
                     if not isinstance(bundle, dict) or len(json.dumps(bundle)) > 900000:
@@ -5338,8 +5390,9 @@ class handler(BaseHTTPRequestHandler):
                     return {"ok": True, "devices": len(keep)}
                 if r == "/bg/test":
                     rate_limit("bgtest", uid, 20, 3600)
-                    n = bg_push(uid, {"title": "Kingpin notifications are on", "body": "You'll get alerts like this for orders, packages and today's deliveries.", "tag": "test", "nav": "settings"})
-                    return {"ok": True, "sent": n}
+                    res = []
+                    n = bg_push(uid, {"title": "Kingpin notifications are on", "body": "You'll get alerts like this for orders, packages and today's deliveries.", "tag": "test", "nav": "settings"}, None, res)
+                    return {"ok": True, "sent": n, "results": res}
                 if r == "/bg/disable":
                     bg_erase(uid)
                     audit(uid, "bg off")

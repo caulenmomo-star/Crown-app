@@ -39,7 +39,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.23.0"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.23.1"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -3001,7 +3001,7 @@ def track(req):
         raise UserError("No tracking number.")
     carrier = str(req.get("carrier") or "").upper()
     is_ups = carrier == "UPS" or code0.startswith("1Z")
-    is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
+    is_fedex = carrier in ("FEDEX", "FEDEXGROUND") or (carrier != "USPS" and not is_ups and re.fullmatch(r"\d{12}|\d{15}|\d{20}|\d{22}", code0) is not None)
     keys = req.get("carriers") or {}
     ups, fx, us = keys.get("ups") or {}, keys.get("fedex") or {}, keys.get("usps") or {}
     is_usps = carrier == "USPS" or (not is_ups and re.fullmatch(r"(92|93|94|95)\d{18,24}|[A-Z]{2}\d{9}US", code0) is not None)

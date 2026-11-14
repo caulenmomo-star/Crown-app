@@ -1,13 +1,17 @@
-# Kingpin Online background alerts: every few minutes, ask Kingpin Online to check the inboxes and packages of
-# accounts that turned on phone notifications. GitHub runs this for free. No secret is needed: GitHub hands this
-# job a short-lived signed token saying "this is the alerts job in Crown-app", and Kingpin Online checks it.
+# Kingpin Online background alerts: ask Kingpin Online to check the inboxes and packages of accounts that turned on
+# phone notifications, every 5 minutes. GitHub's own "every 5 minutes" schedule is unreliable (it often runs only a
+# few times a day), so one run keeps going for ~5½ hours, checking every 5 minutes, then starts the next run itself.
+# The hourly schedule is only a backup in case that chain ever breaks (runs never overlap).
+# No secret is needed: GitHub hands this job a short-lived signed token saying "this is the alerts job in Crown-app",
+# and Kingpin Online checks it.
 name: Background alerts
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 permissions:
   id-token: write
+  actions: write
   contents: read
 concurrency:
   group: alerts
@@ -15,9 +19,19 @@ concurrency:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 350
     steps:
-      - name: Check inboxes and packages
+      - name: Check inboxes and packages every 5 minutes
         run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=kingpin-bg-tick" | python3 -c "import sys,json;print(json.load(sys.stdin)['value'])")
-          curl -sS -m 300 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}' https://crowntools.vercel.app/api/bg/tick | head -c 300; echo
+          end=$(( $(date +%s) + 330*60 ))
+          while [ $(date +%s) -lt $end ]; do
+            start=$(date +%s)
+            TOKEN=$(curl -sS -m 30 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=kingpin-bg-tick" | python3 -c "import sys,json;print(json.load(sys.stdin)['value'])" || true)
+            echo "$(date -u +%H:%M) $(curl -sS -m 290 -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}' https://crowntools.vercel.app/api/bg/tick | head -c 200)"
+            left=$(( 300 - ($(date +%s) - start) )); [ $left -gt 0 ] && sleep $left
+          done
+      - name: Start the next run
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run alerts.yml --repo "$GITHUB_REPOSITORY" --ref main || true

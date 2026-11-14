@@ -2,6 +2,12 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.23.1 — Phone notifications: checks every 5 minutes (2026-11-14)
+
+- Background checks now really run every 5 minutes. Before, they were only running a few times a day.
+- Settings → Phone notifications → Check details shows what the last check found: new emails per inbox, packages looked up, and whether the alerts reached your phone. If something went wrong, it says why.
+- “Send a test” tells you why a test didn’t arrive. Checks are faster, and packages without a tracking key are no longer retried every time.
+
 ## v0.23.0 — Export profiles for Banana ACO (2026-11-14)
 
 - Profiles → Export has a new Banana ACO tile. It downloads a .banana.csv in Banana ACO’s exact profile sheet layout, ready to upload.
