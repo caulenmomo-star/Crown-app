@@ -2,6 +2,11 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.24.1 — Walmart emails never left behind (2026-11-18)
+
+- If an inbox is saved to sync only some stores (say Target), the Sync button now notices Walmart order emails waiting, ticks Walmart for you and says why, and the banner on Orders offers Track Walmart.
+- When a sync brings in cancelled orders (like policy-flag cancels), the message says they’re in the Cancelled tab, with a Show button.
+
 ## v0.24.0 — Walmart orders, like Target (2026-11-18)
 
 - Walmart order emails are read like Target’s: order, shipped (with FedEx tracking), arrived, cancelled, delayed and partly cancelled.

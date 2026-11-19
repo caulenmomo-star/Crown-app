@@ -1,6 +1,10 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.24.1', date: '2026-11-18', title: 'Walmart emails never left behind', items: [
+    'If an inbox is saved to sync only some stores (say Target), the Sync button now notices Walmart order emails waiting, ticks Walmart for you and says why, and the banner on Orders offers Track Walmart.',
+    'When a sync brings in cancelled orders (like policy-flag cancels), the message says they’re in the Cancelled tab, with a Show button.',
+  ] },
   { v: '0.24.0', date: '2026-11-18', title: 'Walmart orders, like Target', items: [
     'Walmart order emails are read like Target’s: order, shipped (with FedEx tracking), arrived, cancelled, delayed and partly cancelled.',
     'Fixed: if Settings tracked only some stores, Kingpin marked other stores’ emails as read and never looked at them again. Now they stay unread, and Orders tells you, e.g. “7 Walmart order emails skipped”, with a one-tap Track Walmart that reads them back.',

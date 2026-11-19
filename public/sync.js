@@ -73,7 +73,7 @@ async function trackSkippedStore(k) {
   delete state.storeSkips[k]; save(); refresh();
   const days = Math.max(30, ...state.imapAccounts.filter(a => ids.includes(a.id)).map(a => a.lookback || 60));
   toast(`Tracking ${storeLabel(k)} — reading its emails…`);
-  await syncAll(true, ids.length ? ids : undefined, { stores: [k], days, full: true });
+  await syncAll(true, ids.length ? ids : undefined, { stores: [k], days, full: true, internal: true });
 }
 function dismissSkippedStore(k) { if (state.storeSkips) { delete state.storeSkips[k]; state.settings.skipIgnore = [...new Set([...(state.settings.skipIgnore || []), k])]; save(); refresh(); } }
 // The banner: only for stores you haven't said “no thanks” to
@@ -112,7 +112,7 @@ async function syncAccount(a, totals, opts) {
   const process = m => {
     let p = null;
     try { p = Parser.parseOrderEmail(m); } catch (e) { markSeen(m.messageId); console.error('parse failed', e); addUnparsed(m, 'reader error'); return; }
-    if (p && !storeWanted(sel, p.store)) { if (opts.stores === undefined) noteSkip(p.store, a, 'inbox', m.messageId); return; }   // another store: left unread for the sync that includes it
+    if (p && !storeWanted(sel, p.store)) { if (!opts.internal) noteSkip(p.store, a, 'inbox', m.messageId); return; }   // another store: left unread for the sync that includes it
     if (p && tracked && !trackedWanted(tracked, p.store)) { noteSkip(p.store, a, 'settings', m.messageId); return; }   // same when Settings tracks only some stores
     markSeen(m.messageId);
     if (!p) return;
@@ -120,7 +120,7 @@ async function syncAccount(a, totals, opts) {
     const out = applyEmail(p, label, { reapply: !!opts.reapply, inbox: a.id });
     if (out.ignored) { res.found--; return; }
     if (out.skipped) { addUnparsed(m, out.skipped, p.store); return; }
-    if (out.created) { res.created++; totals.created++; }
+    if (out.created) { res.created++; totals.created++; if (isDead(out.order)) totals.createdDead = (totals.createdDead || 0) + 1; }
     else if (out.changed) {
       res.updated++; totals.updated++;
       const s = out.order.status; if (s === 'shipped' || s === 'ready' || s === 'out') totals.shipped++; else if (s === 'delivered') totals.delivered++; else if (isDead(out.order)) totals.cancelled++;
@@ -140,7 +140,7 @@ async function syncAccount(a, totals, opts) {
       if (sel || tracked) {
         const g = Parser.detectStore(c.from, c.subject, '');
         const orderish = !!Parser.classifyStatus(c.subject);
-        if (g !== 'other' && sel && !storeWanted(sel, g)) { if (orderish && opts.stores === undefined) noteSkip(g, a, 'inbox', c.mid); return false; }
+        if (g !== 'other' && sel && !storeWanted(sel, g)) { if (orderish && !opts.internal) noteSkip(g, a, 'inbox', c.mid); return false; }
         if (g !== 'other' && tracked && !trackedWanted(tracked, g)) { if (orderish) noteSkip(g, a, 'settings', c.mid); return false; }
       }
       if (activeMids.has(c.mid)) return true;
@@ -181,6 +181,11 @@ async function syncAccount(a, totals, opts) {
     else { a.storeUid = a.storeUid || {}; sel.forEach(k => { a.storeUid[k] = Math.max(incremental ? storeUidFor(a, [k]) : 0, upTo); }); }
     a.lastUid = Math.max(a.allUid || 0, ...Object.values(a.storeUid || {}), 0);
     a.lastStores = sel;
+    // this sync read these stores for this inbox: their “skipped” emails aren't waiting any more
+    if (state.storeSkips && failedMin === Infinity) for (const k of Object.keys(state.storeSkips)) {
+      const e = state.storeSkips[k];
+      if (storeWanted(sel, k) && trackedWanted(tracked, k) && e.inboxes.includes(a.id)) { e.inboxes = e.inboxes.filter(x => x !== a.id); if (!e.inboxes.length) delete state.storeSkips[k]; }
+    }
     a.lastSync = Date.now(); a.lastResult = Object.assign({ at: Date.now(), mode: scan.mode, scanned: scan.scanned }, res);
   } catch (e) {
     res.error = e.message; a.lastResult = Object.assign({ at: Date.now() }, res);
@@ -227,7 +232,8 @@ async function syncAll(manual, ids, opts) {
   if (totals.cancelled) parts.push(totals.cancelled + ' cancelled');
   const otherUpd = totals.updated - totals.shipped - totals.delivered - totals.cancelled; if (otherUpd > 0) parts.push(plural(otherUpd, 'update'));
   if (typeof notifScan === 'function' && notifScan()) save();
-  if (manual) toast(errors.length ? errors[0] : parts.length ? 'Sync done: ' + parts.join(', ') : 'Sync done — nothing new');
+  const deadNote = (totals.cancelled || totals.createdDead) && state.settings.hideDead !== false ? ' — cancelled ones are in the Cancelled tab' : '';
+  if (manual) toast(errors.length ? errors[0] : parts.length ? 'Sync done: ' + parts.join(', ') + deadNote : 'Sync done — nothing new', deadNote && !errors.length ? { ms: 8000, action: 'Show', onAction: () => { OF.status = 'cancelled'; OF.page = 0; go('orders'); if (PAGES.orders) PAGES.orders.render(); } } : undefined);
 }
 async function rescan(id, days) {
   const a = state.imapAccounts.find(x => x.id === id); if (!a) return;
@@ -519,9 +525,12 @@ function pickSyncStores(accs) {
       <div class="dfoot"><button data-close>Cancel</button><button class="primary" id="ssGo">Sync</button></div></dialog>`);
     const d = document.getElementById('dlgSyncStores');
     const saved = accs.map(inboxStores), anyAll = saved.some(x => !x);
-    const pre = anyAll ? null : [...new Set(saved.flat())];
+    const ign = new Set(state.settings.skipIgnore || []);
+    const waiting = Object.entries(state.storeSkips || {}).filter(([k, e]) => !ign.has(k) && e.mids.length && e.inboxes.some(id => accs.some(a => a.id === id)));
+    const pre = anyAll ? null : [...new Set(saved.flat().concat(waiting.map(([k]) => k)))];
     $('#ssTitle').textContent = accs.length === 1 ? `Sync ${accs[0].label || accs[0].user}` : `Sync ${plural(accs.length, 'inbox', 'inboxes')}`;
-    $('#ssSub').textContent = accs.length === 1 ? `Saved for this inbox (used by automatic syncs): ${storesText(saved[0])}. Pick the stores for this sync.` : 'Pick the stores for this sync. Automatic syncs keep using each inbox’s saved stores.';
+    $('#ssSub').textContent = (accs.length === 1 ? `Saved for this inbox (used by automatic syncs): ${storesText(saved[0])}. Pick the stores for this sync.` : 'Pick the stores for this sync. Automatic syncs keep using each inbox’s saved stores.')
+      + (waiting.length && !anyAll ? ' Also ticked: ' + waiting.map(([k, e]) => `${storeLabel(k)} (${plural(e.mids.length, 'order email')} waiting)`).join(', ') + '.' : '');
     $('#ssChips').innerHTML = storeChipsHtml('ssPick', pre);
     $('#ssRemLbl').textContent = accs.length === 1 ? 'Also use these for automatic syncs' : 'Save these for all of these inboxes';
     $('#ssRemember').checked = false;

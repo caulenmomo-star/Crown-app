@@ -767,7 +767,7 @@ PAGES.settings = {
         const days = Math.max(30, ...state.imapAccounts.map(a => a.lookback || 60));
         toast('Reading ' + (added.length === 1 ? storeLabel(added[0]) : 'those stores’') + ' emails…');
         const ids = state.imapAccounts.filter(a => a.enabled !== false && (!a.stores || !a.stores.length || added.some(x => a.stores.includes(x)))).map(a => a.id);
-        if (ids.length) syncAll(false, ids, { stores: added, days, full: true });
+        if (ids.length) syncAll(false, ids, { stores: added, days, full: true, internal: true });
       }
     };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
