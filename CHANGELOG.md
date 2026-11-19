@@ -2,6 +2,13 @@
 
 Kingpin is in prerelease, so versions stay at 0.x until it’s finished.
 
+## v0.24.0 — Walmart orders, like Target (2026-11-18)
+
+- Walmart order emails are read like Target’s: order, shipped (with FedEx tracking), arrived, cancelled, delayed and partly cancelled.
+- Fixed: if Settings tracked only some stores, Kingpin marked other stores’ emails as read and never looked at them again. Now they stay unread, and Orders tells you, e.g. “7 Walmart order emails skipped”, with a one-tap Track Walmart that reads them back.
+- Turning a store on in Settings now reads its emails again, so nothing skipped earlier is missed.
+- Phone notifications recognise Walmart emails and put each one on the right house. Item names keep the é in “Pokémon”, which Walmart drops.
+
 ## v0.23.1 — Phone notifications: checks every 5 minutes (2026-11-14)
 
 - Background checks now really run every 5 minutes. Before, they were only running a few times a day.

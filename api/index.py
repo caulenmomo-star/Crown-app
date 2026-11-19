@@ -39,7 +39,7 @@ from email.header import decode_header, make_header
 from email.utils import getaddresses, parsedate_to_datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "0.23.1"  # prerelease - stays 0.x until Kingpin is finished
+VERSION = "0.24.0"  # prerelease - stays 0.x until Kingpin is finished
 HOST = "127.0.0.1"
 BASE_PORT = int(os.environ.get("CROWN_PORT", "8787"))
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -4470,13 +4470,13 @@ def bg_classify(subject, text):
         return "cancelled"
     if re.search(r"payment|card (was )?declined|update your (card|payment)|couldn.t (charge|process)", s):
         return "payment"
-    if re.search(r"delivered|has arrived|have arrived|was delivered", s):
+    if re.search(r"delivered|has arrived|have arrived|was delivered|^\s*arrived\b", s):
         return "delivered"
     if re.search(r"out for delivery|arriving today|arrives today|arrive today", s):
         return "ofd"
     if re.search(r"shipped|on (its|the) way|has shipped|is coming|tracking|ships? soon|about to ship", s):
         return "shipped"
-    if re.search(r"order (confirm|received|placed)|thanks for (your )?(order|shopping)|we got your order|order #|your order", s):
+    if re.search(r"order (confirm|received|placed)|thanks for (your )?([a-z]+ ){0,2}(order|shopping)|we got your order|order #|your order", s):
         return "order"
     if re.search(r"out for delivery", t):
         return "ofd"
@@ -4581,19 +4581,22 @@ def bg_run_user(uid, b, st, budget_end):
                         continue
                     to = _mail_to(h, str(acc.get("user") or ""))
                     text = ""
-                    if kind in ("shipped", "ofd", "order", "cancelled", "payment"):
+                    if kind in ("shipped", "ofd", "order", "cancelled", "payment", "delivered"):
                         typ2, r2 = M.uid("FETCH", str(uid_), "(BODY.PEEK[]<0.400000>)")
                         got = dict(parse_fetch(r2)) if typ2 == "OK" else {}
                         if got.get(str(uid_)) is not None:
                             m2 = email.message_from_bytes(got[str(uid_)], policy=policy.default)
                             tx, hx = body_parts(m2)
-                            text = tx or re.sub(r"<[^>]+>", " ", hx or "")
+                            text = tx or _html.unescape(re.sub(r"<[^>]+>", " ", re.sub(r"(?is)<(style|script|head)\b.*?</\1\s*>", " ", hx or "")))
+                            # Walmart pads emails with &nbsp; and invisible spacers - squeeze them out so "Order #…" reads
+                            text = re.sub(r"[ \t\u00a0]+", " ", re.sub(r"[\u200b-\u200d\u2060\ufeff\u034f\u00ad]", "", text))
+                            text = re.sub(r"\s*\n\s*", "\n", text)
                     out.append({"store": store, "subj": subj, "kind": kind, "to": to, "text": text[:20000]})
                 return out
 
             got_events = with_retry(acc, run)
             for e in got_events:
-                hay = e["subj"] + " " + e["text"][:3000]
+                hay = e["subj"] + " " + e["text"][:6000]
                 o = None
                 for m in BG_ORDER_RX.finditer(hay):
                     o = by_no.get(re.sub(r"[^A-Z0-9]", "", m.group(1).upper()))

@@ -50,8 +50,8 @@
    "size": 2160
   },
   "changelog.js": {
-   "sha256": "40c82d298b1192c560151770ec565c4b953edec524913bd4a4f8349d7261c3fe",
-   "size": 43441
+   "sha256": "3f5d533289335b9297d2a785861fe0cff44276319af0f8448c905791927943e8",
+   "size": 44198
   },
   "checkin.js": {
    "sha256": "33daf4b11b05f7e59f29f6a21a3e5fde6759fc164e6211d0655705e2cfa43e93",
@@ -62,8 +62,8 @@
    "size": 6418
   },
   "core.js": {
-   "sha256": "e87ce7fa575db40f4f57c351132b209648b4b59bf3a28905f96123fbab64da7b",
-   "size": 54343
+   "sha256": "dfcb6e5f61d0f8d4df3a5029163101546e22be64db9a8ec805c13076db07b68e",
+   "size": 54461
   },
   "ct-icon-180.png": {
    "sha256": "d58821d5e97b52c66a03893641c793df7f35e65ed7523bb63af4ffa5f4bf0186",
@@ -174,12 +174,12 @@
    "size": 21156
   },
   "pages.js": {
-   "sha256": "fcbb043434e868fd96016a989907ed22331e357fdb0310adaf10f666dc7b9f42",
-   "size": 100915
+   "sha256": "5cc311d8ea2b05bfd24a7cf78f4cb7eb0aac6956b6bf8c21ca01e7992c449ef0",
+   "size": 102050
   },
   "parser.js": {
-   "sha256": "e086ec20e76cad72f1f3a949019c8b49d34d892635e9db82b471e5ff44c6f2cf",
-   "size": 68099
+   "sha256": "bb57e5b4e0c6d3cc45a5029de85efa23547aefd449a83bce7b6aafdbe7f7647a",
+   "size": 68308
   },
   "phonefit.js": {
    "sha256": "f960aaea892844f5336a0abfb67870e192c1fdd11d701a6c98e2466ee1acfb88",
@@ -246,8 +246,8 @@
    "size": 2500
   },
   "sync.js": {
-   "sha256": "4c3f6628f06fdb2e08c1efef0ea25783843f913eac98ea150032d3900adf9637",
-   "size": 38510
+   "sha256": "0eaaccdd3b7169d9c2c4b3d7c7007476853aa0a76f9a0cf6cc6e75f0371312b1",
+   "size": 42954
   },
   "terms.html": {
    "sha256": "d135d9ffe5ca127d01bc854d304dd87bcc689a1e3f56bec5e15a96a4a87d1713",
@@ -345,5 +345,5 @@
   "/api/update/check",
   "/api/vault"
  ],
- "version": "0.23.1"
+ "version": "0.24.0"
 }

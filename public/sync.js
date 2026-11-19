@@ -51,6 +51,46 @@ function showProgress() { if (progressTimer) return; progressTimer = setTimeout(
 const inboxStores = a => (a.stores && a.stores.length ? a.stores.slice() : null);
 const storeWanted = (sel, key) => !sel || sel.includes(key) || (String(key).startsWith('shop:') && sel.includes('__shopify')) || (key === 'other' && sel.includes('__other'));
 function storeLabel(k) { if (k === '__shopify') return 'Any Shopify store'; if (k === '__other') return 'Other stores'; const s = Parser.STORES.find(x => x.key === k); return s ? s.label : k; }
+const trackedWanted = (tracked, key) => !tracked || tracked.has(key) || (String(key).startsWith('shop:') && tracked.has('__shopify'));
+// Order emails a store selection left unread, per store — so Kingpin can say “23 Walmart emails were skipped” and fix it in one tap.
+function noteSkip(store, a, why, mid) {
+  if (!store || store === 'other' || !mid) return;
+  state.storeSkips = state.storeSkips || {};
+  const k = String(store).startsWith('shop:') ? '__shopify' : store;
+  const e = state.storeSkips[k] = state.storeSkips[k] || { mids: [], inboxes: [], why: [] };
+  if (!e.mids.includes(mid)) { e.mids.push(mid); if (e.mids.length > 400) e.mids.splice(0, e.mids.length - 400); }
+  if (!e.inboxes.includes(a.id)) e.inboxes.push(a.id);
+  if (!e.why.includes(why)) e.why.push(why);
+  e.at = Date.now();
+}
+// Turn a skipped store back on (in Settings and on the inboxes that left it out) and read its emails again.
+async function trackSkippedStore(k) {
+  const e = (state.storeSkips || {})[k]; if (!e) return;
+  const S = state.settings;
+  if (S.trackedStores && S.trackedStores.length && !S.trackedStores.includes(k)) S.trackedStores.push(k);
+  const ids = e.inboxes.filter(id => state.imapAccounts.some(a => a.id === id));
+  state.imapAccounts.forEach(a => { if (ids.includes(a.id) && a.stores && a.stores.length && !a.stores.includes(k)) a.stores.push(k); });
+  delete state.storeSkips[k]; save(); refresh();
+  const days = Math.max(30, ...state.imapAccounts.filter(a => ids.includes(a.id)).map(a => a.lookback || 60));
+  toast(`Tracking ${storeLabel(k)} — reading its emails…`);
+  await syncAll(true, ids.length ? ids : undefined, { stores: [k], days, full: true });
+}
+function dismissSkippedStore(k) { if (state.storeSkips) { delete state.storeSkips[k]; state.settings.skipIgnore = [...new Set([...(state.settings.skipIgnore || []), k])]; save(); refresh(); } }
+// The banner: only for stores you haven't said “no thanks” to
+function storeSkipsHtml() {
+  const ign = new Set(state.settings.skipIgnore || []);
+  const list = Object.entries(state.storeSkips || {}).filter(([k, e]) => !ign.has(k) && e.mids.length);
+  return list.map(([k, e]) => {
+    const where = e.why.includes('settings') && !(state.settings.trackedStores || []).includes(k) ? 'it’s not on your tracked stores in Settings' : 'it’s turned off for ' + (e.inboxes.map(id => { const a = state.imapAccounts.find(x => x.id === id); return a ? (a.label || a.user) : null; }).filter(Boolean).join(', ') || 'an inbox');
+    return `<div class="card skipnote" data-skip="${esc(k)}" style="margin-bottom:12px;border-color:var(--selLine);background:var(--selBg);display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px"><b>${plural(e.mids.length, storeLabel(k) + ' order email')} skipped</b><div class="small muted">Kingpin left ${e.mids.length === 1 ? 'it' : 'them'} unread because ${esc(where)}.</div></div>
+      <div class="hstack" style="gap:8px"><button class="sm primary" data-skipon="${esc(k)}">Track ${esc(storeLabel(k))}</button><button class="sm ghost" data-skipoff="${esc(k)}">Keep it off</button></div></div>`;
+  }).join('');
+}
+function wireStoreSkips(root) {
+  (root || document).querySelectorAll('[data-skipon]').forEach(b => b.onclick = () => trackSkippedStore(b.dataset.skipon));
+  (root || document).querySelectorAll('[data-skipoff]').forEach(b => b.onclick = () => dismissSkippedStore(b.dataset.skipoff));
+}
 function storesText(sel) { return !sel ? 'All stores' : sel.map(storeLabel).join(', '); }
 function storeUidFor(a, sel) {
   if (a.allUid === undefined && a.storeUid === undefined && a.lastUid) a.allUid = a.lastUid;   // inboxes from before per-store syncing read everything
@@ -72,11 +112,11 @@ async function syncAccount(a, totals, opts) {
   const process = m => {
     let p = null;
     try { p = Parser.parseOrderEmail(m); } catch (e) { markSeen(m.messageId); console.error('parse failed', e); addUnparsed(m, 'reader error'); return; }
-    if (p && !storeWanted(sel, p.store)) return;   // another store: left unread for the sync that includes it
+    if (p && !storeWanted(sel, p.store)) { if (opts.stores === undefined) noteSkip(p.store, a, 'inbox', m.messageId); return; }   // another store: left unread for the sync that includes it
+    if (p && tracked && !trackedWanted(tracked, p.store)) { noteSkip(p.store, a, 'settings', m.messageId); return; }   // same when Settings tracks only some stores
     markSeen(m.messageId);
     if (!p) return;
     res.found++;
-    if (tracked && !tracked.has(p.store) && !(String(p.store).startsWith('shop:') && tracked.has('__shopify'))) return;
     const out = applyEmail(p, label, { reapply: !!opts.reapply, inbox: a.id });
     if (out.ignored) { res.found--; return; }
     if (out.skipped) { addUnparsed(m, out.skipped, p.store); return; }
@@ -97,7 +137,12 @@ async function syncAccount(a, totals, opts) {
     // Decide from the subject + sender alone whether an email is worth downloading at all.
     const todo = scan.candidates.filter(c => {
       // the sender usually says which store it is - skip other stores without downloading them
-      if (sel) { const g = Parser.detectStore(c.from, c.subject, ''); if (g !== 'other' && !storeWanted(sel, g)) return false; }
+      if (sel || tracked) {
+        const g = Parser.detectStore(c.from, c.subject, '');
+        const orderish = !!Parser.classifyStatus(c.subject);
+        if (g !== 'other' && sel && !storeWanted(sel, g)) { if (orderish && opts.stores === undefined) noteSkip(g, a, 'inbox', c.mid); return false; }
+        if (g !== 'other' && tracked && !trackedWanted(tracked, g)) { if (orderish) noteSkip(g, a, 'settings', c.mid); return false; }
+      }
       if (activeMids.has(c.mid)) return true;
       if (!opts.full && (skip.has(c.mid) || (opts.reapply && seenAll.has(c.mid)))) return false;
       const junk = !Parser.classifyStatus(c.subject) || (c.from && isIgnoredSender(c.from)) || (c.from && !state.settings.trackUnknown && Parser.isNonStoreSender(c.from, c.subject));
@@ -489,3 +534,14 @@ function pickSyncStores(accs) {
     openDlg('dlgSyncStores');
   });
 }
+// Show the “skipped store emails” banner at the top of Orders and Inboxes
+['orders', 'inboxes'].forEach(k => {
+  const P = PAGES[k]; if (!P || P.__skips) return;
+  const r0 = P.render; P.__skips = true;
+  P.render = function () {
+    const out = r0.apply(this, arguments);
+    const pg = document.getElementById('pg-' + k), head = pg && pg.querySelector('.pagehead');
+    if (head && !pg.querySelector('.skipnote')) { const html = storeSkipsHtml(); if (html) { head.insertAdjacentHTML('afterend', html); wireStoreSkips(pg); } }
+    return out;
+  };
+});

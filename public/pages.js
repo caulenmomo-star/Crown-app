@@ -754,7 +754,22 @@ PAGES.settings = {
     $('#stCiOn').onclick = () => { S.checkinSince = S.checkinSince ? '' : todayKey(); save(); PAGES.settings.render(); };
     $('#stInvCi').onclick = () => { S.invOnCheckin = !S.invOnCheckin; save(); PAGES.settings.render(); };
     $$('[data-fee]').forEach(inp => inp.onchange = () => { const k = inp.dataset.fee; const f = Object.assign({}, (S.platformFees || {})[k]); f[inp.dataset.ff] = Math.max(0, Number(inp.value) || 0); S.platformFees = Object.assign({}, S.platformFees, { [k]: f }); save(); });
-    $('#stStores').onclick = e => { const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s; if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; } save(); PAGES.settings.render(); };
+    $('#stStores').onclick = e => {
+      const b = e.target.closest('[data-s]'); if (!b) return; const k = b.dataset.s;
+      const before = S.trackedStores && S.trackedStores.length ? new Set(S.trackedStores) : null;
+      if (k === '__all') S.trackedStores = []; else { const set = new Set(S.trackedStores || []); set.has(k) ? set.delete(k) : set.add(k); S.trackedStores = [...set]; }
+      // stores that just got switched on: read their emails again (ones skipped while they were off come back)
+      const now = S.trackedStores.length ? new Set(S.trackedStores) : null;
+      const added = before ? (now ? [...now].filter(x => !before.has(x)) : Parser.STORES.map(x => x.key).filter(x => x !== 'other' && !before.has(x)).concat(before.has('__shopify') ? [] : ['__shopify'])) : [];
+      added.forEach(x => { if (state.storeSkips) delete state.storeSkips[x]; });
+      save(); PAGES.settings.render();
+      if (added.length && SERVER && state.imapAccounts.some(a => a.enabled !== false)) {
+        const days = Math.max(30, ...state.imapAccounts.map(a => a.lookback || 60));
+        toast('Reading ' + (added.length === 1 ? storeLabel(added[0]) : 'those stores’') + ' emails…');
+        const ids = state.imapAccounts.filter(a => a.enabled !== false && (!a.stores || !a.stores.length || added.some(x => a.stores.includes(x)))).map(a => a.id);
+        if (ids.length) syncAll(false, ids, { stores: added, days, full: true });
+      }
+    };
     $('#stBackup').onclick = async () => { const blob = await encryptState(cryptoKey, salt); download(`crown-backup-${stamp()}.json`, JSON.stringify(blob), 'application/json'); toast('Encrypted backup downloaded'); };
     $('#stRestore').onclick = () => $('#restoreFile').click();
     $('#stPfFix').onclick = () => nfRun(false);

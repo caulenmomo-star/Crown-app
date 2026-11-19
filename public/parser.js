@@ -89,7 +89,7 @@
   // Subjects that are never real order updates: surveys, reviews, promos.
   const SURVEY = ['guest survey', 'survey', 'we want to hear', 'how did we do', 'how was', 'rate your', 'rate us', 'review your', 'write a review', 'leave a review', 'tell us about', 'feedback', 'did you enjoy'];
   const PROMO = /(\d+\s?% off|\bsale\b|\bdeals?\b|\bcoupon|\bpromo|\bsave \$|\bsave up\b|\bfree shipping\b|\brewards?\b|\bpoints\b|\bnewsletter|\bwishlist|\bback in stock|\bprice drop|\bjust dropped|\bnew arrivals?|\bdon'?t miss|\blast chance|\babandon|\bleft in your cart|\bstill thinking|\bunsubscribe)/i;
-  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill', 'we canceled', 'we cancelled', 'canceled your', 'cancelled your'];
+  const CANCELLED = ['had to cancel', 'order canceled', 'order cancelled', 'order was canceled', 'order was cancelled', 'been canceled', 'been cancelled', 'canceled:', 'cancelled:', 'cancellation', 'item canceled', 'item cancelled', 'items canceled', 'items cancelled', 'item was canceled', 'item was cancelled', 'were canceled', 'were cancelled', 'unable to fulfill', "couldn't fulfill", 'could not fulfill', 'we canceled', 'we cancelled', 'canceled your', 'cancelled your'];
   const REFUNDED = ['refund issued', 'refund has been', 'your refund', 'refund processed', 'refund confirmation', 'return received', 'return has been processed', 'refunded'];
   const DELIVERED = ['delivered', 'arrived:', 'was picked up', 'has been picked up', 'picked up your order', 'has arrived', 'have arrived', 'order is here', 'package is here', 'items are here', 'order arrived', 'package arrived', 'items arrived', 'item arrived'];
   const READY = ['ready for pickup', 'ready for drive up', 'ready to pick up', 'is ready for pick', 'ready for curbside', 'ready for in-store pickup'];
@@ -154,7 +154,7 @@
   }
   const SUBJECT_KEYWORDS = Array.from(new Set([].concat(CANCELLED, REFUNDED, DELIVERED, READY, OUT, SHIPPED, CONFIRMED, PAY_KEYWORDS)));
   // Python-compatible regexes (the helper filters subjects with these too).
-  const SUBJECT_PATTERNS = ['\\border has an update\\b', 'thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}'];
+  const SUBJECT_PATTERNS = ['\\border has an update\\b', 'thanks for your [a-z ]{0,20}order', '\\border (?:was |has been |is )?(?:received|placed|confirmed)\\b', '^\\s*(order\\s+)?cancel(l)?ed\\s*:', 'order\\s*(?:number|no\\.?)?\\s*#?\\s*:?\\s*\\d{6,}', '#\\s*:?\\s*\\d{9,}', '\\barriv(?:e|es|ed|ing)\\b', '\\border\\s*#\\s*:?\\s*[a-z]{0,4}-?\\d{4,}', '^\\s*(?:delayed|running late)\\s*:'];
   const SUBJECT_RES = SUBJECT_PATTERNS.map(p => new RegExp(p, 'i'));
   const has = (s, list) => list.some(k => s.includes(k));
 
@@ -162,7 +162,7 @@
     const s = String(subject || '').toLowerCase().replace(/[\u2018\u2019]/g, "'").replace(/\s+/g, ' ');
     if (!s.trim()) return null;
     if (has(s, SURVEY) || PROMO.test(s)) return null;
-    if (/\b(not|never)\s+(been\s+)?(shipped|delivered)\b|delivery\s+(attempt|exception|delay)|\bdelayed\b|\brunning late\b/.test(s) && !has(s, CANCELLED)) return /order|#\s*\d/.test(s) ? 'shipped' : null;
+    if (/\b(not|never)\s+(been\s+)?(shipped|delivered)\b|delivery\s+(attempt|exception|delay)|\bdelayed\b|\brunning late\b/.test(s) && !has(s, CANCELLED)) return /order|#\s*\d|^\s*(delayed|running late)\s*:/.test(s) ? 'shipped' : null;
     if (has(s, REFUNDED) && !/refund (?:policy|request)/.test(s)) return 'refunded';
     if (has(s, CANCELLED) || /^\s*(order\s+)?cancel(l)?ed\s*:/i.test(s)) return 'cancelled';
     if (has(s, DELIVERED) && (/\b(order|package|item|items|shipment|parcel|purchase|preorder)\b/.test(s) || /^\s*(delivered|arrived)\s*:?/.test(s) || /#\s?\d{5,}/.test(s))) return 'delivered';
@@ -369,7 +369,7 @@
     for (const im of imgs) {
       const m = String(im.alt || '').match(/^quantity\s+(\d{1,3})\s+items?\s+(.{4,})$/i);
       if (!m || !productImage(im, false)) continue;
-      const name = m[2].trim().slice(0, 160);
+      const name = m[2].trim().replace(/\bPok\s+mon\b/g, 'Pokémon').replace(/\bPok\uFFFDmon\b/g, 'Pokémon').slice(0, 160);   // Walmart drops the é
       const have = items.find(x => nameMatches(x.name, name));
       if (have) { if (!have.image) have.image = im.src; continue; }
       items.push({ name, qty: +m[1] || 1, price: null, each: false, image: im.src });

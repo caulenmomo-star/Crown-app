@@ -1,6 +1,12 @@
 /* Kingpin - release notes. Kingpin is in prerelease, so versions stay at 0.x until it's finished. */
 'use strict';
 const CHANGELOG = [
+  { v: '0.24.0', date: '2026-11-18', title: 'Walmart orders, like Target', items: [
+    'Walmart order emails are read like Target’s: order, shipped (with FedEx tracking), arrived, cancelled, delayed and partly cancelled.',
+    'Fixed: if Settings tracked only some stores, Kingpin marked other stores’ emails as read and never looked at them again. Now they stay unread, and Orders tells you, e.g. “7 Walmart order emails skipped”, with a one-tap Track Walmart that reads them back.',
+    'Turning a store on in Settings now reads its emails again, so nothing skipped earlier is missed.',
+    'Phone notifications recognise Walmart emails and put each one on the right house. Item names keep the é in “Pokémon”, which Walmart drops.',
+  ] },
   { v: '0.23.1', date: '2026-11-14', title: 'Phone notifications: checks every 5 minutes', items: [
     'Background checks now really run every 5 minutes. Before, they were only running a few times a day.',
     'Settings → Phone notifications → Check details shows what the last check found: new emails per inbox, packages looked up, and whether the alerts reached your phone. If something went wrong, it says why.',

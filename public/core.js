@@ -1,6 +1,6 @@
 /* Kingpin - core: state, encryption, storage, server API, navigation, undo, shared helpers. */
 'use strict';
-const VERSION = '0.23.1'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
+const VERSION = '0.24.0'; // prerelease: stays 0.x until Kingpin is finished (see changelog.js)
 const $ = (s, el) => (el || document).querySelector(s);
 /* ---------- look: themes (kept per device for the lock screen, and in your data so every device matches) ---------- */
 const THEMES_UI = [['crown', 'Kingpin', 'Graphite and gold'], ['daylight', 'Daylight', 'Light with indigo'], ['midnight', 'Midnight', 'Navy and emerald'], ['ember', 'Ember', 'Charcoal and red'],
@@ -284,6 +284,7 @@ function mergeStates(base, local, remote) {
   if (out.seenIds.length > 40000) out.seenIds = out.seenIds.slice(-40000);
   const um = new Map(); for (const u of [].concat(remote.unparsed || [], local.unparsed || [])) if (!um.has(u.messageId)) um.set(u.messageId, u);
   out.unparsed = J(local.unparsed) === J(base.unparsed) ? (remote.unparsed || []) : (J(remote.unparsed) === J(base.unparsed) ? (local.unparsed || []) : [...um.values()].slice(0, 200));
+  out.storeSkips = J(local.storeSkips) === J(base.storeSkips) ? (remote.storeSkips || {}) : (local.storeSkips || {});
   const lg = new Map(); for (const x of [].concat(remote.syncLog || [], local.syncLog || [])) lg.set(x.at + '|' + x.label, x);
   out.syncLog = [...lg.values()].sort((a, b) => b.at - a.at).slice(0, 60);
   return out;
